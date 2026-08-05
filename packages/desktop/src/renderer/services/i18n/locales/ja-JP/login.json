@@ -1,6 +1,6 @@
 {
-  "pageTitle": "AionUi - ログイン",
-  "brand": "AionUi",
+  "pageTitle": "HTHBuddy - ログイン",
+  "brand": "HTHBuddy",
   "subtitle": "おかえりなさい。アカウントにサインインしてください",
   "username": "ユーザー名",
   "usernamePlaceholder": "ユーザー名を入力してください",
@@ -22,5 +22,17 @@
     "networkError": "接続に失敗しました。後でもう一度お試しください",
     "serverError": "サーバーで問題が発生しました。しばらく待ってから再試行してください",
     "unknown": "ログインに失敗しました。後でもう一度お試しください"
+  },
+  "hth": {
+    "title": "Sign in with HTH",
+    "description": "HTHBuddy requires your HTH account before assistants can be used.",
+    "baseUrl": "HTH URL",
+    "baseUrlPlaceholder": "http://127.0.0.1:3001",
+    "loginWithDingTalk": "Sign in with DingTalk",
+    "browserOpened": "Sign-in page opened in your browser",
+    "startFailed": "Unable to open HTH sign-in",
+    "callbackMissing": "HTH sign-in callback is missing required data",
+    "exchangeFailed": "HTH sign-in failed",
+    "success": "HTH sign-in successful"
   }
 }

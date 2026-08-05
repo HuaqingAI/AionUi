@@ -321,6 +321,72 @@ describe('useAcpModelInfo', () => {
     ]);
   });
 
+  it('filters OpenCode Zen provider models from config option model choices', async () => {
+    ensureRuntimeInvokeMock.mockResolvedValue({
+      recovered: true,
+      config_options: [
+        {
+          id: 'model',
+          category: 'model',
+          type: 'select',
+          current_value: 'hth/gpt-5.6-terra',
+          options: [
+            { value: 'opencode-zen/ling-3.0-flash-free', label: 'OpenCode Zen/Ling-3.0-flash Free' },
+            { value: 'opencode-zen/north-mini-code-free', label: 'OpenCode Zen/North Mini Code Free' },
+            { value: 'hth/gpt-5.3-codex', label: 'HTH/gpt-5.3-codex' },
+            { value: 'hth/gpt-5.6-terra', label: 'HTH/gpt-5.6-terra' },
+          ],
+        },
+      ],
+      runtime: null,
+    });
+
+    const { result } = renderUseAcpModelInfo({
+      conversation_id: 'conv-1',
+      backend: 'opencode',
+    });
+
+    await waitFor(() => {
+      expect(result.current.model_info?.current_model_id).toBe('hth/gpt-5.6-terra');
+    });
+    expect(result.current.model_info?.available_models.map((model) => model.label)).toEqual([
+      'HTH/gpt-5.3-codex',
+      'HTH/gpt-5.6-terra',
+    ]);
+  });
+
+  it('filters OpenCode Zen provider models from legacy model info updates', async () => {
+    ensureRuntimeInvokeMock.mockResolvedValue({ recovered: true, config_options: [], runtime: null });
+
+    const { result } = renderUseAcpModelInfo({
+      conversation_id: 'conv-1',
+      backend: 'opencode',
+    });
+
+    await waitFor(() => {
+      expect(responseStreamHandlers.length).toBeGreaterThan(0);
+    });
+
+    act(() => {
+      emitStream({
+        type: 'acp_model_info',
+        conversation_id: 'conv-1',
+        data: buildLegacyModelInfo({
+          current_model_id: 'hth/gpt-5.6-terra',
+          current_model_label: 'HTH/gpt-5.6-terra',
+          available_models: [
+            { id: 'opencode-zen/mimo-v2.5-free', label: 'OpenCode Zen/MiMo V2.5 Free' },
+            { id: 'hth/gpt-5.6-terra', label: 'HTH/gpt-5.6-terra' },
+          ],
+        }),
+      } as unknown as IResponseMessage);
+    });
+
+    await waitFor(() => {
+      expect(result.current.model_info?.available_models.map((model) => model.label)).toEqual(['HTH/gpt-5.6-terra']);
+    });
+  });
+
   it('waits for observed confirmation before updating selected model without persisting a global preference', async () => {
     const setConfigDeferred = deferred<{
       confirmation: 'observed';

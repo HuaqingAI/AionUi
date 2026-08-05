@@ -67,7 +67,7 @@ export type ModelImageInputChoice = ModelImageInputCapability | 'auto';
 
 /** Whether a provider/model protocol can select an OpenAI wire API. */
 export const supportsOpenAiApiMode = (platform: string, modelProtocol = 'openai'): boolean => {
-  if (platform === 'new-api') return modelProtocol === 'openai';
+  if (platform === 'hth') return modelProtocol === 'openai';
   return !['anthropic', 'bedrock', 'gemini', 'gemini-vertex-ai'].includes(platform);
 };
 

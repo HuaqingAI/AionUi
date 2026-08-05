@@ -18,6 +18,7 @@ import { changeLanguage } from '@process/services/i18n';
 import type { PetSize } from '@process/pet/petTypes';
 import { createOrUpdateTray, destroyTray, setCloseToTrayEnabled } from '@process/utils/tray';
 import { readCloseToTraySetting, writeCloseToTraySetting } from '@process/utils/closeToTraySetting';
+import { DESKTOP_PET_FEATURE_ENABLED } from '@/common/config/constants';
 
 type LanguageChangeListener = () => void;
 let _languageChangeListener: LanguageChangeListener | null = null;
@@ -59,11 +60,20 @@ export function initSystemSettingsBridge(): void {
 
   // Desktop pet settings
   ipcBridge.systemSettings.getPetEnabled.provider(async () => {
+    if (!DESKTOP_PET_FEATURE_ENABLED) {
+      return false;
+    }
     const value = await ProcessConfig.get('pet.enabled');
     return value ?? false;
   });
 
   ipcBridge.systemSettings.setPetEnabled.provider(async ({ enabled }) => {
+    if (!DESKTOP_PET_FEATURE_ENABLED) {
+      await ProcessConfig.set('pet.enabled', false);
+      const { destroyPetWindow } = await import('@process/pet/petManager');
+      destroyPetWindow();
+      return;
+    }
     const { createPetWindow, destroyPetWindow, isPetSupported } = await import('@process/pet/petManager');
     if (enabled && !isPetSupported()) {
       console.warn('[SystemSettings] Desktop pet is not supported in headless mode');

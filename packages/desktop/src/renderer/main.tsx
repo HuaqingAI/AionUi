@@ -51,7 +51,7 @@ import { ThemeProvider } from './hooks/context/ThemeContext';
 import { PreviewProvider } from './pages/conversation/Preview/context/PreviewContext';
 
 // Arco Design
-import { ConfigProvider, Modal, Typography } from '@arco-design/web-react';
+import { ConfigProvider, Modal, Spin, Typography } from '@arco-design/web-react';
 // Configure Arco Design to use React 18's createRoot, fixing Message component's CopyReactDOM.render error
 import '@arco-design/web-react/es/_util/react-19-adapter';
 import '@arco-design/web-react/dist/css/arco.css';
@@ -136,6 +136,15 @@ const INSTALLATION_INTEGRITY_FAILURES = new Set<RuntimeFailureKind>([
   'bundled_resource_invalid',
   'validation_failed',
 ]);
+const STARTUP_RUNTIME_STATUS_SUCCESS_DISMISS_MS = 3000;
+const STARTUP_RUNTIME_TOOL_LABELS: Record<string, string> = {
+  codex: 'Codex',
+  opencode: 'OpenCode',
+};
+const STARTUP_RUNTIME_SCOPE_TOOL_IDS: Record<string, string> = {
+  'startup-codex': 'codex',
+  'startup-opencode': 'opencode',
+};
 
 function isInstallationIntegrityFailure(kind: RuntimeFailureKind | undefined): boolean {
   return INSTALLATION_INTEGRITY_FAILURES.has(kind ?? 'unknown');
@@ -190,6 +199,128 @@ function resolveRuntimeResourceLabel(event: IRuntimeStatusEvent, t: TFunction): 
   }
   return t('settings.runtimeResource.acpTool');
 }
+
+function runtimeFailureTranslationKey(kind?: RuntimeFailureKind): string {
+  switch (kind) {
+    case 'timeout':
+      return 'settings.runtimeStatus.failedTimeout';
+    case 'download_failed':
+      return 'settings.runtimeStatus.failedDownload';
+    case 'http_status':
+      return 'settings.runtimeStatus.failedHttp';
+    case 'checksum_mismatch':
+      return 'settings.runtimeStatus.failedChecksum';
+    case 'validation_failed':
+      return 'settings.runtimeStatus.failedValidation';
+    case 'unsupported_platform':
+      return 'settings.runtimeStatus.failedUnsupported';
+    case 'bundled_resource_missing':
+    case 'bundled_resource_invalid':
+      return 'settings.runtimeStatus.failedBundled';
+    default:
+      return 'settings.runtimeStatus.failedUnknown';
+  }
+}
+
+function resolveStartupRuntimeToolLabel(event: IRuntimeStatusEvent): string | null {
+  if (event.scope.kind !== 'custom_agent') {
+    return null;
+  }
+  const resourceToolId = event.resource_id && STARTUP_RUNTIME_TOOL_LABELS[event.resource_id] ? event.resource_id : null;
+  const toolId = resourceToolId ?? STARTUP_RUNTIME_SCOPE_TOOL_IDS[event.scope.id];
+  return toolId ? (STARTUP_RUNTIME_TOOL_LABELS[toolId] ?? null) : null;
+}
+
+function getStartupRuntimeStatusMessage(event: IRuntimeStatusEvent, t: TFunction): string | null {
+  const resource = resolveStartupRuntimeToolLabel(event);
+  if (!resource) {
+    return null;
+  }
+  switch (event.phase) {
+    case 'waiting_for_lock':
+      return t('settings.runtimeStatus.waitingForLock', { resource });
+    case 'downloading':
+    case 'extracting':
+      return t('settings.runtimeStatus.downloading', { resource });
+    case 'validating':
+      return t('settings.runtimeStatus.validating', { resource });
+    case 'ready':
+      return t('settings.runtimeStatus.ready', { resource });
+    case 'failed':
+      return t(runtimeFailureTranslationKey(event.failure_kind), { resource });
+  }
+}
+
+const GlobalStartupRuntimeStatusMessage: React.FC = () => {
+  const { t } = useTranslation();
+  const [status, setStatus] = useState<{
+    phase: IRuntimeStatusEvent['phase'];
+    message: string;
+  } | null>(null);
+  const dismissTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const handleRuntimeStatus = (event: IRuntimeStatusEvent) => {
+      const content = getStartupRuntimeStatusMessage(event, t);
+      if (!content) {
+        return;
+      }
+      if (dismissTimerRef.current) {
+        window.clearTimeout(dismissTimerRef.current);
+        dismissTimerRef.current = null;
+      }
+      setStatus({
+        phase: event.phase,
+        message: content,
+      });
+      if (event.phase === 'ready') {
+        dismissTimerRef.current = window.setTimeout(() => {
+          setStatus(null);
+          dismissTimerRef.current = null;
+        }, STARTUP_RUNTIME_STATUS_SUCCESS_DISMISS_MS);
+      }
+    };
+
+    const unsubscribeBackendStatus = ipcBridge.runtime.statusChanged.on(handleRuntimeStatus);
+    const unsubscribeLocalStatus = ipcBridge.runtime.localStatusChanged.on(handleRuntimeStatus);
+    return () => {
+      if (dismissTimerRef.current) {
+        window.clearTimeout(dismissTimerRef.current);
+        dismissTimerRef.current = null;
+      }
+      unsubscribeBackendStatus();
+      unsubscribeLocalStatus();
+    };
+  }, [t]);
+
+  if (!status) {
+    return null;
+  }
+
+  const toneClass =
+    status.phase === 'failed'
+      ? 'border-danger-5 bg-danger-light-1 text-danger-7 shadow-[0_12px_36px_rgba(var(--danger-6),0.22)]'
+      : status.phase === 'ready'
+        ? 'border-success-5 bg-success-light-1 text-success-7 shadow-[0_12px_36px_rgba(var(--success-6),0.2)]'
+        : 'border-primary-5 bg-primary-light-1 text-primary-7 shadow-[0_12px_36px_rgba(var(--primary-6),0.22)]';
+
+  return (
+    <div
+      className={`pointer-events-none fixed left-50% top-14px z-10002 flex min-h-44px max-w-[calc(100vw-32px)] translate-x--50% items-center gap-10px rounded-12px border border-solid px-16px py-10px text-13px font-500 leading-20px backdrop-blur-sm md:max-w-520px ${toneClass}`}
+      role='status'
+      aria-live='polite'
+      data-testid='startup-runtime-status'
+    >
+      {status.phase === 'waiting_for_lock' ||
+      status.phase === 'downloading' ||
+      status.phase === 'extracting' ||
+      status.phase === 'validating' ? (
+        <Spin size={14} />
+      ) : null}
+      <span className='min-w-0 truncate'>{status.message}</span>
+    </div>
+  );
+};
 
 const RuntimeFailureDialogs: React.FC = () => {
   const { t } = useTranslation();
@@ -251,7 +382,13 @@ const AppProviders: React.FC<PropsWithChildren> = ({ children }) =>
         React.createElement(
           FeedbackProvider,
           null,
-          React.createElement(React.Fragment, null, React.createElement(RuntimeFailureDialogs, null), children)
+          React.createElement(
+            React.Fragment,
+            null,
+            React.createElement(RuntimeFailureDialogs, null),
+            React.createElement(GlobalStartupRuntimeStatusMessage, null),
+            children
+          )
         )
       )
     )

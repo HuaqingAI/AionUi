@@ -161,14 +161,10 @@ export type UpdateNotificationEvent =
       marker: InstallerLastFailureMarker;
     };
 
-export type UpdateNotificationEffect =
-  | {
-      type: 'loadManualReleaseInfoForDisplay';
-    }
-  | {
-      type: 'cancelDownload';
-      task: UpdateNotificationActiveTask;
-    };
+export type UpdateNotificationEffect = {
+  type: 'cancelDownload';
+  task: UpdateNotificationActiveTask;
+};
 
 export type UpdateNotificationResult = {
   state: UpdateNotificationState;
@@ -274,7 +270,7 @@ export const updateNotificationReducer = (
           presentation: 'card',
           releaseNotesStatus: event.releaseNotes ? 'loaded' : 'loading',
         },
-        effects: [{ type: 'loadManualReleaseInfoForDisplay' }],
+        effects: [],
       };
     case 'checkAvailable':
       return {

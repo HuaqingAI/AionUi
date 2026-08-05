@@ -380,9 +380,9 @@
   "addModelTips": "You can paste any model name directly. Keep it consistent with the provider console for best compatibility.",
   "customOpenAI": "Custom (OpenAI Compatible)",
   "platformCustom": "Custom",
-  "platformNewApi": "New API",
+  "platformHTH": "HTH",
   "modelProtocol": "Request Protocol",
-  "modelProtocolTip": "Choose the API request format for this model. new-api gateway will route to the upstream using the selected protocol.",
+  "modelProtocolTip": "Choose the API request format for this model. HTH gateway will route to the upstream using the selected protocol.",
   "configureModel": "Configure model",
   "modelSettingAuto": "Automatic (recommended)",
   "imageInput": "Vision input",
@@ -432,7 +432,7 @@
   "agent": "Agent",
   "skills": "Skills",
   "tools": "Tools",
-  "toolsDescription": "Configure MCP servers and built-in tools like image generation. Image generation must be enabled after configuring an image-capable model on the Model page.",
+  "toolsDescription": "Configure MCP servers and built-in tools.",
   "modelDescription": "Configure LLM providers and API keys for use across all assistants. Only Aion CLI supports custom models; other agents use their own built-in models.",
   "capabilities": "Capabilities",
   "capabilitiesTab": {
@@ -1102,7 +1102,7 @@
   "agentManagement": {
     "localAgents": "Local Agents",
     "remoteAgents": "Remote Agents",
-    "localAgentsDescription": "Manage the AI coding agents available on this device. Aion CLI is built in and ships with the app — no install needed; other agents are detected only after their CLI is installed locally.",
+    "localAgentsDescription": "Manage the AI coding agents available on this device.",
     "localAgentsSetupLink": "Setup guide",
     "goToChat": "Start Chat",
     "remoteAgentsDescription": "Only remote OpenClaw connections are supported for now. Other agents are in development.",
@@ -1284,6 +1284,14 @@
       "diagnoseChatError": "I ran into an error during a conversation in AionUi, please help me diagnose it.\n\n[Error] {{error}}\n\nPlease diagnose the cause and tell me how to fix it."
     },
     "solveWithButler": "Ask the Butler"
+  },
+  "hth": {
+    "syncAssistants": "Sync from HTH",
+    "syncSuccess": "HTH sync complete: {{success}} successful, {{failed}} failed",
+    "syncFailed": "HTH sync failed",
+    "logout": "Sign out of HTH",
+    "logoutSuccess": "Signed out of HTH",
+    "logoutFailed": "Failed to sign out of HTH"
   },
   "providerIdConflict": "Provider ID already exists. Please try again.",
   "autoInjectedSkillsHint": "Loaded automatically into every conversation — no need to enable them; the agent decides when to use them."

@@ -34,7 +34,7 @@ export const useCustomAgentsLoader = (): UseCustomAgentsLoaderResult => {
       return [] as Assistant[];
     }
   });
-  const assistants = assistantList ?? [];
+  const assistants = (assistantList ?? []).filter((assistant) => assistant.source === 'user');
 
   useEffect(() => {
     void swrMutate('assistants.list');

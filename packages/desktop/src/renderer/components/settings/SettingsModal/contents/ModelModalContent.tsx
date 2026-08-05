@@ -23,7 +23,7 @@ import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import AddModelModal from '@/renderer/pages/settings/components/AddModelModal';
 import AddPlatformModal from '@/renderer/pages/settings/components/AddPlatformModal';
-import { isNewApiPlatform, NEW_API_PROTOCOL_OPTIONS } from '@/renderer/utils/model/modelPlatforms';
+import { HTH_PROTOCOL_OPTIONS, isHTHPlatform } from '@/renderer/utils/model/modelPlatforms';
 import EditModeModal from '@/renderer/pages/settings/components/EditModeModal';
 import AionScrollArea from '@/renderer/components/base/AionScrollArea';
 import TalkToButlerButton from '@/renderer/components/base/TalkToButlerButton';
@@ -54,7 +54,7 @@ const getProtocolColor = (protocol: string): string => {
  * Get protocol display name
  */
 const getProtocolLabel = (protocol: string): string => {
-  return NEW_API_PROTOCOL_OPTIONS.find((p) => p.value === protocol)?.label || 'OpenAI';
+  return HTH_PROTOCOL_OPTIONS.find((p) => p.value === protocol)?.label || 'OpenAI';
 };
 
 /**
@@ -62,9 +62,9 @@ const getProtocolLabel = (protocol: string): string => {
  * Get next protocol (cycle through options)
  */
 const getNextProtocol = (current: string): string => {
-  const idx = NEW_API_PROTOCOL_OPTIONS.findIndex((p) => p.value === current);
-  const nextIdx = (idx + 1) % NEW_API_PROTOCOL_OPTIONS.length;
-  return NEW_API_PROTOCOL_OPTIONS[nextIdx].value;
+  const idx = HTH_PROTOCOL_OPTIONS.findIndex((p) => p.value === current);
+  const nextIdx = (idx + 1) % HTH_PROTOCOL_OPTIONS.length;
+  return HTH_PROTOCOL_OPTIONS[nextIdx].value;
 };
 
 // Calculate API Key count
@@ -511,7 +511,7 @@ const ModelModalContent: React.FC = () => {
                     }
                   >
                     {(platform.models ?? []).map((model: string, index: number, arr: string[]) => {
-                      const isNewApiProvider = isNewApiPlatform(platform.platform);
+                      const isHTHProvider = isHTHPlatform(platform.platform);
                       const modelProtocol = platform.model_protocols?.[model] || 'openai';
                       const modelSettings = platform.model_settings?.[model];
                       const imageInput = modelSettings?.image_input ?? 'auto';
@@ -558,8 +558,8 @@ const ModelModalContent: React.FC = () => {
 
                               <span className='min-w-0 flex-1 truncate text-14px text-t-primary'>{model}</span>
 
-                              {/* New API 协议标签（点击循环切换）/ New API protocol badge (click to cycle) */}
-                              {isNewApiProvider && (
+                              {/* HTH 协议标签（点击循环切换）/ HTH protocol badge (click to cycle) */}
+                              {isHTHProvider && (
                                 <Tag
                                   size='small'
                                   color={getProtocolColor(modelProtocol)}

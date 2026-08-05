@@ -8,6 +8,7 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import SystemSettings from '@/renderer/pages/settings/SystemSettings';
+import { BUILTIN_TAB_IDS } from '@/renderer/pages/settings/components/SettingsSider';
 
 const mockUseLocation = vi.fn();
 
@@ -68,5 +69,13 @@ describe('SystemSettings', () => {
     mockUseLocation.mockReturnValue({ pathname: '/settings/system' });
     render(<SystemSettings />);
     expect(screen.getByTestId('settings-page-wrapper')).toBeInTheDocument();
+  });
+
+  it('omits the desktop pet tab from builtin settings navigation', () => {
+    expect([...BUILTIN_TAB_IDS]).not.toContain('pet');
+  });
+
+  it('omits the model tab from builtin settings navigation', () => {
+    expect([...BUILTIN_TAB_IDS]).not.toContain('model');
   });
 });

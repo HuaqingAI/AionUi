@@ -5,7 +5,7 @@
  */
 
 import { AuthType } from '@/common/types/provider/authType';
-import { isNewApiPlatform } from './platformConstants';
+import { isHTHPlatform } from './platformConstants';
 
 /**
  * 根据平台名称获取对应的认证类型
@@ -39,18 +39,18 @@ export function getAuthTypeFromPlatform(platform: string): AuthType {
     return AuthType.USE_BEDROCK;
   }
 
-  // New API 网关默认使用 OpenAI 兼容协议（per-model 协议由 getProviderAuthType 处理）
-  // New API gateway defaults to OpenAI compatible (per-model protocol handled by getProviderAuthType)
+  // HTH 网关默认使用 OpenAI 兼容协议（per-model 协议由 getProviderAuthType 处理）
+  // HTH gateway defaults to OpenAI compatible (per-model protocol handled by getProviderAuthType)
   // 其他所有平台默认使用OpenAI兼容协议
-  // 包括：OpenRouter, OpenAI, DeepSeek, new-api, 等
+  // 包括：OpenRouter, OpenAI, DeepSeek, hth, 等
   return AuthType.USE_OPENAI;
 }
 
 /**
  * 获取provider的认证类型，优先使用明确指定的authType，否则根据platform推断
- * 对于 new-api 平台，支持基于模型名称的协议覆盖
+ * 对于 hth 平台，支持基于模型名称的协议覆盖
  * Get provider auth type, prefer explicit authType, otherwise infer from platform
- * For new-api platform, supports per-model protocol overrides
+ * For hth platform, supports per-model protocol overrides
  * @param provider 包含platform和可选authType的provider配置
  * @returns 认证类型
  */
@@ -65,9 +65,9 @@ export function getProviderAuthType(provider: {
     return provider.auth_type;
   }
 
-  // new-api 平台：根据模型名称查找协议覆盖
-  // new-api platform: look up per-model protocol override
-  if (isNewApiPlatform(provider.platform) && provider.use_model && provider.model_protocols) {
+  // hth 平台：根据模型名称查找协议覆盖
+  // hth platform: look up per-model protocol override
+  if (isHTHPlatform(provider.platform) && provider.use_model && provider.model_protocols) {
     const protocol = provider.model_protocols[provider.use_model];
     if (protocol) {
       return getAuthTypeFromPlatform(protocol);

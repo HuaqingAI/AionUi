@@ -5,16 +5,16 @@
  */
 
 import { ipcBridge } from '@/common';
+import type { IRuntimeStatusEvent, RuntimeFailureKind } from '@/common/adapter/ipcBridge';
 import { parseError } from '@/common/utils';
 import { formatManagedAgentDiagnosticMessage, type ManagedAgent } from '@/renderer/utils/model/agentTypes';
 import AionModal from '@/renderer/components/base/AionModal';
 import { AionSearchInput } from '@/renderer/components/base';
 import { useLayoutContext } from '@/renderer/hooks/context/LayoutContext';
 import { useManagedAgents } from '@/renderer/hooks/agent/useManagedAgents';
-import { openExternalUrl } from '@/renderer/utils/platform';
-import { Button, Message, Typography } from '@arco-design/web-react';
+import { Alert, Message, Typography } from '@arco-design/web-react';
 import TalkToButlerButton from '@/renderer/components/base/TalkToButlerButton';
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import AgentCard from './AgentCard';
 import { isDeprecatedRuntimeAgentType } from '@/renderer/utils/model/agentTypeSupportPolicy';
@@ -28,7 +28,67 @@ import {
   type AgentAvailabilityFilter,
 } from './agentFilters';
 
-const LOCAL_AGENT_SETUP_GUIDE_URL = 'https://github.com/iOfficeAI/AionUi/wiki/ACP-Setup';
+type VisibleAgentAvailabilityFilter = Extract<AgentAvailabilityFilter, 'all' | 'available'>;
+
+const VISIBLE_AGENT_TOOL_IDS = new Set(['codex', 'opencode']);
+const STARTUP_RUNTIME_TOOL_LABELS: Record<string, string> = {
+  codex: 'Codex',
+  opencode: 'OpenCode',
+};
+const STARTUP_RUNTIME_SCOPE_TOOL_IDS: Record<string, string> = {
+  'startup-codex': 'codex',
+  'startup-opencode': 'opencode',
+};
+
+type OpenCodePreparationBanner = {
+  type: 'info' | 'success' | 'error';
+  message: string;
+};
+
+const PREPARATION_ALERT_BASE_CLASS =
+  '!rounded-10px !border !border-solid !px-14px !py-10px [&_.arco-alert-content]:!text-13px [&_.arco-alert-content]:!font-500';
+const PREPARATION_ALERT_TONE_CLASS: Record<OpenCodePreparationBanner['type'], string> = {
+  info: '!border-primary-5 !bg-primary-light-1 !shadow-[0_8px_24px_rgba(var(--primary-6),0.18)] [&_.arco-alert-content]:!text-primary-7 [&_.arco-alert-icon]:!text-primary-6',
+  success:
+    '!border-success-5 !bg-success-light-1 !shadow-[0_8px_24px_rgba(var(--success-6),0.16)] [&_.arco-alert-content]:!text-success-7 [&_.arco-alert-icon]:!text-success-6',
+  error:
+    '!border-danger-5 !bg-danger-light-1 !shadow-[0_8px_24px_rgba(var(--danger-6),0.18)] [&_.arco-alert-content]:!text-danger-7 [&_.arco-alert-icon]:!text-danger-6',
+};
+
+function resolveStartupRuntimeToolLabel(event: IRuntimeStatusEvent): string | null {
+  if (event.scope.kind !== 'custom_agent') {
+    return null;
+  }
+  const resourceToolId = event.resource_id && STARTUP_RUNTIME_TOOL_LABELS[event.resource_id] ? event.resource_id : null;
+  const toolId = resourceToolId ?? STARTUP_RUNTIME_SCOPE_TOOL_IDS[event.scope.id];
+  return toolId ? (STARTUP_RUNTIME_TOOL_LABELS[toolId] ?? null) : null;
+}
+
+function runtimeFailureTranslationKey(kind?: RuntimeFailureKind): string {
+  switch (kind) {
+    case 'timeout':
+      return 'settings.runtimeStatus.failedTimeout';
+    case 'download_failed':
+      return 'settings.runtimeStatus.failedDownload';
+    case 'http_status':
+      return 'settings.runtimeStatus.failedHttp';
+    case 'checksum_mismatch':
+      return 'settings.runtimeStatus.failedChecksum';
+    case 'validation_failed':
+      return 'settings.runtimeStatus.failedValidation';
+    case 'unsupported_platform':
+      return 'settings.runtimeStatus.failedUnsupported';
+    case 'bundled_resource_missing':
+    case 'bundled_resource_invalid':
+      return 'settings.runtimeStatus.failedBundled';
+    default:
+      return 'settings.runtimeStatus.failedUnknown';
+  }
+}
+
+function isVisibleLocalAgent(agent: ManagedAgent): boolean {
+  return VISIBLE_AGENT_TOOL_IDS.has(agent.backend) || VISIBLE_AGENT_TOOL_IDS.has(agent.agent_type);
+}
 
 const LocalAgents: React.FC = () => {
   const { t, i18n } = useTranslation();
@@ -36,22 +96,68 @@ const LocalAgents: React.FC = () => {
   const layout = useLayoutContext();
   const isMobile = layout?.isMobile ?? false;
   const [testingAgentId, setTestingAgentId] = useState<string | null>(null);
-  const [agentFilter, setAgentFilter] = useState<AgentAvailabilityFilter>('all');
+  const [agentFilter, setAgentFilter] = useState<VisibleAgentAvailabilityFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [openCodePreparation, setOpenCodePreparation] = useState<OpenCodePreparationBanner | null>(null);
   const { assistants } = useAssistantsForAgents();
 
-  // Management view: includes user-disabled custom agents so they stay
-  // listed (greyed) with a working re-enable toggle. `refreshCatalog`
-  // also refreshes assistant list caches because generated-assistant availability
-  // can change after health checks or custom-agent mutations.
+  // `refreshCatalog` also refreshes assistant list caches because
+  // generated-assistant availability can change after health checks.
   const { agents: allAgents, isRefreshing, refreshCatalog } = useManagedAgents();
 
-  // Hide deprecated runtime backends (nanobot / openclaw-gateway / remote / gemini)
-  // — they are no longer offered as agents and shouldn't appear on the detection page.
-  const officialAgents = allAgents.filter(
-    (a) => a.agent_source !== 'custom' && !isDeprecatedRuntimeAgentType(a.agent_type)
-  );
+  useEffect(() => {
+    const handleRuntimeStatus = (event: IRuntimeStatusEvent) => {
+      const resource = resolveStartupRuntimeToolLabel(event);
+      if (!resource) {
+        return;
+      }
+      switch (event.phase) {
+        case 'waiting_for_lock':
+          setOpenCodePreparation({
+            type: 'info',
+            message: t('settings.runtimeStatus.waitingForLock', { resource }),
+          });
+          break;
+        case 'downloading':
+        case 'extracting':
+          setOpenCodePreparation({
+            type: 'info',
+            message: t('settings.runtimeStatus.downloading', { resource }),
+          });
+          break;
+        case 'validating':
+          setOpenCodePreparation({
+            type: 'info',
+            message: t('settings.runtimeStatus.validating', { resource }),
+          });
+          break;
+        case 'ready':
+          setOpenCodePreparation({
+            type: 'success',
+            message: t('settings.runtimeStatus.ready', { resource }),
+          });
+          break;
+        case 'failed':
+          setOpenCodePreparation({
+            type: 'error',
+            message: t(runtimeFailureTranslationKey(event.failure_kind), { resource }),
+          });
+          break;
+      }
+    };
+    const unsubscribeBackendStatus = ipcBridge.runtime.statusChanged.on(handleRuntimeStatus);
+    const unsubscribeLocalStatus = ipcBridge.runtime.localStatusChanged.on(handleRuntimeStatus);
+    return () => {
+      unsubscribeBackendStatus();
+      unsubscribeLocalStatus();
+    };
+  }, [t]);
 
+  // Hide deprecated runtime backends (nanobot / openclaw-gateway / remote / gemini)
+  // They are no longer offered as agents and shouldn't appear on the detection page.
+  const officialAgents = allAgents.filter(
+    (a) => a.agent_source !== 'custom' && isVisibleLocalAgent(a) && !isDeprecatedRuntimeAgentType(a.agent_type)
+  );
   const customAgents: ManagedAgent[] = allAgents.filter((a) => a.agent_source === 'custom');
 
   const [editorVisible, setEditorVisible] = useState(false);
@@ -134,17 +240,6 @@ const LocalAgents: React.FC = () => {
   const sortedOfficialAgents = useMemo(
     () =>
       officialAgents.toSorted((left, right) => {
-        const leftIsAionrs = left.agent_type === 'aionrs' || left.backend === 'aionrs';
-        const rightIsAionrs = right.agent_type === 'aionrs' || right.backend === 'aionrs';
-        if (leftIsAionrs !== rightIsAionrs) {
-          return leftIsAionrs ? -1 : 1;
-        }
-        // Strategic partner: pin Kimi right after the builtin aionrs agent.
-        const leftIsKimi = left.backend === 'kimi';
-        const rightIsKimi = right.backend === 'kimi';
-        if (leftIsKimi !== rightIsKimi) {
-          return leftIsKimi ? -1 : 1;
-        }
         return left.name.localeCompare(right.name);
       }),
     [officialAgents]
@@ -213,21 +308,7 @@ const LocalAgents: React.FC = () => {
       <SettingsPageHeader
         data-testid='agent-management-header'
         title={t('settings.agents', { defaultValue: 'Agents' })}
-        description={
-          <>
-            <span>{t('settings.agentManagement.localAgentsDescription')} </span>
-            <Button
-              type='text'
-              size='mini'
-              className='!h-auto !p-0 !align-baseline !text-13px !font-normal !text-primary-6 hover:!text-primary-7 hover:!underline underline-offset-2'
-              onClick={() => {
-                void openExternalUrl(LOCAL_AGENT_SETUP_GUIDE_URL).catch(console.error);
-              }}
-            >
-              {t('settings.agentManagement.localAgentsSetupLink')}
-            </Button>
-          </>
-        }
+        description={t('settings.agentManagement.localAgentsDescription')}
         actions={
           <>
             {!isMobile && (
@@ -262,18 +343,21 @@ const LocalAgents: React.FC = () => {
             label: t('settings.agentManagement.filterAvailable', { defaultValue: 'Available' }),
             count: officialFilterStats.available,
           },
-          {
-            key: 'unavailable',
-            label: t('settings.agentManagement.filterUnavailable', { defaultValue: 'Unavailable' }),
-            count: officialFilterStats.unavailable,
-          },
         ]}
         activeTab={agentFilter}
-        onTabChange={(key) => setAgentFilter(key as AgentAvailabilityFilter)}
+        onTabChange={(key) => setAgentFilter(key as VisibleAgentAvailabilityFilter)}
       />
 
       {isRefreshing ? (
         <div className='text-11px text-t-tertiary'>{t('settings.agentManagement.refreshingStatuses')}</div>
+      ) : null}
+
+      {openCodePreparation ? (
+        <Alert
+          type={openCodePreparation.type}
+          content={openCodePreparation.message}
+          className={`${PREPARATION_ALERT_BASE_CLASS} ${PREPARATION_ALERT_TONE_CLASS[openCodePreparation.type]}`}
+        />
       ) : null}
 
       {/* Detected Agents section */}
@@ -300,7 +384,6 @@ const LocalAgents: React.FC = () => {
         </div>
       </div>
 
-      {/* Custom Agents section */}
       <div data-testid='agent-management-custom-header' className='flex flex-col gap-2px'>
         <Typography.Text className='text-13px font-medium text-t-secondary block'>
           {t('settings.agentManagement.customAgents', { defaultValue: 'Custom Agents' })}
@@ -331,11 +414,6 @@ const LocalAgents: React.FC = () => {
           overflow: 'auto',
         }}
       >
-        {/* Conditional mount + key unmounts the editor on close so the
-            next `创建自定义 Agent` click always starts from a blank form.
-            The inner useEffect([agent]) only resets when the `agent`
-            reference changes; two consecutive `null` values would not
-            retrigger it. */}
         {editorVisible && (
           <InlineAgentEditor
             key={editingAgent?.id ?? 'new'}

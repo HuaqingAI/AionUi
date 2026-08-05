@@ -5,40 +5,40 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { isNewApiPlatform, NEW_API_PLATFORM_ID } from '@/common/utils/platformConstants';
+import { HTH_PLATFORM_ID, isHTHPlatform } from '@/common/utils/platformConstants';
 
 describe('platformConstants', () => {
-  describe('NEW_API_PLATFORM_ID', () => {
-    it('is defined as "new-api"', () => {
-      expect(NEW_API_PLATFORM_ID).toBe('new-api');
+  describe('HTH_PLATFORM_ID', () => {
+    it('is defined as "hth"', () => {
+      expect(HTH_PLATFORM_ID).toBe('hth');
     });
   });
 
-  describe('isNewApiPlatform', () => {
-    it('returns true for new-api platform', () => {
-      expect(isNewApiPlatform('new-api')).toBe(true);
-      expect(isNewApiPlatform(NEW_API_PLATFORM_ID)).toBe(true);
+  describe('isHTHPlatform', () => {
+    it('returns true for hth platform', () => {
+      expect(isHTHPlatform('hth')).toBe(true);
+      expect(isHTHPlatform(HTH_PLATFORM_ID)).toBe(true);
     });
 
     it('returns false for other platforms', () => {
-      expect(isNewApiPlatform('openai')).toBe(false);
-      expect(isNewApiPlatform('anthropic')).toBe(false);
-      expect(isNewApiPlatform('bedrock')).toBe(false);
-      expect(isNewApiPlatform('custom')).toBe(false);
+      expect(isHTHPlatform('openai')).toBe(false);
+      expect(isHTHPlatform('anthropic')).toBe(false);
+      expect(isHTHPlatform('bedrock')).toBe(false);
+      expect(isHTHPlatform('custom')).toBe(false);
     });
 
     it('returns false for empty string', () => {
-      expect(isNewApiPlatform('')).toBe(false);
+      expect(isHTHPlatform('')).toBe(false);
     });
 
     it('returns false for null/undefined', () => {
-      expect(isNewApiPlatform(null as any)).toBe(false);
-      expect(isNewApiPlatform(undefined as any)).toBe(false);
+      expect(isHTHPlatform(null as any)).toBe(false);
+      expect(isHTHPlatform(undefined as any)).toBe(false);
     });
 
     it('is case-sensitive', () => {
-      expect(isNewApiPlatform('NEW-API')).toBe(false);
-      expect(isNewApiPlatform('New-Api')).toBe(false);
+      expect(isHTHPlatform('HTH')).toBe(false);
+      expect(isHTHPlatform('HTH')).toBe(false);
     });
   });
 });

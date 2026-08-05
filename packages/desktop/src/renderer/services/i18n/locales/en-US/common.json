@@ -158,5 +158,10 @@
     "second_short": "s"
   },
   "selectedCount": "Selected {{count}}",
-  "selectedSkills": "Selected skills"
+  "selectedSkills": "Selected skills",
+  "modelQuota": "Model quota",
+  "walletQuota": "Wallet",
+  "enterpriseSubscriptionQuota": "Enterprise subscription",
+  "personalSubscriptionQuota": "Personal subscription",
+  "totalAvailableQuota": "Total available"
 }

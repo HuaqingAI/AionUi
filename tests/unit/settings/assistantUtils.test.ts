@@ -11,6 +11,7 @@ import {
   sortAssistants,
   filterAssistants,
   groupAssistantsByEnabled,
+  groupMyAssistants,
   resolveAssistantSourceTag,
 } from '@/renderer/pages/settings/AssistantSettings/assistantUtils';
 import type { AssistantListItem } from '@/renderer/pages/settings/AssistantSettings/types';
@@ -55,7 +56,7 @@ describe('isEmoji', () => {
 
   it('returns false for empty or undefined', () => {
     expect(isEmoji('')).toBe(false);
-    expect(isEmoji(undefined as any)).toBe(false);
+    expect(isEmoji(undefined as unknown as string)).toBe(false);
   });
 
   it('returns false for emoji mixed with text', () => {
@@ -199,7 +200,7 @@ describe('groupAssistantsByEnabled', () => {
   });
 
   it('treats undefined enabled as enabled (default)', () => {
-    const assistants = [mockAssistant({ id: 'a1', enabled: undefined as any })];
+    const assistants = [mockAssistant({ id: 'a1', enabled: undefined })];
     const { enabledAssistants, disabledAssistants } = groupAssistantsByEnabled(assistants);
     expect(enabledAssistants.map((a) => a.id)).toEqual(['a1']);
     expect(disabledAssistants).toEqual([]);
@@ -223,6 +224,22 @@ describe('groupAssistantsByEnabled', () => {
     const { enabledAssistants, disabledAssistants } = groupAssistantsByEnabled(assistants);
     expect(enabledAssistants).toEqual([]);
     expect(disabledAssistants.map((a) => a.id)).toEqual(['a1', 'a2']);
+  });
+});
+
+describe('groupMyAssistants', () => {
+  it('returns only user-created assistants for the My Assistants tab', () => {
+    const assistants = [
+      mockAssistant({ id: 'cli', source: 'generated', sort_order: 1 }),
+      mockAssistant({ id: 'official', source: 'builtin', sort_order: 2 }),
+      mockAssistant({ id: 'custom-late', source: 'user', sort_order: 4 }),
+      mockAssistant({ id: 'custom-early', source: 'user', sort_order: 3 }),
+    ];
+
+    const { cliAssistants, createdAssistants } = groupMyAssistants(assistants);
+
+    expect(cliAssistants).toEqual([]);
+    expect(createdAssistants.map((assistant) => assistant.id)).toEqual(['custom-early', 'custom-late']);
   });
 });
 

@@ -50,6 +50,17 @@ import type {
   UpdateProviderRequest,
 } from '../types/provider/providerApi';
 import type {
+  HTHAuthStatus,
+  HTHExchangeLoginCodeRequest,
+  HTHInjectProjectConfigRequest,
+  HTHInjectProjectConfigResult,
+  HTHQuotaSummary,
+  HTHStartLoginRequest,
+  HTHStartLoginResult,
+  HTHSyncAgentConfigsRequest,
+  HTHSyncResult,
+} from '../types/hth';
+import type {
   ITeamAgentRemovedEvent,
   ITeamAgentRenamedEvent,
   ITeamAgentRuntimeStatusEvent,
@@ -370,6 +381,7 @@ export const conversation = {
 
 export const runtime = {
   statusChanged: wsEmitter<IRuntimeStatusEvent>('runtime.statusChanged'),
+  localStatusChanged: bridge.buildEmitter<IRuntimeStatusEvent>('runtime.local-status-changed'),
 };
 
 // ---------------------------------------------------------------------------
@@ -501,6 +513,23 @@ export const application = {
     'app.log-stream'
   ),
   devToolsStateChanged: bridge.buildEmitter<{ isOpen: boolean }>('app.devtools-state-changed'),
+};
+
+// ---------------------------------------------------------------------------
+// hth desktop integration - Electron-local auth and package sync
+// ---------------------------------------------------------------------------
+
+export const hth = {
+  authStatus: bridge.buildProvider<HTHAuthStatus, void>('hth.auth-status'),
+  startLogin: bridge.buildProvider<HTHStartLoginResult, HTHStartLoginRequest>('hth.start-login'),
+  exchangeLoginCode: bridge.buildProvider<HTHAuthStatus, HTHExchangeLoginCodeRequest>('hth.exchange-login-code'),
+  logout: bridge.buildProvider<HTHAuthStatus, void>('hth.logout'),
+  syncAgentConfigs: bridge.buildProvider<HTHSyncResult, HTHSyncAgentConfigsRequest>('hth.sync-agent-configs'),
+  injectProjectConfig: bridge.buildProvider<HTHInjectProjectConfigResult, HTHInjectProjectConfigRequest>(
+    'hth.inject-project-config'
+  ),
+  quotaSummary: bridge.buildProvider<HTHQuotaSummary | null, void>('hth.quota-summary'),
+  refreshQuotaSummary: bridge.buildProvider<HTHQuotaSummary, void>('hth.refresh-quota-summary'),
 };
 
 // ---------------------------------------------------------------------------
@@ -894,6 +923,7 @@ export const acpConversation = {
     (p) => `/api/agents/${p.id}/health-check`,
     () => undefined
   ),
+  managedAgentHealthChanged: bridge.buildEmitter<{ id?: string; status?: string }>('agents.managed-health-changed'),
   checkProviderHealth: httpPost<ProviderHealthCheckResponse, ProviderHealthCheckRequest>(
     '/api/agents/provider-health-check'
   ),
@@ -1246,9 +1276,6 @@ export const systemSettings = {
   getPetConfirmEnabled: bridge.buildProvider<boolean, void>('system-settings:get-pet-confirm-enabled'),
   setPetConfirmEnabled: bridge.buildProvider<void, { enabled: boolean }>('system-settings:set-pet-confirm-enabled'),
   ensureNodeRuntime: httpPost<{ ready: boolean }, { scope: IRuntimeStatusScope }>('/api/system/ensure-node-runtime'),
-  ensureManagedAcpTool: httpPost<{ ready: boolean }, { scope: IRuntimeStatusScope; tool_id: string }>(
-    '/api/system/ensure-managed-acp-tool'
-  ),
 };
 
 // ---------------------------------------------------------------------------

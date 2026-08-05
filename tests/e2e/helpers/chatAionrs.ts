@@ -101,9 +101,9 @@ export async function getAionrsTestModels(page: Page): Promise<AionrsTestModels 
       const baseUrl = String(p.baseUrl || '');
       // aionrs appends `/v1/chat/completions`. Compatible when:
       //  - non-openai-compat providers (anthropic/bedrock/vertex) — handled separately
-      //  - platform is `new-api` (standard OpenAI-compatible endpoint)
+      //  - platform is `hth` (standard OpenAI-compatible endpoint)
       //  - platform is `custom` AND baseUrl ends with `/v1` (or `/v1/`) so stripTrailingV1 works
-      if (['anthropic', 'bedrock', 'gemini-vertex-ai', 'new-api'].includes(platform)) return true;
+      if (['anthropic', 'bedrock', 'gemini-vertex-ai', 'hth'].includes(platform)) return true;
       if (platform === 'custom') return /\/v1\/?$/.test(baseUrl);
       return false;
     };
@@ -120,7 +120,7 @@ export async function getAionrsTestModels(page: Page): Promise<AionrsTestModels 
       custom: 0, // Prefer user-configured OpenAI-compat endpoints (e.g. official OpenAI) first
       anthropic: 1,
       gemini: 2,
-      'new-api': 3, // Often uses relay gateways with rotating tokens — deprioritize
+      'hth': 3, // Often uses relay gateways with rotating tokens — deprioritize
       bedrock: 4,
       'gemini-vertex-ai': 5,
     };

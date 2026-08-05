@@ -4,16 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Divider, Typography, Button, Switch, Message } from '@arco-design/web-react';
-import { Github, Right } from '@icon-park/react';
+import { Typography, Button, Message } from '@arco-design/web-react';
+import { Github } from '@icon-park/react';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import classNames from 'classnames';
 import { useSettingsViewMode } from '../settingsViewContext';
 import { isElectronDesktop, openExternalUrl } from '@/renderer/utils/platform';
-import FeedbackReportModal from './FeedbackReportModal';
 import { ipcBridge } from '@/common';
-import { getIncludePrerelease, runUpdateCheck } from '@/renderer/components/settings/checkForUpdatesShared';
+import { runUpdateCheck } from '@/renderer/components/settings/checkForUpdatesShared';
 import { UPDATE_AVAILABLE_EVENT } from '@/renderer/components/settings/useUpdateNotificationController';
 import {
   getUpdateReadyState,
@@ -28,32 +27,16 @@ import {
 // which is a workspace placeholder permanently pinned at "0.0.0".
 declare const __APP_VERSION__: string;
 
-type LinkItem =
-  | { title: string; url: string; icon: React.ReactNode; onClick?: never }
-  | { title: string; onClick: () => void; icon: React.ReactNode; url?: never };
-
 const AboutModalContent: React.FC = () => {
   const { t } = useTranslation();
   const viewMode = useSettingsViewMode();
   const isPageMode = viewMode === 'page';
   const isElectron = isElectronDesktop();
 
-  const [includePrerelease, setIncludePrerelease] = useState(false);
-  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [updateReadyState, setLocalUpdateReadyState] = useState<UpdateReadyState>(() => getUpdateReadyState());
   const [checking, setChecking] = useState(false);
 
-  useEffect(() => {
-    const saved = localStorage.getItem('update.includePrerelease');
-    setIncludePrerelease(saved === 'true');
-  }, []);
-
   useEffect(() => subscribeUpdateReadyState(setLocalUpdateReadyState), []);
-
-  const handlePrereleaseChange = (val: boolean) => {
-    setIncludePrerelease(val);
-    localStorage.setItem('update.includePrerelease', String(val));
-  };
 
   const openLink = async (url: string) => {
     try {
@@ -82,7 +65,7 @@ const AboutModalContent: React.FC = () => {
     setChecking(true);
     try {
       const outcome = await runUpdateCheck({
-        includePrerelease: getIncludePrerelease(),
+        includePrerelease: false,
         fallbackVersion: __APP_VERSION__,
         checkFailedLabel: t('update.checkFailed'),
       });
@@ -100,34 +83,6 @@ const AboutModalContent: React.FC = () => {
     }
   };
 
-  const linkItems: LinkItem[] = [
-    {
-      title: t('settings.helpDocumentation'),
-      url: 'https://github.com/iOfficeAI/AionUi/wiki',
-      icon: <Right theme='outline' size='16' />,
-    },
-    {
-      title: t('settings.updateLog'),
-      url: 'https://github.com/iOfficeAI/AionUi/releases',
-      icon: <Right theme='outline' size='16' />,
-    },
-    {
-      title: t('settings.bugReport'),
-      onClick: () => setShowFeedbackModal(true),
-      icon: <Right theme='outline' size='16' />,
-    },
-    {
-      title: t('settings.contactMe'),
-      url: 'https://x.com/WailiVery',
-      icon: <Right theme='outline' size='16' />,
-    },
-    {
-      title: t('settings.officialWebsite'),
-      url: 'https://www.aionui.com',
-      icon: <Right theme='outline' size='16' />,
-    },
-  ];
-
   return (
     <div className='flex flex-col h-full w-full'>
       {/* Content Area */}
@@ -141,7 +96,7 @@ const AboutModalContent: React.FC = () => {
           {/* App Info Section */}
           <div className='flex flex-col items-center pb-24px'>
             <Typography.Title heading={3} className='text-24px font-bold text-t-primary mb-8px'>
-              AionUi
+              HTHBuddy
             </Typography.Title>
             <Typography.Text className='text-14px text-t-secondary mb-12px text-center'>
               {t('settings.appDescription')}
@@ -180,43 +135,11 @@ const AboutModalContent: React.FC = () => {
                         ? t('settings.checkingForUpdates')
                         : t('settings.checkForUpdates')}
                 </Button>
-                <div className='flex items-center justify-between w-full'>
-                  <Typography.Text className='text-12px text-t-secondary'>
-                    {t('settings.includePrereleaseUpdates')}
-                  </Typography.Text>
-                  <Switch size='small' checked={includePrerelease} onChange={handlePrereleaseChange} />
-                </div>
               </div>
             )}
           </div>
-
-          {/* Divider */}
-          <Divider className='my-16px' />
-
-          {/* Links Section */}
-          <div className='flex flex-col gap-4px pt-8px'>
-            {linkItems.map((item, index) => (
-              <div
-                key={index}
-                className='flex items-center justify-between px-16px py-12px rd-8px hover:bg-fill-2 transition-all cursor-pointer group'
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if ('url' in item) {
-                    openLink(item.url).catch((error) => console.error('Failed to open link:', error));
-                  } else {
-                    item.onClick();
-                  }
-                }}
-              >
-                <Typography.Text className='text-14px text-t-primary'>{item.title}</Typography.Text>
-                <div className='text-t-secondary group-hover:text-t-primary transition-colors'>{item.icon}</div>
-              </div>
-            ))}
-          </div>
         </div>
       </div>
-      <FeedbackReportModal visible={showFeedbackModal} onCancel={() => setShowFeedbackModal(false)} />
     </div>
   );
 };

@@ -5,15 +5,15 @@
  */
 
 /**
- * New API 网关平台标识
- * New API gateway platform identifier
+ * HTH 网关平台标识
+ * HTH gateway platform identifier
  */
-export const NEW_API_PLATFORM_ID = 'new-api';
+export const HTH_PLATFORM_ID = 'hth';
 
 /**
- * 检查平台是否为 New API 网关类型
- * Check if platform is New API gateway type
+ * 检查平台是否为 HTH 网关类型
+ * Check if platform is HTH gateway type
  */
-export const isNewApiPlatform = (platform: string): boolean => {
-  return platform === NEW_API_PLATFORM_ID;
+export const isHTHPlatform = (platform: string): boolean => {
+  return platform === HTH_PLATFORM_ID;
 };

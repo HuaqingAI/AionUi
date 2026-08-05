@@ -33,6 +33,7 @@ import {
   type ConversationCommandQueueItem,
 } from '@/renderer/pages/conversation/platforms/useConversationCommandQueue';
 import { useConversationRuntimeView } from '@/renderer/pages/conversation/runtime/useConversationRuntimeView';
+import { useHTHProjectConfigInjection } from '@/renderer/pages/conversation/hooks/useHTHProjectConfigInjection';
 import { getConversationOrNull } from '@/renderer/pages/conversation/utils/conversationCache';
 import { getConversationRuntimeWorkspaceErrorMessage } from '@/renderer/pages/conversation/utils/conversationCreateError';
 import { getChatSurfaceWidthClass } from '@/renderer/pages/conversation/utils/chatSurfaceWidth';
@@ -117,12 +118,21 @@ const useSendBoxDraft = (conversation_id: string) => {
 const AionrsSendBox: React.FC<{
   conversation_id: string;
   modelSelection: AionrsModelSelection;
+  initialWorkspacePath?: string;
   session_mode?: string;
   agent_name?: string;
   teamSendMessage?: (payload: { input: string; files: string[] }) => Promise<void>;
   teamRuntime?: TeamSendBoxRuntime;
-}> = ({ conversation_id, modelSelection, session_mode, agent_name, teamSendMessage, teamRuntime }) => {
-  const [workspacePath, setWorkspacePath] = useState('');
+}> = ({
+  conversation_id,
+  modelSelection,
+  initialWorkspacePath,
+  session_mode,
+  agent_name,
+  teamSendMessage,
+  teamRuntime,
+}) => {
+  const [workspacePath, setWorkspacePath] = useState(initialWorkspacePath || '');
   const [dynamicModes, setDynamicModes] = useState<AgentModeOption[]>([]);
   const [currentMode, setCurrentMode] = useState<string | undefined>(session_mode);
   const [isMobileSheetOpen, setIsMobileSheetOpen] = useState(false);
@@ -183,6 +193,12 @@ const AionrsSendBox: React.FC<{
   });
   const runtimeMode = runtimeConfig.mode;
   const runtimeThoughtLevel = runtimeConfig.thoughtLevel;
+  const injectHTHProjectConfig = useHTHProjectConfigInjection({
+    conversationId: conversation_id,
+    workspace: workspacePath,
+    assistantId: conversationContext?.assistantId,
+    prepareRuntime: teamPermission ? prepareRuntimeSync : undefined,
+  });
 
   useEffect(() => {
     if (!runtimeMode?.currentValue) return;
@@ -190,11 +206,15 @@ const AionrsSendBox: React.FC<{
   }, [runtimeMode?.currentValue]);
 
   useEffect(() => {
+    if (initialWorkspacePath) {
+      setWorkspacePath(initialWorkspacePath);
+      return;
+    }
     void getConversationOrNull(conversation_id).then((res) => {
       if (!res?.extra?.workspace) return;
       setWorkspacePath(res.extra.workspace);
     });
-  }, [conversation_id]);
+  }, [conversation_id, initialWorkspacePath]);
 
   useEffect(() => {
     if (!conversation_id) return;
@@ -262,6 +282,7 @@ const AionrsSendBox: React.FC<{
         throw new Error('No model selected');
       }
 
+      await injectHTHProjectConfig();
       const displayMessage = buildDisplayMessage(input, files, workspacePath);
       try {
         void checkAndUpdateTitle(conversation_id, input);
@@ -312,6 +333,7 @@ const AionrsSendBox: React.FC<{
       checkAndUpdateTitle,
       conversation_id,
       current_model?.use_model,
+      injectHTHProjectConfig,
       markSendAccepted,
       markSendFailed,
       markSendStarted,
@@ -332,7 +354,6 @@ const AionrsSendBox: React.FC<{
     enqueue,
     remove,
     prioritize,
-    sendNow,
     clear,
     reorder,
     toggleMode,

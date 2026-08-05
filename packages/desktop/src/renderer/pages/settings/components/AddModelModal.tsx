@@ -13,9 +13,9 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import useModeModeList from '@renderer/hooks/agent/useModeModeList';
 import {
-  isNewApiPlatform,
-  NEW_API_PROTOCOL_OPTIONS,
-  detectNewApiProtocol,
+  isHTHPlatform,
+  HTH_PROTOCOL_OPTIONS,
+  detectHTHProtocol,
 } from '@/renderer/utils/model/modelPlatforms';
 
 const AddModelModal = ModalHOC<{ data?: IProvider; model?: string; onSubmit: (model: IProvider) => void }>(
@@ -25,7 +25,7 @@ const AddModelModal = ModalHOC<{ data?: IProvider; model?: string; onSubmit: (mo
     const [modelProtocol, setModelProtocol] = useState<string>('openai');
     const [imageInput, setImageInput] = useState<ModelImageInputChoice>('auto');
     const [openAiApiMode, setOpenAiApiMode] = useState<ModelOpenAiApiModeChoice>('auto');
-    const isNewApi = isNewApiPlatform(data?.platform ?? '');
+    const isHTH = isHTHPlatform(data?.platform ?? '');
     const isEditing = Boolean(editingModel);
     const { data: modelList, isLoading } = useModeModeList(data?.platform, data?.base_url, data?.api_key);
     const existingModels = data?.models || [];
@@ -63,8 +63,8 @@ const AddModelModal = ModalHOC<{ data?: IProvider; model?: string; onSubmit: (mo
         ),
       };
 
-      // new-api 平台：为每个选中的模型添加协议配置 / new-api platform: add protocol config for every selected model
-      if (isNewApi) {
+      // hth 平台：为每个选中的模型添加协议配置 / hth platform: add protocol config for every selected model
+      if (isHTH) {
         updatedData.model_protocols = {
           ...data?.model_protocols,
           ...Object.fromEntries(targetModels.map((model) => [model, modelProtocol])),
@@ -78,7 +78,7 @@ const AddModelModal = ModalHOC<{ data?: IProvider; model?: string; onSubmit: (mo
       editingModel,
       existingModels,
       imageInput,
-      isNewApi,
+      isHTH,
       modelProtocol,
       models,
       onSubmit,
@@ -114,8 +114,8 @@ const AddModelModal = ModalHOC<{ data?: IProvider; model?: string; onSubmit: (mo
                 loading={isLoading}
                 onChange={(value: string[]) => {
                   setModels(value);
-                  // new-api 平台：以最后选中的模型推断协议 / new-api: infer protocol from the last picked model
-                  if (isNewApi && value.length > 0) setModelProtocol(detectNewApiProtocol(value[value.length - 1]));
+                  // hth 平台：以最后选中的模型推断协议 / hth: infer protocol from the last picked model
+                  if (isHTH && value.length > 0) setModelProtocol(detectHTHProtocol(value[value.length - 1]));
                 }}
                 value={models}
                 allowCreate
@@ -124,14 +124,14 @@ const AddModelModal = ModalHOC<{ data?: IProvider; model?: string; onSubmit: (mo
             </div>
           )}
 
-          {/* New API 协议选择 / New API Protocol Selection */}
-          {isNewApi && (
+          {/* HTH 协议选择 / HTH protocol selection */}
+          {isHTH && (
             <div className='space-y-8px'>
               <div className='text-13px font-500 text-t-secondary'>{t('settings.modelProtocol')}</div>
               <Select
                 value={modelProtocol}
                 onChange={setModelProtocol}
-                options={NEW_API_PROTOCOL_OPTIONS}
+                options={HTH_PROTOCOL_OPTIONS}
                 triggerProps={{ getPopupContainer: (node) => node.parentElement || document.body }}
               />
               <div className='text-11px text-t-secondary leading-4'>{t('settings.modelProtocolTip')}</div>

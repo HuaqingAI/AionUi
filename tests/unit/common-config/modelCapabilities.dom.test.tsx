@@ -288,11 +288,11 @@ describe('supportsOpenAiApiMode', () => {
 
   it('hides the selector for non-OpenAI wire protocols', () => {
     expect(supportsOpenAiApiMode('anthropic')).toBe(false);
-    expect(supportsOpenAiApiMode('new-api', 'anthropic')).toBe(false);
+    expect(supportsOpenAiApiMode('hth', 'anthropic')).toBe(false);
   });
 
-  it('uses the selected protocol for new-api providers', () => {
-    expect(supportsOpenAiApiMode('new-api', 'openai')).toBe(true);
+  it('uses the selected protocol for hth providers', () => {
+    expect(supportsOpenAiApiMode('hth', 'openai')).toBe(true);
   });
 });
 
@@ -467,7 +467,7 @@ describe('model capability selectors', () => {
   it('applies detected protocol and explicit capabilities to every newly selected model', async () => {
     render(
       <AddModelModal
-        data={provider({ platform: 'new-api' })}
+        data={provider({ platform: 'hth' })}
         modalProps={{ visible: true }}
         modalCtrl={{ close: mocks.close }}
         onSubmit={mocks.onSubmit}
@@ -593,7 +593,7 @@ describe('configured model list', () => {
       'gpt-responses': { image_input: 'supported', openai_api_mode: 'responses' },
     },
     models: ['gpt-responses', 'gpt-chat', 'gpt-auto', 'claude-direct'],
-    platform: 'new-api',
+    platform: 'hth',
   });
 
   beforeEach(() => {

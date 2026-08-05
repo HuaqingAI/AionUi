@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { ClientFactory, normalizeNewApiBaseUrl } from '@/common/api/ClientFactory';
+import { ClientFactory, normalizeHTHBaseUrl } from '@/common/api/ClientFactory';
 import { OpenAIRotatingClient } from '@/common/api/OpenAIRotatingClient';
 import { GeminiRotatingClient } from '@/common/api/GeminiRotatingClient';
 import { AnthropicRotatingClient } from '@/common/api/AnthropicRotatingClient';
@@ -22,7 +22,7 @@ vi.mock('@/common/utils/platformAuthType', () => ({
 }));
 
 vi.mock('@/common/utils/platformConstants', () => ({
-  isNewApiPlatform: vi.fn((platform) => platform === 'new-api'),
+  isHTHPlatform: vi.fn((platform) => platform === 'hth'),
 }));
 
 describe('ClientFactory', () => {
@@ -30,39 +30,39 @@ describe('ClientFactory', () => {
     vi.clearAllMocks();
   });
 
-  describe('normalizeNewApiBaseUrl', () => {
+  describe('normalizeHTHBaseUrl', () => {
     it('adds /v1 suffix for OpenAI', () => {
-      const result = normalizeNewApiBaseUrl('https://api.example.com', AuthType.USE_OPENAI);
+      const result = normalizeHTHBaseUrl('https://api.example.com', AuthType.USE_OPENAI);
       expect(result).toBe('https://api.example.com/v1');
     });
 
     it('strips existing /v1 and re-adds for OpenAI', () => {
-      const result = normalizeNewApiBaseUrl('https://api.example.com/v1', AuthType.USE_OPENAI);
+      const result = normalizeHTHBaseUrl('https://api.example.com/v1', AuthType.USE_OPENAI);
       expect(result).toBe('https://api.example.com/v1');
     });
 
     it('strips /v1beta and adds /v1 for OpenAI', () => {
-      const result = normalizeNewApiBaseUrl('https://api.example.com/v1beta', AuthType.USE_OPENAI);
+      const result = normalizeHTHBaseUrl('https://api.example.com/v1beta', AuthType.USE_OPENAI);
       expect(result).toBe('https://api.example.com/v1');
     });
 
     it('returns root URL for Anthropic', () => {
-      const result = normalizeNewApiBaseUrl('https://api.example.com/v1', AuthType.USE_ANTHROPIC);
+      const result = normalizeHTHBaseUrl('https://api.example.com/v1', AuthType.USE_ANTHROPIC);
       expect(result).toBe('https://api.example.com');
     });
 
     it('returns root URL for Gemini', () => {
-      const result = normalizeNewApiBaseUrl('https://api.example.com/v1', AuthType.USE_GEMINI);
+      const result = normalizeHTHBaseUrl('https://api.example.com/v1', AuthType.USE_GEMINI);
       expect(result).toBe('https://api.example.com');
     });
 
     it('removes trailing slashes', () => {
-      const result = normalizeNewApiBaseUrl('https://api.example.com///', AuthType.USE_OPENAI);
+      const result = normalizeHTHBaseUrl('https://api.example.com///', AuthType.USE_OPENAI);
       expect(result).toBe('https://api.example.com/v1');
     });
 
     it('handles empty base URL', () => {
-      const result = normalizeNewApiBaseUrl('', AuthType.USE_OPENAI);
+      const result = normalizeHTHBaseUrl('', AuthType.USE_OPENAI);
       expect(result).toBe('');
     });
   });
@@ -114,13 +114,13 @@ describe('ClientFactory', () => {
       expect(calls[0][3]).toBe(AuthType.USE_GEMINI);
     });
 
-    it('normalizes base URL for new-api platform', async () => {
-      const newApiProvider = {
+    it('normalizes base URL for hth platform', async () => {
+      const hthProvider = {
         ...mockProvider,
-        platform: 'new-api',
+        platform: 'hth',
         base_url: 'https://gateway.example.com/v1',
       };
-      await ClientFactory.createRotatingClient(newApiProvider);
+      await ClientFactory.createRotatingClient(hthProvider);
       const calls = (OpenAIRotatingClient as any).mock.calls;
       expect(calls.length).toBeGreaterThan(0);
       // Client should receive normalized URL
@@ -128,7 +128,7 @@ describe('ClientFactory', () => {
       expect(config.baseURL).toBe('https://gateway.example.com/v1');
     });
 
-    it('does not normalize base URL for non-new-api platform', async () => {
+    it('does not normalize base URL for non-hth platform', async () => {
       const standardProvider = {
         ...mockProvider,
         platform: 'openai',

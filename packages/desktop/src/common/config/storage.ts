@@ -463,9 +463,9 @@ export interface IProvider {
   context_limit?: number;
   /**
    * 每个模型的协议覆盖配置。映射模型名称到协议字符串。
-   * 仅在 platform 为 'new-api' 时使用。
+   * 仅在 platform 为 'hth' 时使用。
    * Per-model protocol overrides. Maps model name to protocol string.
-   * Only used when platform is 'new-api'.
+   * Only used when platform is 'hth'.
    * e.g. { "gemini-2.5-pro": "gemini", "claude-sonnet-4": "anthropic", "gpt-4o": "openai" }
    */
   model_protocols?: Record<string, string>;

@@ -63,6 +63,23 @@ function normalizeInitialModel(info: AcpModelInfo, initialModelId?: string): Acp
   };
 }
 
+function isOpenCodeZenModel(model: {
+  id?: string | null;
+  value?: string | null;
+  name?: string | null;
+  label?: string | null;
+}): boolean {
+  return [model.label, model.name, model.value, model.id].some((value) => {
+    return typeof value === 'string' && /^opencode\s+zen\//i.test(value.trim());
+  });
+}
+
+function filterOpenCodeZenModels<
+  T extends { id?: string | null; value?: string | null; name?: string | null; label?: string | null },
+>(models: T[]): T[] {
+  return models.filter((model) => !isOpenCodeZenModel(model));
+}
+
 export const useAcpModelInfo = ({
   conversation_id,
   backend: _backend,
@@ -89,7 +106,7 @@ export const useAcpModelInfo = ({
     return {
       current_model_id: currentModelId,
       current_model_label: model.options.find((item) => item.value === currentModelId)?.label || currentModelId || null,
-      available_models: model.options.map((item) => ({
+      available_models: filterOpenCodeZenModels(model.options).map((item) => ({
         id: item.value,
         label: item.label,
         description: item.description ?? undefined,
@@ -117,7 +134,11 @@ export const useAcpModelInfo = ({
       if (message.conversation_id !== conversation_id) return;
       if (message.type === 'acp_model_info' && message.data) {
         const incoming = normalizeInitialModel(message.data as AcpModelInfo, initialModelId);
-        setLegacyModelInfo((previous) => (sameModelInfo(previous, incoming) ? previous : incoming));
+        const filteredIncoming = {
+          ...incoming,
+          available_models: filterOpenCodeZenModels(incoming.available_models),
+        };
+        setLegacyModelInfo((previous) => (sameModelInfo(previous, filteredIncoming) ? previous : filteredIncoming));
       } else if (message.type === 'codex_model_info' && message.data) {
         const data = message.data as { model?: string };
         if (!data.model) return;

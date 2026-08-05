@@ -1,7 +1,9 @@
 import React, { Suspense } from 'react';
 import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { ipcBridge } from '@/common';
 import AppLoader from '@renderer/components/layout/AppLoader';
 import { useAuth } from '@renderer/hooks/context/AuthContext';
+import { useDeepLink } from '@renderer/hooks/system/useDeepLink';
 import { TEAM_MODE_ENABLED } from '@/common/config/constants';
 const Conversation = React.lazy(() => import('@renderer/pages/conversation'));
 const Guid = React.lazy(() => import('@renderer/pages/guid'));
@@ -15,9 +17,9 @@ const AppearanceSettings = React.lazy(() => import('@renderer/pages/settings/App
 const ModeSettings = React.lazy(() => import('@renderer/pages/settings/ModeSettings'));
 const SystemSettings = React.lazy(() => import('@renderer/pages/settings/SystemSettings'));
 const WebuiSettings = React.lazy(() => import('@renderer/pages/settings/WebuiSettings'));
-const PetSettings = React.lazy(() => import('@renderer/pages/settings/PetSettings'));
 const ExtensionSettingsPage = React.lazy(() => import('@renderer/pages/settings/ExtensionSettingsPage'));
 const LoginPage = React.lazy(() => import('@renderer/pages/login'));
+const HTHLoginPage = React.lazy(() => import('@renderer/pages/HTHLogin'));
 const ComponentsShowcase = React.lazy(() => import('@renderer/pages/TestShowcase'));
 const ScheduledTasksPage = React.lazy(() => import('@renderer/pages/cron/ScheduledTasksPage'));
 const TaskDetailPage = React.lazy(() => import('@renderer/pages/cron/ScheduledTasksPage/TaskDetailPage'));
@@ -39,8 +41,40 @@ const CapabilitiesRedirect: React.FC = () => {
   return <Navigate to={tab === 'tools' ? '/settings/tools' : '/settings/skills'} replace />;
 };
 
+const DeepLinkListener: React.FC = () => {
+  useDeepLink();
+  return null;
+};
+
 const ProtectedLayout: React.FC<{ layout: React.ReactElement }> = ({ layout }) => {
   const { status } = useAuth();
+  const location = useLocation();
+  const [hthLoggedIn, setHTHLoggedIn] = React.useState<boolean | null>(null);
+
+  React.useEffect(() => {
+    if (status !== 'authenticated') {
+      setHTHLoggedIn(null);
+      return;
+    }
+
+    let disposed = false;
+    ipcBridge.hth.authStatus
+      .invoke()
+      .then((authStatus) => {
+        if (!disposed) {
+          setHTHLoggedIn(authStatus.loggedIn);
+        }
+      })
+      .catch((error) => {
+        console.error('[Router] Failed to check hth auth status:', error);
+        if (!disposed) {
+          setHTHLoggedIn(false);
+        }
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [location.pathname, status]);
 
   if (status === 'checking') {
     return <AppLoader />;
@@ -48,6 +82,14 @@ const ProtectedLayout: React.FC<{ layout: React.ReactElement }> = ({ layout }) =
 
   if (status !== 'authenticated') {
     return <Navigate to='/login' replace />;
+  }
+
+  if (hthLoggedIn === null) {
+    return <AppLoader />;
+  }
+
+  if (!hthLoggedIn) {
+    return <Navigate to='/hth-login' replace />;
   }
 
   return React.cloneElement(layout);
@@ -58,10 +100,15 @@ const PanelRoute: React.FC<{ layout: React.ReactElement }> = ({ layout }) => {
 
   return (
     <HashRouter>
+      <DeepLinkListener />
       <Routes>
         <Route
           path='/login'
           element={status === 'authenticated' ? <Navigate to='/guid' replace /> : withRouteFallback(LoginPage)}
+        />
+        <Route
+          path='/hth-login'
+          element={status === 'authenticated' ? withRouteFallback(HTHLoginPage) : <Navigate to='/login' replace />}
         />
         <Route element={<ProtectedLayout layout={layout} />}>
           <Route index element={<Navigate to='/guid' replace />} />
@@ -93,7 +140,7 @@ const PanelRoute: React.FC<{ layout: React.ReactElement }> = ({ layout }) => {
           <Route path='/settings/appearance' element={withRouteFallback(AppearanceSettings)} />
           <Route path='/settings/display' element={<Navigate to='/settings/appearance' replace />} />
           <Route path='/settings/webui' element={withRouteFallback(WebuiSettings)} />
-          <Route path='/settings/pet' element={withRouteFallback(PetSettings)} />
+          <Route path='/settings/pet' element={<Navigate to='/settings/system' replace />} />
           <Route path='/settings/system' element={withRouteFallback(SystemSettings)} />
           <Route path='/settings/about' element={withRouteFallback(SystemSettings)} />
           <Route path='/settings/ext/:tabId' element={withRouteFallback(ExtensionSettingsPage)} />

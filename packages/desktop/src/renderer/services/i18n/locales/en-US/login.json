@@ -1,6 +1,6 @@
 {
-  "pageTitle": "AionUi - Sign In",
-  "brand": "AionUi",
+  "pageTitle": "HTHBuddy - Sign In",
+  "brand": "HTHBuddy",
   "subtitle": "Welcome back, please sign in to your account",
   "username": "Username",
   "usernamePlaceholder": "Enter your username",
@@ -15,6 +15,18 @@
   "languageToggle": "Change language",
   "footerPrimary": "Transform your command-line AI",
   "footerSecondary": "Modern & Efficient",
+  "hth": {
+    "title": "Sign in with HTH",
+    "description": "HTHBuddy requires your HTH account before assistants can be used.",
+    "baseUrl": "HTH URL",
+    "baseUrlPlaceholder": "http://127.0.0.1:3001",
+    "loginWithDingTalk": "Sign in with DingTalk",
+    "browserOpened": "Sign-in page opened in your browser",
+    "startFailed": "Unable to open HTH sign-in",
+    "callbackMissing": "HTH sign-in callback is missing required data",
+    "exchangeFailed": "HTH sign-in failed",
+    "success": "HTH sign-in successful"
+  },
   "errors": {
     "empty": "Please enter username and password",
     "invalidCredentials": "Invalid username or password",

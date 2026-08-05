@@ -59,6 +59,7 @@ export const WEBUI_DEFAULT_PORT = (() => {
 })();
 
 export const TEAM_MODE_ENABLED = true;
+export const DESKTOP_PET_FEATURE_ENABLED = false;
 
 // ===== AI Provider 相关常量 =====
 

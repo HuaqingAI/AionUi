@@ -380,9 +380,9 @@
   "addModelTips": "モデル名を直接入力できます。プロバイダー側と同じ名前にすると互換性が高まります。",
   "customOpenAI": "カスタム（OpenAI互換）",
   "platformCustom": "カスタム",
-  "platformNewApi": "New API",
+  "platformHTH": "HTH",
   "modelProtocol": "リクエストプロトコル",
-  "modelProtocolTip": "このモデルのAPIリクエスト形式を選択します。new-apiゲートウェイは選択されたプロトコルでアップストリームにルーティングします。",
+  "modelProtocolTip": "このモデルのAPIリクエスト形式を選択します。HTHゲートウェイは選択されたプロトコルでアップストリームにルーティングします。",
   "configureModel": "モデルを設定",
   "modelSettingAuto": "自動判定（推奨）",
   "imageInput": "ビジョン入力",
@@ -432,7 +432,7 @@
   "agent": "エージェント",
   "skills": "スキル",
   "tools": "ツール",
-  "toolsDescription": "MCP サーバーと画像生成などの組み込みツールを設定します。画像生成は、モデルページで画像対応モデルを設定した後にのみ有効化できます。",
+  "toolsDescription": "MCP サーバーと組み込みツールを設定します。",
   "modelDescription": "すべてのアシスタントで使用する LLM プロバイダーと API キーを設定します。カスタムモデルに対応するのは Aion CLI のみで、他のエージェントは各自の組み込みモデルを使用します。",
   "capabilities": "能力拡張",
   "capabilitiesTab": {
@@ -1092,7 +1092,7 @@
   "agentManagement": {
     "localAgents": "ローカルエージェント",
     "remoteAgents": "リモートエージェント",
-    "localAgentsDescription": "このデバイスで利用できる AI コーディングエージェントを管理します。Aion CLI は組み込みでアプリに同梱されており、インストール不要です。他のエージェントは対応する CLI をローカルにインストールした後にのみ検出されます。",
+    "localAgentsDescription": "このデバイスで利用できる AI コーディングエージェントを管理します。",
     "localAgentsSetupLink": "セットアップガイド",
     "goToChat": "チャットを開始",
     "remoteAgentsDescription": "現在は OpenClaw のリモート接続のみ対応しています。その他のエージェントは開発中です。",
@@ -1288,5 +1288,13 @@
     "solveWithButler": "執事に相談"
   },
   "providerIdConflict": "Provider ID は既に存在します。もう一度お試しください。",
-  "autoInjectedSkillsHint": "すべての会話に自動的に読み込まれます。有効化は不要で、エージェントが使用するタイミングを判断します。"
+  "autoInjectedSkillsHint": "すべての会話に自動的に読み込まれます。有効化は不要で、エージェントが使用するタイミングを判断します。",
+  "hth": {
+    "syncAssistants": "Sync from HTH",
+    "syncSuccess": "HTH sync complete: {{success}} successful, {{failed}} failed",
+    "syncFailed": "HTH sync failed",
+    "logout": "Sign out of HTH",
+    "logoutSuccess": "Signed out of HTH",
+    "logoutFailed": "Failed to sign out of HTH"
+  }
 }

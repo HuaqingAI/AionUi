@@ -26,6 +26,7 @@ const autoUpdaterMock = vi.hoisted(() => ({
   getOrCreateDownloadHelper: vi.fn(),
   quitAndInstall: vi.fn(),
   checkForUpdatesAndNotify: vi.fn(),
+  updateConfigPath: undefined as string | undefined,
 }));
 
 const nativeAutoUpdaterMock = vi.hoisted(() => ({
@@ -87,11 +88,15 @@ describe('AutoUpdaterService', () => {
     autoUpdaterMock.allowPrerelease = false;
     autoUpdaterMock.allowDowngrade = false;
     autoUpdaterMock.channel = undefined;
+    autoUpdaterMock.updateConfigPath = undefined;
     appMock.getPath.mockImplementation(() => '/tmp/aionui-test');
     delete (autoUpdaterMock as { updateInfoAndProvider?: unknown }).updateInfoAndProvider;
     appMock.isPackaged = false;
     delete process.env.AIONUI_FORCE_DEV_AUTO_UPDATE;
     delete process.env.AIONUI_DEBUG_AUTO_UPDATE_CURRENT_VERSION;
+    delete process.env.AIONUI_UPDATE_FEED_URL;
+    delete process.env.AIONUI_HTH_BASE_URL;
+    delete process.env.VITE_HTH_BASE_URL;
     nativeAutoUpdaterMock.on.mockReset();
     nativeAutoUpdaterMock.removeListener.mockReset();
     Object.defineProperty(autoUpdaterMock, 'currentVersion', {
@@ -129,7 +134,7 @@ describe('AutoUpdaterService', () => {
     expect(autoUpdaterMock.checkForUpdates).not.toHaveBeenCalled();
   });
 
-  it('configures electron-updater to read stable metadata from the CDN', async () => {
+  it('configures electron-updater to read stable metadata from the new-api feed', async () => {
     const { autoUpdaterService } = await import('@/process/services/autoUpdaterService');
     const { CdnGenericProvider } = await import('@/process/services/cdnGenericProvider');
 
@@ -137,21 +142,19 @@ describe('AutoUpdaterService', () => {
 
     expect(autoUpdaterMock.setFeedURL).toHaveBeenCalledWith({
       provider: 'custom',
-      url: 'https://static.aionui.com/releases',
+      url: 'http://127.0.0.1:3001/api/aionui/client-updates',
       updateProvider: CdnGenericProvider,
     });
   });
 
-  it('enables forced updater checks in unpacked dev builds when requested', async () => {
-    process.env.AIONUI_FORCE_DEV_AUTO_UPDATE = '1';
-
+  it('enables updater checks in unpacked dev builds for the new-api feed', async () => {
     await import('@/process/services/autoUpdaterService');
 
     expect(autoUpdaterMock.forceDevUpdateConfig).toBe(true);
+    expect(autoUpdaterMock.updateConfigPath).toBe(path.join('/tmp/aionui-test', 'dev-app-update.yml'));
   });
 
-  it('overrides the updater current version only for forced unpacked dev checks', async () => {
-    process.env.AIONUI_FORCE_DEV_AUTO_UPDATE = '1';
+  it('overrides the updater current version in unpacked dev checks when requested', async () => {
     process.env.AIONUI_DEBUG_AUTO_UPDATE_CURRENT_VERSION = '2.1.12';
 
     await import('@/process/services/autoUpdaterService');

@@ -29,7 +29,7 @@ describe('updateNotificationReducer', () => {
       version: '2.2.0',
       releaseNotes: 'release notes',
     });
-    expect(result.effects).toEqual([{ type: 'loadManualReleaseInfoForDisplay' }]);
+    expect(result.effects).toEqual([]);
   });
 
   it('preserves the active download when an entry opens during downloading', () => {

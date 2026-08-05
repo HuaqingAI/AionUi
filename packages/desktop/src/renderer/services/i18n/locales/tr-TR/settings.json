@@ -380,9 +380,9 @@
   "addModelTips": "Herhangi bir model adını doğrudan yapıştırabilirsiniz. En iyi uyumluluk için sağlayıcı konsoluyla tutarlı tutun.",
   "customOpenAI": "Özel (OpenAI Uyumlu)",
   "platformCustom": "Özel",
-  "platformNewApi": "New API",
+  "platformHTH": "HTH",
   "modelProtocol": "İstek Protokolü",
-  "modelProtocolTip": "Bu model için API istek formatını seçin. new-api ağ geçidi seçilen protokolü kullanarak yukarı akışa yönlendirecektir.",
+  "modelProtocolTip": "Bu model için API istek formatını seçin. HTH ağ geçidi seçilen protokolü kullanarak yukarı akışa yönlendirecektir.",
   "configureModel": "Modeli yapılandır",
   "modelSettingAuto": "Otomatik (önerilen)",
   "imageInput": "Görsel giriş",
@@ -432,7 +432,7 @@
   "agent": "Ajan",
   "skills": "Beceriler",
   "tools": "Araçlar",
-  "toolsDescription": "MCP sunucularını ve görüntü oluşturma gibi yerleşik araçları yapılandırın. Görüntü oluşturma yalnızca Model sayfasında görüntü destekli bir model yapılandırıldıktan sonra etkinleştirilebilir.",
+  "toolsDescription": "MCP sunucularını ve yerleşik araçları yapılandırın.",
   "modelDescription": "Tüm asistanlarda kullanmak için LLM sağlayıcılarını ve API anahtarlarını yapılandırın. Özel modelleri yalnızca Aion CLI destekler; diğer aracılar kendi yerleşik modellerini kullanır.",
   "capabilities": "Yetenekler",
   "capabilitiesTab": {
@@ -1090,7 +1090,7 @@
   "agentManagement": {
     "localAgents": "Yerel Ajanlar",
     "remoteAgents": "Uzak Ajanlar",
-    "localAgentsDescription": "Bu cihazda kullanılabilen yapay zekâ kodlama aracılarını yönetin. Aion CLI yerleşiktir ve uygulamayla birlikte gelir — kuruluma gerek yoktur; diğer aracılar yalnızca CLI’leri yerel olarak kurulduktan sonra algılanır.",
+    "localAgentsDescription": "Bu cihazda kullanılabilen yapay zekâ kodlama aracılarını yönetin.",
     "localAgentsSetupLink": "Kurulum kılavuzu",
     "goToChat": "Sohbete Başla",
     "remoteAgentsDescription": "Şimdilik yalnızca OpenClaw uzak bağlantısı desteklenmektedir. Diğer ajanlar geliştirilmektedir.",
@@ -1286,5 +1286,13 @@
     "solveWithButler": "Kâhya'ya sor"
   },
   "providerIdConflict": "Provider ID zaten var. Lütfen tekrar deneyin.",
-  "autoInjectedSkillsHint": "Her sohbete otomatik olarak yüklenir — etkinleştirmeye gerek yoktur; aracı bunları ne zaman kullanacağına karar verir."
+  "autoInjectedSkillsHint": "Her sohbete otomatik olarak yüklenir — etkinleştirmeye gerek yoktur; aracı bunları ne zaman kullanacağına karar verir.",
+  "hth": {
+    "syncAssistants": "Sync from HTH",
+    "syncSuccess": "HTH sync complete: {{success}} successful, {{failed}} failed",
+    "syncFailed": "HTH sync failed",
+    "logout": "Sign out of HTH",
+    "logoutSuccess": "Signed out of HTH",
+    "logoutFailed": "Failed to sign out of HTH"
+  }
 }

@@ -430,6 +430,7 @@ describe('GuidPage', () => {
     expect(screen.queryByLabelText('Assistant Details')).not.toBeInTheDocument();
     expect(screen.getByText('conversation.welcome.title')).toBeInTheDocument();
     expect(screen.getByTestId('assistant-selection-area')).toBeInTheDocument();
+    expect(screen.queryByTestId('guid-quick-actions')).not.toBeInTheDocument();
     const latestAssistantSelectionAreaProps = capturedAssistantSelectionAreaProps.at(-1);
     const latestGuidActionRowProps = capturedGuidActionRowProps.at(-1);
     const latestGuidInputCardProps = capturedGuidInputCardProps.at(-1);

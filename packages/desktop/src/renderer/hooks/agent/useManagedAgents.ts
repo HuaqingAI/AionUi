@@ -7,6 +7,7 @@
 import { ipcBridge } from '@/common';
 import type { ManagedAgent } from '@/renderer/utils/model/agentTypes';
 import { MANAGED_AGENTS_SWR_KEY, fetchManagedAgents } from '@/renderer/utils/model/agentTypes';
+import { useEffect } from 'react';
 import useSWR, { mutate } from 'swr';
 
 export type UseManagedAgentsResult = {
@@ -48,6 +49,12 @@ export const useManagedAgents = (): UseManagedAgentsResult => {
   const { data, isLoading, isValidating, error } = useSWR<ManagedAgent[]>(MANAGED_AGENTS_SWR_KEY, fetchManagedAgents);
 
   const revalidateManaged = () => mutate<ManagedAgent[]>(MANAGED_AGENTS_SWR_KEY);
+
+  useEffect(() => {
+    return ipcBridge.acpConversation.managedAgentHealthChanged.on(() => {
+      void refreshManagedAgentCatalogAndAssistants();
+    });
+  }, []);
 
   return {
     agents: data ?? [],

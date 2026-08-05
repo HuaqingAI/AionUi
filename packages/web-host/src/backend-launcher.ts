@@ -11,6 +11,7 @@
 import { type ChildProcess, spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { connect, createServer, type Socket } from 'node:net';
+import path from 'node:path';
 import { cleanupRegisteredAgentProcesses } from './agent-process-registry.js';
 import type { AppMetadata, BackendBinaryResolver } from './types.js';
 
@@ -163,6 +164,7 @@ export type BackendStartOptions = {
   allowPendingOnHealthTimeout?: boolean;
   onHealthTimeout?: (error: BackendStartupError) => Promise<void> | void;
   onPendingExit?: (error: BackendStartupError) => Promise<void> | void;
+  onStderrLine?: (line: string) => void;
   onReady?: (port: number) => Promise<void> | void;
 };
 
@@ -219,6 +221,8 @@ export function buildSpawnEnv(dirs: BackendDirConfig): NodeJS.ProcessEnv {
     AIONUI_CACHE_DIR: dirs.cacheDir,
     AIONUI_WORK_DIR: dirs.workDir,
     AIONUI_LOG_DIR: dirs.logDir,
+    CODEX_HOME: path.join(dirs.workDir, 'runtime', 'codex-home'),
+    OPENCODE_CONFIG_DIR: path.join(dirs.workDir, 'runtime', 'opencode-home'),
   };
 }
 
@@ -791,7 +795,11 @@ export class BackendLifecycleManager {
     this.childProcess.stderr?.on('data', (data: Buffer) => {
       stderrTail = appendOutputTail(stderrTail, data);
       for (const line of data.toString().split('\n')) {
-        if (line.trim()) console.error(`[aioncore] ${line}`);
+        const trimmed = line.trim();
+        if (trimmed) {
+          options?.onStderrLine?.(trimmed);
+          console.error(`[aioncore] ${line}`);
+        }
       }
     });
 

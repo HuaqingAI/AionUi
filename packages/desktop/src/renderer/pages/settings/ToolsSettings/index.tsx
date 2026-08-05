@@ -26,7 +26,7 @@ const ToolsSettings: React.FC = () => {
           data-testid='tools-header'
           title={t('settings.tools', { defaultValue: 'Tools' })}
           description={t('settings.toolsDescription', {
-            defaultValue: 'Configure MCP servers and built-in tools such as image generation.',
+            defaultValue: 'Configure MCP servers and built-in tools.',
           })}
         />
         <ToolsModalContent />

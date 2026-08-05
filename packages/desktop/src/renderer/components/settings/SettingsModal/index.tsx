@@ -12,7 +12,7 @@ import { type IExtensionSettingsTab } from '@/common/adapter/ipcBridge';
 import { useExtI18n } from '@/renderer/hooks/system/useExtI18n';
 import { useExtensionSettingsTabs } from '@/renderer/hooks/system/useExtensionSettingsTabs';
 import { Tabs } from '@arco-design/web-react';
-import { Computer, Earth, Info, LinkCloud, Puzzle, Toolkit } from '@icon-park/react';
+import { Computer, Earth, Info, Puzzle, Toolkit } from '@icon-park/react';
 import classNames from 'classnames';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -132,7 +132,7 @@ export const SubModal: React.FC<SubModalProps> = ({ visible, onCancel, title, ch
  * openSettings('system');
  * ```
  */
-const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, defaultTab = 'model' }) => {
+const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, defaultTab = 'tools' }) => {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<SettingTab>(defaultTab);
   const [isMobile, setIsMobile] = useState(false);
@@ -190,11 +190,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, defaul
 
     // Modal built-in tabs (subset — no display/agent route pages)
     const builtinItems: MenuItem[] = [
-      {
-        key: 'model',
-        label: t('settings.model'),
-        icon: <LinkCloud theme='outline' size='20' fill={iconColors.secondary} />,
-      },
       {
         key: 'tools',
         label: t('settings.tools'),

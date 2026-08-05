@@ -380,9 +380,9 @@
   "addModelTips": "می‌توانید هر نام مدلی را مستقیماً جای‌گذاری کنید. برای سازگاری بهتر، نام را مطابق کنسول ارائه‌دهنده وارد کنید.",
   "customOpenAI": "سفارشی (سازگار با OpenAI)",
   "platformCustom": "سفارشی",
-  "platformNewApi": "API جدید",
+  "platformHTH": "HTH",
   "modelProtocol": "پروتکل درخواست",
-  "modelProtocolTip": "فرمت درخواست API برای این مدل را انتخاب کنید. دروازه new-api با پروتکل انتخاب‌شده به آپ‌استریم هدایت می‌کند.",
+  "modelProtocolTip": "فرمت درخواست API برای این مدل را انتخاب کنید. دروازه HTH با پروتکل انتخاب‌شده به آپ‌استریم هدایت می‌کند.",
   "configureModel": "پیکربندی مدل",
   "modelSettingAuto": "خودکار (پیشنهادی)",
   "imageInput": "ورودی تصویری",
@@ -432,7 +432,7 @@
   "agent": "ایجنت",
   "skills": "مهارت‌ها",
   "tools": "ابزارها",
-  "toolsDescription": "سرورهای MCP و ابزارهای داخلی مانند تولید تصویر را پیکربندی کنید. تولید تصویر تنها پس از پیکربندی یک مدل پشتیبان تصویر در صفحه مدل فعال می‌شود.",
+  "toolsDescription": "سرورهای MCP و ابزارهای داخلی را پیکربندی کنید.",
   "modelDescription": "ارائه‌دهندگان LLM و کلیدهای API را برای استفاده در همه دستیارها پیکربندی کنید. تنها Aion CLI از مدل‌های سفارشی پشتیبانی می‌کند؛ سایر عامل‌ها از مدل‌های داخلی خود استفاده می‌کنند.",
   "capabilities": "قابلیت‌ها",
   "capabilitiesTab": {
@@ -1102,7 +1102,7 @@
   "agentManagement": {
     "localAgents": "ایجنت‌های محلی",
     "remoteAgents": "ایجنت‌های ریموت",
-    "localAgentsDescription": "عامل‌های برنامه‌نویسی هوش مصنوعی موجود در این دستگاه را مدیریت کنید. Aion CLI داخلی است و همراه برنامه ارائه می‌شود — بدون نیاز به نصب؛ سایر عامل‌ها تنها پس از نصب محلی CLI آن‌ها شناسایی می‌شوند.",
+    "localAgentsDescription": "عامل‌های برنامه‌نویسی هوش مصنوعی موجود در این دستگاه را مدیریت کنید.",
     "localAgentsSetupLink": "راهنمای راه‌اندازی",
     "goToChat": "شروع چت",
     "remoteAgentsDescription": "فعلاً فقط اتصالات ریموت OpenClaw پشتیبانی می‌شوند. سایر ایجنت‌ها در حال توسعه هستند.",
@@ -1286,5 +1286,13 @@
     "solveWithButler": "از باتلر بپرس"
   },
   "providerIdConflict": "شناسه ارائه‌دهنده از قبل وجود دارد. دوباره تلاش کنید.",
-  "autoInjectedSkillsHint": "در هر گفتگو به‌طور خودکار بارگذاری می‌شوند — نیازی به فعال‌سازی نیست؛ عامل تصمیم می‌گیرد چه زمانی از آن‌ها استفاده کند."
+  "autoInjectedSkillsHint": "در هر گفتگو به‌طور خودکار بارگذاری می‌شوند — نیازی به فعال‌سازی نیست؛ عامل تصمیم می‌گیرد چه زمانی از آن‌ها استفاده کند.",
+  "hth": {
+    "syncAssistants": "Sync from HTH",
+    "syncSuccess": "HTH sync complete: {{success}} successful, {{failed}} failed",
+    "syncFailed": "HTH sync failed",
+    "logout": "Sign out of HTH",
+    "logoutSuccess": "Signed out of HTH",
+    "logoutFailed": "Failed to sign out of HTH"
+  }
 }

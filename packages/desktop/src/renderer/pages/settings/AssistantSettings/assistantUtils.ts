@@ -141,15 +141,12 @@ const ASSISTANT_EDITOR_AGENT_TYPES = new Set(['acp', 'aionrs']);
 const isAssistantEditorAgent = (agent: ManagedAgent): boolean => ASSISTANT_EDITOR_AGENT_TYPES.has(agent.agent_type);
 
 /**
- * Split the user's own assistants into the two "My Assistants" groups, each
- * sorted by sort_order. Bare CLI assistants come first (fixed), then
- * user-created. Official (builtin) assistants live in the other tab and are
- * excluded here.
+ * Split the user's own assistants for the "My Assistants" tab.
+ * Only user-created assistants are shown there.
  */
 export const groupMyAssistants = (assistants: AssistantListItem[]) => {
   return {
-    // 'generated' == a bare CLI assistant auto-created from a local CLI tool.
-    cliAssistants: assistants.filter((a) => a.source === 'generated').toSorted(byAssistantSortOrder),
+    cliAssistants: [] as AssistantListItem[],
     createdAssistants: assistants.filter((a) => a.source === 'user').toSorted(byAssistantSortOrder),
   };
 };

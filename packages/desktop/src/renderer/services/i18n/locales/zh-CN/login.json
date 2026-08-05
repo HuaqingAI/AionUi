@@ -1,6 +1,6 @@
 {
-  "pageTitle": "AionUi - 登录",
-  "brand": "AionUi",
+  "pageTitle": "HTHBuddy - 登录",
+  "brand": "HTHBuddy",
   "subtitle": "欢迎回来，请登录您的账户",
   "username": "用户名",
   "usernamePlaceholder": "请输入用户名",
@@ -15,6 +15,18 @@
   "languageToggle": "切换语言",
   "footerPrimary": "命令行 AI 的现代化体验",
   "footerSecondary": "高效且优雅",
+  "hth": {
+    "title": "使用 HTH 登录",
+    "description": "使用 HTHBuddy 前需要先完成 HTH 账号登录。",
+    "baseUrl": "HTH 地址",
+    "baseUrlPlaceholder": "http://127.0.0.1:3001",
+    "loginWithDingTalk": "使用钉钉登录",
+    "browserOpened": "已在浏览器打开登录页",
+    "startFailed": "无法打开 HTH 登录",
+    "callbackMissing": "HTH 登录回调缺少必要参数",
+    "exchangeFailed": "HTH 登录失败",
+    "success": "HTH 登录成功"
+  },
   "errors": {
     "empty": "请输入用户名和密码",
     "invalidCredentials": "用户名或密码错误",

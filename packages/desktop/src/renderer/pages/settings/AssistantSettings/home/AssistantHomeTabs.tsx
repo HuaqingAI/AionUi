@@ -7,11 +7,12 @@
 import type { AssistantListItem } from '../types';
 import EnabledAssistantsList from './EnabledAssistantsList';
 import MyAssistantsList from './MyAssistantsList';
-import OfficialAssistantsGrid from './OfficialAssistantsGrid';
 import { useLayoutContext } from '@/renderer/hooks/context/LayoutContext';
 import TalkToButlerButton from '@/renderer/components/base/TalkToButlerButton';
 import { AionSearchInput } from '@/renderer/components/base';
 import SettingsPageHeader from '../../components/SettingsPageHeader';
+import { Button } from '@arco-design/web-react';
+import { Refresh } from '@icon-park/react';
 import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -20,33 +21,34 @@ type AssistantHomeTabsProps = {
   assistantOrder: readonly string[];
   localeKey: string;
   onOpenDetail: (assistant: AssistantListItem) => void;
-  onOpenSettings: (assistant: AssistantListItem) => void;
-  onDuplicate: (assistant: AssistantListItem) => void;
   onDelete: (assistant: AssistantListItem) => void;
   onCreate: () => void;
   onToggleEnabled: (assistant: AssistantListItem, checked: boolean) => void;
   onReorderEnabled: (activeId: string, overId: string) => void | Promise<void>;
   onStartChat: (assistant: AssistantListItem) => void;
-  /** Tab to show on mount (e.g. return to Official after editing a builtin). */
-  initialTab?: 'enabled' | 'mine' | 'official';
+  onSyncFromHTH: () => void | Promise<void>;
+  syncingFromHTH: boolean;
+  initialTab?: HomeTab;
   /** Notified whenever the active tab changes, so the parent can remember it. */
-  onTabChange?: (tab: 'enabled' | 'mine' | 'official') => void;
+  onTabChange?: (tab: HomeTab) => void;
 };
 
-type HomeTab = 'enabled' | 'mine' | 'official';
+export type HomeTab = 'enabled' | 'mine';
+
+const formatHTHText = (value: string): string => value.replace(/hth/gi, 'HTH');
 
 const AssistantHomeTabs: React.FC<AssistantHomeTabsProps> = ({
   assistants,
   assistantOrder,
   localeKey,
   onOpenDetail,
-  onOpenSettings,
-  onDuplicate,
   onDelete,
   onCreate,
   onToggleEnabled,
   onReorderEnabled,
   onStartChat,
+  onSyncFromHTH,
+  syncingFromHTH,
   initialTab = 'enabled',
   onTabChange,
 }) => {
@@ -61,22 +63,20 @@ const AssistantHomeTabs: React.FC<AssistantHomeTabsProps> = ({
     onTabChange?.(next);
   };
 
+  const customAssistants = useMemo(() => assistants.filter((assistant) => assistant.source === 'user'), [assistants]);
+
   const counts = useMemo(() => {
     let enabled = 0;
-    let mine = 0;
-    let official = 0;
-    for (const assistant of assistants) {
+    for (const assistant of customAssistants) {
       if (assistant.enabled !== false) enabled += 1;
-      if (assistant.source === 'builtin') official += 1;
-      else mine += 1;
     }
-    return { enabled, mine, official };
-  }, [assistants]);
+    return { enabled, mine: customAssistants.length };
+  }, [customAssistants]);
 
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
   const filteredAssistants = useMemo(() => {
-    if (!normalizedSearchQuery) return assistants;
-    return assistants.filter((assistant) => {
+    if (!normalizedSearchQuery) return customAssistants;
+    return customAssistants.filter((assistant) => {
       const searchableText = [
         assistant.name,
         assistant.name_i18n?.[i18n.language],
@@ -90,7 +90,7 @@ const AssistantHomeTabs: React.FC<AssistantHomeTabsProps> = ({
         .toLowerCase();
       return searchableText.includes(normalizedSearchQuery);
     });
-  }, [assistants, i18n.language, normalizedSearchQuery]);
+  }, [customAssistants, i18n.language, normalizedSearchQuery]);
 
   return (
     <div data-testid='assistant-home-shell' className='flex h-full min-h-0 flex-col overflow-hidden bg-transparent'>
@@ -129,6 +129,17 @@ const AssistantHomeTabs: React.FC<AssistantHomeTabsProps> = ({
                   })}
                   data-testid='btn-create-assistant'
                 />
+                <Button
+                  type='outline'
+                  className='shrink-0 !border-primary-5 !bg-primary-1 !text-primary-6 hover:!border-primary-6 hover:!bg-primary-2'
+                  loading={syncingFromHTH}
+                  onClick={() => void onSyncFromHTH()}
+                >
+                  <span className='inline-flex items-center gap-8px font-500'>
+                    {!syncingFromHTH && <Refresh theme='outline' size='16' />}
+                    <span>{formatHTHText(t('settings.hth.syncAssistants'))}</span>
+                  </span>
+                </Button>
               </>
             }
             tabs={[
@@ -141,11 +152,6 @@ const AssistantHomeTabs: React.FC<AssistantHomeTabsProps> = ({
                 key: 'mine',
                 label: t('settings.assistantTabMine', { defaultValue: 'My Assistants' }),
                 count: counts.mine,
-              },
-              {
-                key: 'official',
-                label: t('settings.assistantTabOfficial', { defaultValue: 'Official' }),
-                count: counts.official,
               },
             ]}
             activeTab={tab}
@@ -177,20 +183,9 @@ const AssistantHomeTabs: React.FC<AssistantHomeTabsProps> = ({
               onDelete={onDelete}
               onToggleEnabled={onToggleEnabled}
               onStartChat={onStartChat}
-              onGoOfficial={() => selectTab('official')}
               searchActive={Boolean(normalizedSearchQuery)}
             />
-          ) : (
-            <OfficialAssistantsGrid
-              assistants={filteredAssistants}
-              localeKey={localeKey}
-              onOpenSettings={onOpenSettings}
-              onDuplicate={onDuplicate}
-              onToggleEnabled={onToggleEnabled}
-              onStartChat={onStartChat}
-              searchActive={Boolean(normalizedSearchQuery)}
-            />
-          )}
+          ) : null}
         </div>
       </div>
     </div>

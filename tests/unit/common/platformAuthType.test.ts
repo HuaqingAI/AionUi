@@ -9,7 +9,7 @@ import { AuthType } from '@/common/types/provider/authType';
 import { getAuthTypeFromPlatform, getProviderAuthType } from '@/common/utils/platformAuthType';
 
 vi.mock('@/common/utils/platformConstants', () => ({
-  isNewApiPlatform: (platform: string) => platform.toLowerCase().includes('new-api'),
+  isHTHPlatform: (platform: string) => platform.toLowerCase().includes('hth'),
 }));
 
 describe('platformAuthType', () => {
@@ -76,9 +76,9 @@ describe('platformAuthType', () => {
       expect(getAuthTypeFromPlatform('DeepSeek')).toBe(AuthType.USE_OPENAI);
     });
 
-    it('returns USE_OPENAI for new-api', () => {
-      expect(getAuthTypeFromPlatform('new-api')).toBe(AuthType.USE_OPENAI);
-      expect(getAuthTypeFromPlatform('NEW-API')).toBe(AuthType.USE_OPENAI);
+    it('returns USE_OPENAI for hth', () => {
+      expect(getAuthTypeFromPlatform('hth')).toBe(AuthType.USE_OPENAI);
+      expect(getAuthTypeFromPlatform('HTH')).toBe(AuthType.USE_OPENAI);
     });
 
     it('returns USE_OPENAI for unknown platforms', () => {
@@ -114,9 +114,9 @@ describe('platformAuthType', () => {
       expect(getProviderAuthType({ platform: 'openai' })).toBe(AuthType.USE_OPENAI);
     });
 
-    it('applies model_protocols override for new-api platform', () => {
+    it('applies model_protocols override for hth platform', () => {
       const provider = {
-        platform: 'new-api',
+        platform: 'hth',
         use_model: 'claude-3-opus',
         model_protocols: {
           'claude-3-opus': 'anthropic',
@@ -128,7 +128,7 @@ describe('platformAuthType', () => {
 
     it('falls back to platform inference when model not in model_protocols', () => {
       const provider = {
-        platform: 'new-api',
+        platform: 'hth',
         use_model: 'gpt-4',
         model_protocols: {
           'claude-3-opus': 'anthropic',
@@ -137,7 +137,7 @@ describe('platformAuthType', () => {
       expect(getProviderAuthType(provider)).toBe(AuthType.USE_OPENAI);
     });
 
-    it('ignores model_protocols for non-new-api platforms', () => {
+    it('ignores model_protocols for non-hth platforms', () => {
       const provider = {
         platform: 'openai',
         use_model: 'claude-3-opus',
@@ -148,17 +148,17 @@ describe('platformAuthType', () => {
       expect(getProviderAuthType(provider)).toBe(AuthType.USE_OPENAI);
     });
 
-    it('handles new-api without model_protocols', () => {
+    it('handles hth without model_protocols', () => {
       const provider = {
-        platform: 'new-api',
+        platform: 'hth',
         use_model: 'gpt-4',
       };
       expect(getProviderAuthType(provider)).toBe(AuthType.USE_OPENAI);
     });
 
-    it('handles new-api without use_model', () => {
+    it('handles hth without use_model', () => {
       const provider = {
-        platform: 'new-api',
+        platform: 'hth',
         model_protocols: {
           'claude-3-opus': 'anthropic',
         },
@@ -168,7 +168,7 @@ describe('platformAuthType', () => {
 
     it('prefers explicit auth_type over model_protocols', () => {
       const provider = {
-        platform: 'new-api',
+        platform: 'hth',
         auth_type: AuthType.USE_BEDROCK,
         use_model: 'claude-3-opus',
         model_protocols: {
@@ -180,7 +180,7 @@ describe('platformAuthType', () => {
 
     it('handles model_protocols with bedrock protocol', () => {
       const provider = {
-        platform: 'new-api',
+        platform: 'hth',
         use_model: 'bedrock-model',
         model_protocols: {
           'bedrock-model': 'bedrock',

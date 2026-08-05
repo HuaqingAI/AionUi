@@ -6,8 +6,7 @@
 
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { SettingsTabNavigateProvider } from '@/renderer/components/settings/SettingsModal/settingsViewContext';
+import { cleanup, render, screen } from '@testing-library/react';
 
 const hooks = vi.hoisted(() => ({
   modelListWithImage: [] as unknown[],
@@ -22,11 +21,6 @@ vi.mock('react-i18next', () => ({
 vi.mock('@/renderer/components/base/AionScrollArea', () => ({
   default: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
-
-vi.mock('@/renderer/components/base/AionSelect', () => {
-  const Select = ({ children }: { children?: React.ReactNode }) => <div>{children}</div>;
-  return { default: Object.assign(Select, { OptGroup: Select, Option: Select }) };
-});
 
 vi.mock('@/renderer/components/base/TalkToButlerButton', () => ({
   default: () => <div>TalkToButlerButton</div>,
@@ -93,9 +87,23 @@ vi.mock('@/common/adapter/ipcBridge', () => ({
   mcpService: {},
 }));
 
-import ToolsModalContent from '@/renderer/components/settings/SettingsModal/contents/ToolsModalContent';
+vi.mock('@/renderer/pages/settings/components/SettingsPageWrapper', () => ({
+  default: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+}));
 
-describe('ToolsModalContent image model guide', () => {
+vi.mock('@/renderer/pages/settings/components/SettingsPageHeader', () => ({
+  default: ({ title, description }: { title: React.ReactNode; description?: React.ReactNode }) => (
+    <div>
+      <h1>{title}</h1>
+      {description ? <p>{description}</p> : null}
+    </div>
+  ),
+}));
+
+import ToolsModalContent from '@/renderer/components/settings/SettingsModal/contents/ToolsModalContent';
+import ToolsSettings from '@/renderer/pages/settings/ToolsSettings';
+
+describe('ToolsModalContent hidden image generation panel', () => {
   beforeEach(() => {
     hooks.modelListWithImage = [];
     hooks.mcpServers = [];
@@ -119,30 +127,20 @@ describe('ToolsModalContent image model guide', () => {
     cleanup();
   });
 
-  it('renders a clickable "go to configure" link that navigates to the model tab', async () => {
-    const navigateToTab = vi.fn();
-    render(
-      <SettingsTabNavigateProvider value={navigateToTab}>
-        <ToolsModalContent />
-      </SettingsTabNavigateProvider>
-    );
+  it('does not render image generation settings or model configuration guidance', () => {
+    render(<ToolsModalContent />);
 
-    const link = await screen.findByText('settings.goToModelSettings');
-    // Rendered as an inline anchor (text link), not a button.
-    expect(link.tagName).toBe('A');
-    fireEvent.click(link);
-
-    await waitFor(() => expect(navigateToTab).toHaveBeenCalledWith('model'));
+    expect(screen.queryByText('settings.imageGeneration')).not.toBeInTheDocument();
+    expect(screen.queryByText('settings.imageGenerationModel')).not.toBeInTheDocument();
+    expect(screen.queryByText('settings.goToModelSettings')).not.toBeInTheDocument();
+    expect(screen.queryByText('settings.configGuide')).not.toBeInTheDocument();
+    expect(hooks.getClientBusinessSetting).not.toHaveBeenCalled();
   });
 
-  it('renders the guide text as plain text (no link) when no tab navigator is provided', async () => {
-    const { container } = render(<ToolsModalContent />);
+  it('uses the shortened tools page description', () => {
+    render(<ToolsSettings />);
 
-    // The empty-state hint still shows the go-to-configure wording, but not as a clickable link.
-    await waitFor(() => expect(container.textContent).toContain('settings.goToModelSettings'));
-    const links = Array.from(container.querySelectorAll('a')).filter(
-      (a) => a.textContent === 'settings.goToModelSettings'
-    );
-    expect(links).toHaveLength(0);
+    expect(screen.getByText('Configure MCP servers and built-in tools.')).toBeInTheDocument();
+    expect(screen.queryByText(/image generation/i)).not.toBeInTheDocument();
   });
 });

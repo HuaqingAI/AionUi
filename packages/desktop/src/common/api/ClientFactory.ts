@@ -11,7 +11,7 @@ import { GeminiRotatingClient, type GeminiClientConfig } from './GeminiRotatingC
 import { AnthropicRotatingClient, type AnthropicClientConfig } from './AnthropicRotatingClient';
 import type { RotatingApiClientOptions } from './RotatingApiClient';
 import { getProviderAuthType } from '../utils/platformAuthType';
-import { isNewApiPlatform } from '../utils/platformConstants';
+import { isHTHPlatform } from '../utils/platformConstants';
 
 export interface ClientOptions {
   timeout?: number;
@@ -23,8 +23,8 @@ export interface ClientOptions {
 export type RotatingClient = OpenAIRotatingClient | GeminiRotatingClient | AnthropicRotatingClient;
 
 /**
- * 为 new-api 网关规范化 base URL
- * Normalize base URL for new-api gateway based on target protocol
+ * 为 hth 网关规范化 base URL
+ * Normalize base URL for hth gateway based on target protocol
  *
  * 策略：先剥离所有已知 API 路径后缀得到根 URL，再根据目标协议添加正确后缀。
  * Strategy: strip all known API path suffixes to get root URL, then add the correct suffix for target protocol.
@@ -33,7 +33,7 @@ export type RotatingClient = OpenAIRotatingClient | GeminiRotatingClient | Anthr
  * @param authType 目标认证类型 / Target auth type
  * @returns 规范化后的 base URL / Normalized base URL
  */
-export function normalizeNewApiBaseUrl(base_url: string, authType: AuthType): string {
+export function normalizeHTHBaseUrl(base_url: string, authType: AuthType): string {
   if (!base_url) return base_url;
 
   // 1. 移除尾部斜杠，剥离所有已知 API 路径后缀，得到根 URL
@@ -66,9 +66,9 @@ export class ClientFactory {
     const authType = getProviderAuthType(provider);
     const rotatingOptions = options.rotatingOptions || { maxRetries: 3, retryDelay: 1000 };
 
-    // 对 new-api 网关进行 URL 规范化 / Normalize URL for new-api gateway
-    const isNewApi = isNewApiPlatform(provider.platform);
-    const base_url = isNewApi ? normalizeNewApiBaseUrl(provider.base_url, authType) : provider.base_url;
+    // 对 hth 网关进行 URL 规范化 / Normalize URL for hth gateway
+    const isHTH = isHTHPlatform(provider.platform);
+    const base_url = isHTH ? normalizeHTHBaseUrl(provider.base_url, authType) : provider.base_url;
 
     switch (authType) {
       case AuthType.USE_OPENAI: {

@@ -18,11 +18,13 @@
  * read-only so users can inspect what's bundled.
  */
 import { Message } from '@arco-design/web-react';
+import { ipcBridge } from '@/common';
+import { isHTHUnauthorizedSyncResult, type HTHSyncResult } from '@/common/types/hth';
 import { useAssistantEditor, useAssistantList } from '@/renderer/hooks/assistant';
 import { useManagedAgentRuntimeCatalog } from '@/renderer/hooks/agent/useManagedAgents';
 import { buildAssistantEditorBackends, resolveAvatarImageSrc } from './assistantUtils';
 import AssistantEditorPage from './AssistantEditorPage';
-import AssistantHomeTabs from './home/AssistantHomeTabs';
+import AssistantHomeTabs, { type HomeTab } from './home/AssistantHomeTabs';
 import DeleteAssistantModal from './DeleteAssistantModal';
 import SkillConfirmModals from './SkillConfirmModals';
 import type { AssistantEditorViewModel, AssistantListItem } from './types';
@@ -35,6 +37,14 @@ type AssistantNavigationState = {
   openAssistantEditor?: boolean;
 };
 const OPEN_ASSISTANT_EDITOR_INTENT_KEY = 'guid.openAssistantEditorIntent';
+const formatHTHText = (value: string): string => value.replace(/hth/gi, 'HTH');
+const summarizeHTHSyncToast = (result: HTHSyncResult): { success: number; failed: number } => {
+  const failed = result.packages.filter((item) => item.status === 'failed').length;
+  return {
+    success: result.packages.length - failed,
+    failed,
+  };
+};
 
 const AssistantSettings: React.FC = () => {
   const [message, messageContext] = Message.useMessage({ maxCount: 10 });
@@ -45,7 +55,8 @@ const AssistantSettings: React.FC = () => {
 
   // Keep the current management surface when returning from the editor. The
   // unified Enabled tab is the default entry point for assistant ordering.
-  const [homeTab, setHomeTab] = React.useState<'enabled' | 'mine' | 'official'>('enabled');
+  const [homeTab, setHomeTab] = React.useState<HomeTab>('enabled');
+  const [syncingFromHTH, setSyncingFromHTH] = React.useState(false);
 
   // "Chat" on an assistant → open a new conversation with it preselected.
   const handleStartChat = useCallback(
@@ -101,6 +112,31 @@ const AssistantSettings: React.FC = () => {
     () => buildAssistantEditorBackends(managedAgentRuntimeCatalog, localeKey, editor.editAgent),
     [editor.editAgent, localeKey, managedAgentRuntimeCatalog]
   );
+  const handleSyncFromHTH = useCallback(async () => {
+    setSyncingFromHTH(true);
+    try {
+      const result = await ipcBridge.hth.syncAgentConfigs.invoke({ force: true });
+      if (isHTHUnauthorizedSyncResult(result)) {
+        await navigate('/hth-login', { replace: true });
+        return;
+      }
+      await loadAssistants();
+      const syncToastSummary = summarizeHTHSyncToast(result);
+      message.success(
+        formatHTHText(
+          t('settings.hth.syncSuccess', {
+            success: syncToastSummary.success,
+            failed: syncToastSummary.failed,
+          })
+        )
+      );
+    } catch (error) {
+      console.error('[AssistantSettings] Failed to sync hth assistant configs:', error);
+      message.error(formatHTHText(t('settings.hth.syncFailed')));
+    } finally {
+      setSyncingFromHTH(false);
+    }
+  }, [loadAssistants, message, navigate, t]);
 
   const editAvatarImage = editor.editAvatarPreview || resolveAvatarImageSrc(editor.editAvatar);
   const hasConsumedNavigationIntentRef = useRef(false);
@@ -238,16 +274,6 @@ const AssistantSettings: React.FC = () => {
                 setActiveAssistantId(assistant.id);
                 void editor.handleEdit(assistant);
               }}
-              onOpenSettings={(assistant) => {
-                setActiveAssistantId(assistant.id);
-                void editor.handleEdit(assistant);
-              }}
-              onDuplicate={(assistant) => {
-                // A duplicate becomes a new user assistant, so return to My
-                // Assistants after saving — not the Official tab it came from.
-                setHomeTab('mine');
-                void editor.handleDuplicate(assistant);
-              }}
               onDelete={(assistant) => editor.handleDeleteRequest(assistant)}
               onCreate={() => {
                 setHomeTab('mine');
@@ -262,6 +288,8 @@ const AssistantSettings: React.FC = () => {
                 }
               }}
               onStartChat={handleStartChat}
+              onSyncFromHTH={handleSyncFromHTH}
+              syncingFromHTH={syncingFromHTH}
             />
           )}
 

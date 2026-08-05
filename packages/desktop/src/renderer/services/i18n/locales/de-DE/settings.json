@@ -372,9 +372,9 @@
   "addModelTips": "Du kannst jeden Modellnamen direkt einfügen. Halte ihn konsistent mit der Anbieterkonsole für beste Kompatibilität.",
   "customOpenAI": "Benutzerdefiniert (OpenAI-kompatibel)",
   "platformCustom": "Benutzerdefiniert",
-  "platformNewApi": "Neue API",
+  "platformHTH": "HTH",
   "modelProtocol": "Anfrage-Protokoll",
-  "modelProtocolTip": "Wähle das API-Anfrageformat für dieses Modell. Das new-api-Gateway leitet zum Upstream unter Verwendung des ausgewählten Protokolls weiter.",
+  "modelProtocolTip": "Wähle das API-Anfrageformat für dieses Modell. Das HTH-Gateway leitet zum Upstream unter Verwendung des ausgewählten Protokolls weiter.",
   "configureModel": "Modell konfigurieren",
   "modelSettingAuto": "Automatisch (empfohlen)",
   "imageInput": "Bildeingabe",
@@ -424,7 +424,7 @@
   "agent": "Agent",
   "skills": "Skills",
   "tools": "Tools",
-  "toolsDescription": "MCP-Server und integrierte Tools wie die Bildgenerierung konfigurieren. Die Bildgenerierung kann erst aktiviert werden, nachdem auf der Modellseite ein bildfähiges Modell konfiguriert wurde.",
+  "toolsDescription": "MCP-Server und integrierte Tools konfigurieren.",
   "modelDescription": "LLM-Anbieter und API-Schlüssel für alle Assistenten konfigurieren. Nur Aion CLI unterstützt eigene Modelle; andere Agenten nutzen ihre integrierten Modelle.",
   "capabilities": "Fähigkeiten",
   "capabilitiesTab": {
@@ -1094,7 +1094,7 @@
   "agentManagement": {
     "localAgents": "Lokale Agenten",
     "remoteAgents": "Remote-Agenten",
-    "localAgentsDescription": "Verwalte die auf diesem Gerät verfügbaren KI-Coding-Agenten. Aion CLI ist integriert und wird mit der App geliefert – keine Installation nötig; andere Agenten werden erst nach lokaler CLI-Installation erkannt.",
+    "localAgentsDescription": "Verwalte die auf diesem Gerät verfügbaren KI-Coding-Agenten.",
     "localAgentsSetupLink": "Einrichtungsanleitung",
     "goToChat": "Chat starten",
     "remoteAgentsDescription": "Derzeit werden nur Remote-OpenClaw-Verbindungen unterstützt. Andere Agenten sind in Entwicklung.",
@@ -1286,5 +1286,13 @@
     "emptyOverridesError": "Enter a launch path or at least one environment variable before saving."
   },
   "providerIdConflict": "Provider-ID existiert bereits. Bitte erneut versuchen.",
-  "autoInjectedSkillsHint": "Werden automatisch in jede Unterhaltung geladen – kein Aktivieren nötig; der Agent entscheidet, wann er sie nutzt."
+  "autoInjectedSkillsHint": "Werden automatisch in jede Unterhaltung geladen – kein Aktivieren nötig; der Agent entscheidet, wann er sie nutzt.",
+  "hth": {
+    "syncAssistants": "Sync from HTH",
+    "syncSuccess": "HTH sync complete: {{success}} successful, {{failed}} failed",
+    "syncFailed": "HTH sync failed",
+    "logout": "Sign out of HTH",
+    "logoutSuccess": "Signed out of HTH",
+    "logoutFailed": "Failed to sign out of HTH"
+  }
 }

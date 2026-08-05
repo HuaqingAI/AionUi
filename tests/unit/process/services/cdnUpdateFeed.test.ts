@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { UpdateInfo } from 'electron-updater';
 import type { AppUpdater } from 'electron-updater/out/AppUpdater';
 import type { ProviderRuntimeOptions } from 'electron-updater/out/providers/Provider';
 import { CdnGenericProvider } from '@/process/services/cdnGenericProvider';
-import { buildCdnFeedOptions, CDN_UPDATE_BASE_URL } from '@/process/services/updateFeed';
+import { buildCdnFeedOptions, DEFAULT_NEW_API_BASE_URL } from '@/process/services/updateFeed';
 
 const makeRuntimeOptions = (): ProviderRuntimeOptions => ({
   isUseMultipleRangeRequest: true,
@@ -20,11 +20,37 @@ const makeRuntimeOptions = (): ProviderRuntimeOptions => ({
 });
 
 describe('CDN update feed options', () => {
-  it('builds a custom electron-updater provider pointed at the release CDN', () => {
+  afterEach(() => {
+    delete process.env.AIONUI_UPDATE_FEED_URL;
+    delete process.env.AIONUI_HTH_BASE_URL;
+    delete process.env.VITE_HTH_BASE_URL;
+  });
+
+  it('builds a custom electron-updater provider pointed at the default new-api feed', () => {
     const options = buildCdnFeedOptions();
 
     expect(options.provider).toBe('custom');
-    expect(options.url).toBe(CDN_UPDATE_BASE_URL);
+    expect(options.url).toBe(`${DEFAULT_NEW_API_BASE_URL}/api/aionui/client-updates`);
+    expect(options.updateProvider).toBe(CdnGenericProvider);
+  });
+
+  it('uses the configured new-api update feed URL when provided', () => {
+    process.env.AIONUI_UPDATE_FEED_URL = 'https://api.example.com/api/aionui/client-updates/';
+
+    const options = buildCdnFeedOptions();
+
+    expect(options.provider).toBe('custom');
+    expect(options.url).toBe('https://api.example.com/api/aionui/client-updates');
+    expect(options.updateProvider).toBe(CdnGenericProvider);
+  });
+
+  it('builds the new-api update feed URL from the HTH base URL', () => {
+    process.env.AIONUI_HTH_BASE_URL = 'https://api.example.com/';
+
+    const options = buildCdnFeedOptions();
+
+    expect(options.provider).toBe('custom');
+    expect(options.url).toBe('https://api.example.com/api/aionui/client-updates');
     expect(options.updateProvider).toBe(CdnGenericProvider);
   });
 });

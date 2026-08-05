@@ -23,6 +23,15 @@ import { initializeProcess } from './process';
 import { startBackendOrExit } from './process/startup/backendStartup';
 import { assertStartupArchitectureCompatible } from './process/startup/architectureCompatibility';
 import { classifyBackendStartupFailure } from './process/startup/backendStartupFailure';
+import {
+  addStartupManagedAcpToolBinsToPath,
+  checkCodexManagedAgentHealthOnStartup,
+  checkOpenCodeManagedAgentHealthOnStartup,
+  ensureCodexReadyOnStartup,
+  ensureOpenCodeReadyOnStartup,
+  type OpenCodeBootstrapResult,
+  type OpenCodeManagedAgentHealthResult,
+} from './process/startup/opencodeStartup';
 import { installQuitCleanup } from './process/startup/quitCleanup';
 import { shouldRegisterBackendStartup } from './process/startup/singleInstanceGating';
 import { ProcessConfig } from './process/utils/initStorage';
@@ -72,6 +81,7 @@ import {
   setIsQuitting,
 } from './process/utils/tray';
 import { readCloseToTraySetting } from './process/utils/closeToTraySetting';
+import { DESKTOP_PET_FEATURE_ENABLED } from './common/config/constants';
 // @ts-expect-error - electron-squirrel-startup doesn't have types
 import electronSquirrelStartup from 'electron-squirrel-startup';
 
@@ -209,8 +219,14 @@ let backendStartedOk = false;
 let backendStartupFailed = false;
 let backendStartupFailureInfo: BackendStartupFailureInfo | null = null;
 let rendererInitialLanguage: string | null = null;
+let openCodeBootstrapResult: OpenCodeBootstrapResult | null = null;
+let codexBootstrapResult: OpenCodeBootstrapResult | null = null;
+let openCodeRuntimeDataPath: string | null = null;
 let backendMigrationsScheduled = false;
 let ensureAdminUserPromise: Promise<void> | null = null;
+let openCodeManagedAgentHealthPromise: Promise<OpenCodeManagedAgentHealthResult> | null = null;
+let codexManagedAgentHealthPromise: Promise<OpenCodeManagedAgentHealthResult> | null = null;
+let rendererReadyForRuntimeStatus = false;
 
 ipcMain.on('get-backend-port', (event) => {
   event.returnValue = backendManager.port;
@@ -239,6 +255,8 @@ ipcMain.handle('backend:recover-corrupted-database', async () => {
         const { getDataPath } = await import('./process/utils/utils');
         const { getSystemDir } = await import('./process/utils/initStorage');
         const sysDir = getSystemDir();
+        openCodeRuntimeDataPath = sysDir.workDir;
+        addStartupManagedAcpToolBinsToPath(sysDir.workDir);
         return await backendManager.start(
           getDataPath(),
           sysDir.logDir,
@@ -349,6 +367,74 @@ function ensureAdminUserOnce(backendPort: number): Promise<void> {
   return ensureAdminUserPromise;
 }
 
+function checkOpenCodeManagedAgentHealthOnce(backendPort: number): Promise<OpenCodeManagedAgentHealthResult> {
+  if (!openCodeManagedAgentHealthPromise) {
+    openCodeManagedAgentHealthPromise = (async () => {
+      try {
+        openCodeBootstrapResult = await ensureOpenCodeReadyOnStartup({
+          dataPath: openCodeRuntimeDataPath ?? undefined,
+        });
+      } catch (error) {
+        console.warn('[OpenCode] unexpected startup bootstrap error:', error);
+        openCodeBootstrapResult = { status: 'failed', error: error instanceof Error ? error.message : String(error) };
+      }
+
+      const result = await checkOpenCodeManagedAgentHealthOnStartup({
+        backendPort,
+        bootstrapResult: openCodeBootstrapResult,
+      });
+      if (result.checked) {
+        void ipcBridge.acpConversation.managedAgentHealthChanged.emit({
+          id: result.agentId,
+          status: result.status,
+        });
+      }
+      return result;
+    })();
+  }
+  return openCodeManagedAgentHealthPromise;
+}
+
+function checkCodexManagedAgentHealthOnce(backendPort: number): Promise<OpenCodeManagedAgentHealthResult> {
+  if (!codexManagedAgentHealthPromise) {
+    codexManagedAgentHealthPromise = (async () => {
+      try {
+        codexBootstrapResult = await ensureCodexReadyOnStartup({
+          dataPath: openCodeRuntimeDataPath ?? undefined,
+        });
+      } catch (error) {
+        console.warn('[Codex] unexpected startup bootstrap error:', error);
+        codexBootstrapResult = { status: 'failed', error: error instanceof Error ? error.message : String(error) };
+      }
+
+      const result = await checkCodexManagedAgentHealthOnStartup({
+        backendPort,
+        bootstrapResult: codexBootstrapResult,
+      });
+      if (result.checked) {
+        void ipcBridge.acpConversation.managedAgentHealthChanged.emit({
+          id: result.agentId,
+          status: result.status,
+        });
+      }
+      return result;
+    })();
+  }
+  return codexManagedAgentHealthPromise;
+}
+
+function scheduleOpenCodeManagedAgentHealthAfterRendererReady(backendPort: number): void {
+  if (!rendererReadyForRuntimeStatus || !mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+  void checkOpenCodeManagedAgentHealthOnce(backendPort).then((healthResult) => {
+    console.log(`[AionUi:ready] opencodeHealth:${healthResult.checked ? healthResult.status || 'checked' : 'skipped'}`);
+  });
+  void checkCodexManagedAgentHealthOnce(backendPort).then((healthResult) => {
+    console.log(`[AionUi:ready] codexHealth:${healthResult.checked ? healthResult.status || 'checked' : 'skipped'}`);
+  });
+}
+
 function markBackendReady(backendPort: number, source: string): void {
   if (backendStartedOk) return;
   console.log(`[AionUi] ${source} ready (port=${backendPort})`);
@@ -359,6 +445,7 @@ function markBackendReady(backendPort: number, source: string): void {
   backendStartupFailureInfo = null;
   (globalThis as typeof globalThis & { __backendStartupFailed?: boolean }).__backendStartupFailed = false;
   void ensureAdminUserOnce(backendPort);
+  scheduleOpenCodeManagedAgentHealthAfterRendererReady(backendPort);
   scheduleBackendMigrations();
 }
 
@@ -411,6 +498,7 @@ function applyDebugBackendStartupFailure(failure: BackendStartupFailureInfo): vo
 
 const createWindow = ({ showOnReady = true }: { showOnReady?: boolean } = {}): void => {
   console.log('[AionUi] Creating main window...');
+  rendererReadyForRuntimeStatus = false;
   const { x: windowX, y: windowY, width: windowWidth, height: windowHeight } = resolveInitialBounds();
 
   // Get app icon for development mode (Windows/Linux need icon in BrowserWindow)
@@ -462,6 +550,14 @@ const createWindow = ({ showOnReady = true }: { showOnReady?: boolean } = {}): v
   console.log(`[AionUi] Main window created (id=${mainWindow.id})`);
 
   scheduleStartupLogReport(mainWindow);
+
+  mainWindow.webContents.once('did-finish-load', () => {
+    rendererReadyForRuntimeStatus = true;
+    const backendPort = (globalThis as typeof globalThis & { __backendPort?: number }).__backendPort;
+    if (backendStartedOk && backendPort) {
+      scheduleOpenCodeManagedAgentHealthAfterRendererReady(backendPort);
+    }
+  });
 
   // Show window after content is ready to prevent FOUC (Flash of Unstyled Content)
   // Use 'ready-to-show' which fires when renderer has painted first frame,
@@ -669,6 +765,8 @@ const handleAppReady = async (): Promise<void> => {
         const { getDataPath } = await import('./process/utils/utils');
         const { getSystemDir } = await import('./process/utils/initStorage');
         const sysDir = getSystemDir();
+        openCodeRuntimeDataPath = sysDir.workDir;
+        addStartupManagedAcpToolBinsToPath(sysDir.workDir);
         return backendManager.start(
           getDataPath(),
           sysDir.logDir,
@@ -851,23 +949,25 @@ const handleAppReady = async (): Promise<void> => {
     mark('createWindow');
 
     // Initialize desktop pet (delayed to not block main window)
-    setTimeout(() => {
-      void (async () => {
-        try {
-          const petEnabled = await ProcessConfig.get('pet.enabled');
-          if (petEnabled === true) {
-            // Read pet sub-settings before creating the pet so flags are honored
-            // on the first createPetWindow() call (which is sync).
-            const confirmEnabled = (await ProcessConfig.get('pet.confirmEnabled')) ?? true;
-            const { createPetWindow, setPetConfirmEnabled } = await import('./process/pet/petManager');
-            setPetConfirmEnabled(confirmEnabled);
-            createPetWindow();
+    if (DESKTOP_PET_FEATURE_ENABLED) {
+      setTimeout(() => {
+        void (async () => {
+          try {
+            const petEnabled = await ProcessConfig.get('pet.enabled');
+            if (petEnabled === true) {
+              // Read pet sub-settings before creating the pet so flags are honored
+              // on the first createPetWindow() call (which is sync).
+              const confirmEnabled = (await ProcessConfig.get('pet.confirmEnabled')) ?? true;
+              const { createPetWindow, setPetConfirmEnabled } = await import('./process/pet/petManager');
+              setPetConfirmEnabled(confirmEnabled);
+              createPetWindow();
+            }
+          } catch (error) {
+            console.error('[Pet] Failed to initialize:', error);
           }
-        } catch (error) {
-          console.error('[Pet] Failed to initialize:', error);
-        }
-      })();
-    }, 3000);
+        })();
+      }, 3000);
+    }
 
     // 读取语言设置并初始化主进程 i18n，然后刷新托盘菜单
     // Read language setting and initialize main process i18n, then refresh tray menu

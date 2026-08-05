@@ -1,6 +1,6 @@
 {
-  "pageTitle": "AionUi - 로그인",
-  "brand": "AionUi",
+  "pageTitle": "HTHBuddy - 로그인",
+  "brand": "HTHBuddy",
   "subtitle": "다시 오신 것을 환영합니다. 계정에 로그인하세요",
   "username": "사용자 이름",
   "usernamePlaceholder": "사용자 이름을 입력하세요",
@@ -22,5 +22,17 @@
     "networkError": "연결 실패, 다시 시도하세요",
     "serverError": "서버 오류, 나중에 다시 시도하세요",
     "unknown": "로그인 실패, 다시 시도하세요"
+  },
+  "hth": {
+    "title": "Sign in with HTH",
+    "description": "HTHBuddy requires your HTH account before assistants can be used.",
+    "baseUrl": "HTH URL",
+    "baseUrlPlaceholder": "http://127.0.0.1:3001",
+    "loginWithDingTalk": "Sign in with DingTalk",
+    "browserOpened": "Sign-in page opened in your browser",
+    "startFailed": "Unable to open HTH sign-in",
+    "callbackMissing": "HTH sign-in callback is missing required data",
+    "exchangeFailed": "HTH sign-in failed",
+    "success": "HTH sign-in successful"
   }
 }

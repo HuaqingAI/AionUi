@@ -118,6 +118,12 @@ function patchElectronBuilderNsisInstaller() {
     '  !insertmacro copyFile "$uninstallerFileName" "$uninstallerFileNameTemp"',
   ].join('\n');
   const bundledUninstallerOverride = [
+    '  ${if} ${FileExists} "$PLUGINSDIR\\HTHBuddy-fixed-uninstaller.exe"',
+    '    DetailPrint `HTHBuddy-bundled-uninstaller override source.`',
+    '    StrCpy $uninstallerFileName "$PLUGINSDIR\\HTHBuddy-fixed-uninstaller.exe"',
+    '  ${endIf}',
+  ].join('\n');
+  const legacyBundledUninstallerOverride = [
     '  ${if} ${FileExists} "$PLUGINSDIR\\AionUi-fixed-uninstaller.exe"',
     '    DetailPrint `AionUi-bundled-uninstaller override source.`',
     '    StrCpy $uninstallerFileName "$PLUGINSDIR\\AionUi-fixed-uninstaller.exe"',
@@ -129,6 +135,10 @@ function patchElectronBuilderNsisInstaller() {
     '  StrCpy $uninstallerFileNameTemp "$PLUGINSDIR\\old-uninstaller.exe"',
     '  !insertmacro copyFile "$uninstallerFileName" "$uninstallerFileNameTemp"',
   ].join('\n');
+
+  if (patched.includes(legacyBundledUninstallerOverride)) {
+    patched = patched.replaceAll(legacyBundledUninstallerOverride, bundledUninstallerOverride);
+  }
 
   while (patched.includes(`${bundledUninstallerOverride}\n\n${bundledUninstallerOverride}`)) {
     patched = patched.replace(
@@ -844,14 +854,14 @@ try {
     const winUnpackedDir = path.join(outDir, 'win-unpacked');
     let cleaned = tryRemoveDir(winUnpackedDir);
     if (!cleaned) {
-      const aionRunning = isProcessRunningWindows('AionUi.exe');
+      const aionRunning = isProcessRunningWindows('HTHBuddy.exe');
       const electronRunning = isProcessRunningWindows('electron.exe');
       if (aionRunning || electronRunning) {
-        console.log('⚠️  Detected running AionUi/Electron process. Attempting to close...');
-        killWindowsProcesses(['AionUi.exe', 'electron.exe']);
+        console.log('⚠️  Detected running HTHBuddy/Electron process. Attempting to close...');
+        killWindowsProcesses(['HTHBuddy.exe', 'electron.exe']);
         cleaned = tryRemoveDir(winUnpackedDir);
         if (!cleaned) {
-          console.log('⚠️  Directory still locked. Please close any running AionUi/Electron processes and retry.');
+          console.log('⚠️  Directory still locked. Please close any running HTHBuddy/Electron processes and retry.');
         }
       }
     }
@@ -867,7 +877,7 @@ try {
   try {
     buildWithDmgRetry(builderCommand, targetArch);
   } catch (error) {
-    const winExePath = path.join(outDir, 'win-unpacked', 'AionUi.exe');
+    const winExePath = path.join(outDir, 'win-unpacked', 'HTHBuddy.exe');
     const firstError = formatExecError(error);
     const canRetryWithoutExecutableEdit =
       process.platform === 'win32' && isWindowsBuild && process.env.CI !== 'true' && fs.existsSync(winExePath);
@@ -876,7 +886,7 @@ try {
       throw error;
     }
 
-    console.log('⚠️  Windows local build failed after AionUi.exe was produced.');
+    console.log('⚠️  Windows local build failed after HTHBuddy.exe was produced.');
     if (firstError) {
       console.log('   First failure summary:');
       console.log(
@@ -889,7 +899,7 @@ try {
     }
     console.log('   Retrying local build with win.signAndEditExecutable=false...');
     console.log('   This fallback is intended for transient rcedit / file-lock failures on developer machines.');
-    killWindowsProcesses(['AionUi.exe', 'electron.exe']);
+    killWindowsProcesses(['HTHBuddy.exe', 'electron.exe']);
     cleanupWindowsPackOutput();
 
     try {

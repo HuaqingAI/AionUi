@@ -10,6 +10,7 @@ import type { IMcpServer } from '@/common/config/storage';
 import { useGuidSend, type GuidSendDeps } from '@/renderer/pages/guid/hooks/useGuidSend';
 
 const createConversationInvokeMock = vi.fn();
+const injectProjectConfigInvokeMock = vi.fn();
 const swrMutateMock = vi.fn();
 
 vi.mock('@/common', () => ({
@@ -17,6 +18,11 @@ vi.mock('@/common', () => ({
     conversation: {
       create: {
         invoke: (...args: unknown[]) => createConversationInvokeMock(...args),
+      },
+    },
+    hth: {
+      injectProjectConfig: {
+        invoke: (...args: unknown[]) => injectProjectConfigInvokeMock(...args),
       },
     },
   },
@@ -79,6 +85,8 @@ describe('useGuidSend', () => {
   beforeEach(() => {
     createConversationInvokeMock.mockReset();
     createConversationInvokeMock.mockResolvedValue({ id: 'conv-1' });
+    injectProjectConfigInvokeMock.mockReset();
+    injectProjectConfigInvokeMock.mockResolvedValue({ injected: false, files: [], reason: 'workspaceMissing' });
     swrMutateMock.mockReset();
     swrMutateMock.mockResolvedValue(undefined);
   });
@@ -109,6 +117,11 @@ describe('useGuidSend', () => {
     expect(payload.extra.session_mode).toBeUndefined();
     expect(payload.extra.current_model_id).toBeUndefined();
     expect(payload.extra.preset_assistant_id).toBeUndefined();
+    expect(injectProjectConfigInvokeMock).toHaveBeenCalledWith({
+      conversationId: 'conv-1',
+      workspace: undefined,
+      assistantId: 'assistant-1',
+    });
     expect(swrMutateMock).toHaveBeenCalledWith('guid.assistant.detail.assistant-1.zh-CN');
     expect(swrMutateMock).toHaveBeenCalledWith('assistants.list');
   });

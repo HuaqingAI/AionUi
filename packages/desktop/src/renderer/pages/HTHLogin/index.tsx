@@ -1,0 +1,158 @@
+/**
+ * @license
+ * Copyright 2026 AionUi (aionui.com)
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import { ipcBridge } from '@/common';
+import { isHTHUnauthorizedSyncResult } from '@/common/types/hth';
+import AppLoader from '@renderer/components/layout/AppLoader';
+import HTHBuddyLogo from '@renderer/components/layout/HTHBuddyLogo';
+import WindowControls from '@renderer/components/layout/WindowControls';
+import { Button, Input, Message, Typography } from '@arco-design/web-react';
+import { Down, Login, Right } from '@icon-park/react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
+import '@renderer/components/layout/Titlebar/titlebar.css';
+import styles from './index.module.css';
+
+const formatHTHText = (value: string): string => value.replace(/hth/gi, 'HTH');
+
+const HTHLogin: React.FC = () => {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const [baseUrl, setBaseUrl] = useState('');
+  const [baseUrlVisible, setBaseUrlVisible] = useState(false);
+  const [checking, setChecking] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const disposedRef = useRef(false);
+
+  useEffect(() => {
+    let disposed = false;
+    disposedRef.current = false;
+    ipcBridge.hth.authStatus
+      .invoke()
+      .then((status) => {
+        if (disposed) return;
+        if (status.loggedIn) {
+          void navigate('/guid', { replace: true });
+          return;
+        }
+        setBaseUrl(status.baseUrl || '');
+      })
+      .catch((error) => {
+        console.error('[HTHLogin] Failed to load auth status:', error);
+      })
+      .finally(() => {
+        if (!disposed) {
+          setChecking(false);
+        }
+      });
+    return () => {
+      disposed = true;
+      disposedRef.current = true;
+    };
+  }, [navigate]);
+
+  const completeLogin = useCallback(async () => {
+    try {
+      const syncResult = await ipcBridge.hth.syncAgentConfigs.invoke({ force: true });
+      if (isHTHUnauthorizedSyncResult(syncResult)) {
+        if (!disposedRef.current) {
+          await navigate('/hth-login', { replace: true });
+        }
+        return;
+      }
+    } catch (error) {
+      console.error('[HTHLogin] Failed to sync hth configs after login:', error);
+      Message.warning(formatHTHText(t('settings.hth.syncFailed')));
+    }
+    if (!disposedRef.current) {
+      await navigate('/guid', { replace: true });
+    }
+  }, [navigate, t]);
+
+  const waitForAuthStatus = useCallback(async (): Promise<boolean> => {
+    const deadline = Date.now() + 2 * 60 * 1000;
+    while (!disposedRef.current && Date.now() < deadline) {
+      const status = await ipcBridge.hth.authStatus.invoke();
+      if (status.loggedIn) {
+        await completeLogin();
+        return true;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+    return false;
+  }, [completeLogin]);
+
+  const handleLogin = useCallback(async () => {
+    setLoading(true);
+    try {
+      await ipcBridge.hth.startLogin.invoke({ baseUrl: baseUrl.trim() || undefined });
+      Message.info(formatHTHText(t('login.hth.browserOpened')));
+      const loggedIn = await waitForAuthStatus();
+      if (!loggedIn && !disposedRef.current) {
+        Message.error(formatHTHText(t('login.hth.exchangeFailed')));
+      }
+    } catch (error) {
+      console.error('[HTHLogin] Failed to start login:', error);
+      Message.error(formatHTHText(t('login.hth.startFailed')));
+    } finally {
+      setLoading(false);
+    }
+  }, [baseUrl, t, waitForAuthStatus]);
+
+  if (checking) {
+    return <AppLoader />;
+  }
+
+  return (
+    <div className='flex h-full w-full flex-col bg-bg-0'>
+      <div className={styles.loginTitlebar}>
+        <div className={styles.loginTitlebarBrand} data-testid='hth-login-titlebar-brand'>
+          <HTHBuddyLogo className={styles.loginTitlebarLogo} title={t('login.brand')} />
+          <span>{t('login.brand')}</span>
+        </div>
+        <WindowControls />
+      </div>
+      <div className='flex min-h-0 flex-1 items-center justify-center px-24px'>
+        <div className='flex w-full max-w-420px flex-col gap-24px rounded-8px border border-border-2 bg-bg-1 p-32px shadow-sm'>
+          <div className='flex flex-col gap-8px'>
+            <Typography.Title heading={4} className='!m-0 text-t-primary'>
+              {t('login.hth.title')}
+            </Typography.Title>
+            <Typography.Text className='text-t-secondary'>{t('login.hth.description')}</Typography.Text>
+          </div>
+
+          <div className='flex flex-col gap-8px'>
+            <Button
+              type='text'
+              size='small'
+              className='self-start !px-0'
+              icon={baseUrlVisible ? <Down /> : <Right />}
+              disabled={loading}
+              onClick={() => setBaseUrlVisible((visible) => !visible)}
+            >
+              {t('login.hth.baseUrl')}
+            </Button>
+            {baseUrlVisible && (
+              <Input
+                value={baseUrl}
+                onChange={setBaseUrl}
+                placeholder={t('login.hth.baseUrlPlaceholder')}
+                disabled={loading}
+              />
+            )}
+          </div>
+
+          <Button type='primary' icon={<Login />} loading={loading} onClick={handleLogin}>
+            {t('login.hth.loginWithDingTalk')}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default HTHLogin;

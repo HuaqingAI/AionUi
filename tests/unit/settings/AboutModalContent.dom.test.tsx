@@ -79,6 +79,7 @@ describe('AboutModalContent update ready state', () => {
   afterEach(() => {
     setUpdateReadyState({ ready: false, version: '' });
     cleanup();
+    localStorage.clear();
     vi.clearAllMocks();
     vi.unstubAllGlobals();
   });
@@ -102,6 +103,19 @@ describe('AboutModalContent update ready state', () => {
     fireEvent.click(await screen.findByRole('button', { name: '2.1.14 已就绪, 立即安装' }));
 
     expect(mocks.quitAndInstallMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders the HTHBuddy about page without prerelease or resource links', () => {
+    render(<AboutModalContent />);
+
+    expect(screen.getByText('HTHBuddy')).toBeInTheDocument();
+    expect(screen.queryByText('AionUi')).not.toBeInTheDocument();
+    expect(screen.queryByText('settings.includePrereleaseUpdates')).not.toBeInTheDocument();
+    expect(screen.queryByText('settings.helpDocumentation')).not.toBeInTheDocument();
+    expect(screen.queryByText('settings.updateLog')).not.toBeInTheDocument();
+    expect(screen.queryByText('settings.bugReport')).not.toBeInTheDocument();
+    expect(screen.queryByText('settings.contactMe')).not.toBeInTheDocument();
+    expect(screen.queryByText('settings.officialWebsite')).not.toBeInTheDocument();
   });
 
   it('shows preparing loading state for ready auto-update install from About', async () => {
@@ -139,20 +153,13 @@ describe('AboutModalContent update ready state', () => {
   });
 
   it('reveals the notification card only when an update is available, with no toast', async () => {
-    mocks.updateCheckMock.mockResolvedValue({
+    localStorage.setItem('update.includePrerelease', 'true');
+    mocks.autoUpdateCheckMock.mockResolvedValue({
       success: true,
       data: {
-        currentVersion: '2.1.13',
-        updateAvailable: true,
-        latest: {
-          tagName: 'v2.1.14',
+        updateInfo: {
           version: '2.1.14',
-          name: 'v2.1.14',
-          body: 'notes',
-          htmlUrl: 'https://example.com/r',
-          prerelease: false,
-          draft: false,
-          assets: [],
+          releaseNotes: 'notes',
         },
       },
     });
@@ -167,7 +174,10 @@ describe('AboutModalContent update ready state', () => {
     });
     const detail = (availableListener.mock.calls[0][0] as CustomEvent).detail;
     expect(detail.kind).toBe('available');
-    expect(detail.updateInfo.version).toBe('2.1.14');
+    expect(detail.autoUpdateInfo.version).toBe('2.1.14');
+    expect(detail.updateInfo).toBeNull();
+    expect(mocks.autoUpdateCheckMock).toHaveBeenCalledWith({ includePrerelease: false });
+    expect(mocks.updateCheckMock).not.toHaveBeenCalled();
     expect(mocks.messageInfoMock).not.toHaveBeenCalled();
 
     window.removeEventListener('aionui-update-available', availableListener);
@@ -183,6 +193,8 @@ describe('AboutModalContent update ready state', () => {
     await waitFor(() => {
       expect(mocks.messageInfoMock).toHaveBeenCalledWith('update.alreadyLatest');
     });
+    expect(mocks.autoUpdateCheckMock).toHaveBeenCalledWith({ includePrerelease: false });
+    expect(mocks.updateCheckMock).not.toHaveBeenCalled();
     expect(availableListener).not.toHaveBeenCalled();
 
     window.removeEventListener('aionui-update-available', availableListener);

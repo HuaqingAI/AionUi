@@ -83,6 +83,7 @@ const AionrsChat: React.FC<{
           <AionrsSendBox
             conversation_id={conversation_id}
             modelSelection={modelSelection}
+            initialWorkspacePath={workspace}
             session_mode={session_mode}
             agent_name={agent_name}
             teamSendMessage={teamSendMessage}

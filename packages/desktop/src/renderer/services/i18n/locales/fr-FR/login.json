@@ -1,6 +1,6 @@
 {
-  "pageTitle": "AionUi - Connexion",
-  "brand": "AionUi",
+  "pageTitle": "HTHBuddy - Connexion",
+  "brand": "HTHBuddy",
   "subtitle": "Bienvenue, veuillez vous connecter à votre compte",
   "username": "Nom d'utilisateur",
   "usernamePlaceholder": "Entrez votre nom d'utilisateur",
@@ -22,5 +22,17 @@
     "networkError": "Connexion échouée, veuillez réessayer",
     "serverError": "Erreur serveur, veuillez réessayer plus tard",
     "unknown": "Échec de connexion, veuillez réessayer"
+  },
+  "hth": {
+    "title": "Sign in with HTH",
+    "description": "HTHBuddy requires your HTH account before assistants can be used.",
+    "baseUrl": "HTH URL",
+    "baseUrlPlaceholder": "http://127.0.0.1:3001",
+    "loginWithDingTalk": "Sign in with DingTalk",
+    "browserOpened": "Sign-in page opened in your browser",
+    "startFailed": "Unable to open HTH sign-in",
+    "callbackMissing": "HTH sign-in callback is missing required data",
+    "exchangeFailed": "HTH sign-in failed",
+    "success": "HTH sign-in successful"
   }
 }

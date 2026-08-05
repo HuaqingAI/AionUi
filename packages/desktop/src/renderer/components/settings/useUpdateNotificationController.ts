@@ -68,8 +68,6 @@ const reduceNotificationState = (
   event: UpdateNotificationEvent
 ): UpdateNotificationState => updateNotificationReducer(current, event).state;
 
-const RELEASES_PAGE_URL = 'https://github.com/iOfficeAI/AionUi/releases';
-
 const getVersionLabelFromState = (state: UpdateNotificationState): string =>
   state.updateInfo?.version || state.autoUpdateInfo?.version || '';
 
@@ -88,39 +86,14 @@ export const useUpdateNotificationController = () => {
     stateRef.current = state;
   }, [state]);
 
-  const loadManualReleaseInfoForDisplay = useCallback(async () => {
-    try {
-      const res = await ipcBridge.update.check.invoke({
-        includePrerelease: getIncludePrerelease(),
-      });
-      if (res?.success && res.data?.latest) {
-        dispatch({
-          type: 'manualReleaseInfoLoaded',
-          updateInfo: res.data.latest,
-          releasePageUrl: res.data.latest.htmlUrl || '',
-        });
-      }
-    } catch (error) {
-      console.warn('Manual release info check error:', error);
-      dispatch({
-        type: 'manualReleaseInfoFailed',
-        releasePageUrl: stateRef.current.releasePageUrl || RELEASES_PAGE_URL,
-      });
-    }
+  const dispatchAutoAvailable = useCallback((evt: AutoUpdateStatus) => {
+    dispatch({
+      type: 'autoStatusAvailable',
+      version: evt.version || '',
+      currentVersion: evt.currentVersion || __APP_VERSION__,
+      releaseNotes: evt.releaseNotes,
+    });
   }, []);
-
-  const dispatchAutoAvailable = useCallback(
-    (evt: AutoUpdateStatus) => {
-      dispatch({
-        type: 'autoStatusAvailable',
-        version: evt.version || '',
-        currentVersion: evt.currentVersion || __APP_VERSION__,
-        releaseNotes: evt.releaseNotes,
-      });
-      void loadManualReleaseInfoForDisplay();
-    },
-    [loadManualReleaseInfoForDisplay]
-  );
 
   const checkForUpdates = useCallback(async () => {
     dispatch({ type: 'checkStarted' });

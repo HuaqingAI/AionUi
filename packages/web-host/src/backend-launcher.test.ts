@@ -8,6 +8,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'node:events';
 import type { ChildProcess } from 'node:child_process';
 import type { Socket } from 'node:net';
+import path from 'node:path';
 
 // ---- Module-level mocks ----
 vi.mock('node:child_process', () => ({
@@ -228,7 +229,7 @@ describe('buildSpawnArgs', () => {
 });
 
 describe('buildSpawnEnv', () => {
-  it('merges process.env with AIONUI_* dir vars', () => {
+  it('merges process.env with AIONUI_* dir vars and managed CLI homes', () => {
     const env = buildSpawnEnv({
       cacheDir: '/c',
       workDir: '/w',
@@ -237,6 +238,8 @@ describe('buildSpawnEnv', () => {
     expect(env.AIONUI_CACHE_DIR).toBe('/c');
     expect(env.AIONUI_WORK_DIR).toBe('/w');
     expect(env.AIONUI_LOG_DIR).toBe('/l');
+    expect(env.CODEX_HOME).toBe(path.join('/w', 'runtime', 'codex-home'));
+    expect(env.OPENCODE_CONFIG_DIR).toBe(path.join('/w', 'runtime', 'opencode-home'));
     expect(env.PATH).toBe(process.env.PATH); // inherits
   });
 });
@@ -358,6 +361,38 @@ describe('BackendLifecycleManager.start (success path)', () => {
     fetchSpy.mockRestore();
   });
 
+  it('reports backend stderr lines through onStderrLine', async () => {
+    const child = makeFakeChild();
+    vi.mocked(spawn).mockReturnValue(child as unknown as ChildProcess);
+
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('ok', { status: 200 }) as unknown as Response);
+    const onStderrLine = vi.fn();
+    const mgr = new BackendLifecycleManager(APP_META_PACKAGED, () => '/abs/path/aioncore');
+    const startPromise = mgr.start(
+      '/db/path',
+      '/log/dir',
+      {
+        cacheDir: '/c',
+        workDir: '/w',
+        logDir: '/l',
+      },
+      { onStderrLine }
+    );
+
+    await Promise.resolve();
+    emitListening(child, 55554);
+    child.stderr?.emit('data', Buffer.from('message: "Internal error: 鐢ㄦ埛棰濆害涓嶈冻"\n'));
+
+    await startPromise;
+
+    expect(onStderrLine).toHaveBeenCalledTimes(1);
+    expect(onStderrLine).toHaveBeenCalledWith('message: "Internal error: 鐢ㄦ埛棰濆害涓嶈冻"');
+
+    fetchSpy.mockRestore();
+  });
+
   it('spawns with correct args, waits for /health, reports running', async () => {
     const child = makeFakeChild();
     vi.mocked(spawn).mockReturnValue(child as unknown as ChildProcess);
@@ -413,6 +448,8 @@ describe('BackendLifecycleManager.start (success path)', () => {
       expect(opts.env.AIONUI_CACHE_DIR).toBe('/c');
       expect(opts.env.AIONUI_WORK_DIR).toBe('/w');
       expect(opts.env.AIONUI_LOG_DIR).toBe('/l');
+      expect(opts.env.CODEX_HOME).toBe(path.join('/w', 'runtime', 'codex-home'));
+      expect(opts.env.OPENCODE_CONFIG_DIR).toBe(path.join('/w', 'runtime', 'opencode-home'));
       expect((spawnCall[2] as { detached?: boolean }).detached).toBe(process.platform !== 'win32');
       expect(mkdirSync).toHaveBeenCalledWith('/db/path', { recursive: true });
       expect(mkdirSync).toHaveBeenCalledWith('/log/dir', { recursive: true });

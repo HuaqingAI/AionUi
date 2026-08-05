@@ -14,6 +14,9 @@ import { getGpuStatus, setGpuUserOverride } from '@process/utils/gpuRecovery';
 import { initApplicationBridgeCore } from './applicationBridgeCore';
 import type { IStartOnBootStatus } from '@/common/adapter/ipcBridge';
 import { restartApplication } from './restartApplication';
+import { HTHAuthService } from '@process/services/hth/authService';
+import { HTHConfigSyncService } from '@process/services/hth/configSyncService';
+import { HTHQuotaService } from '@process/services/hth/quotaService';
 
 let mainWindowRef: BrowserWindow | null = null;
 
@@ -93,6 +96,20 @@ export function setStartOnBootEnabled(enabled: boolean): IStartOnBootStatus {
 
 export function setApplicationMainWindow(win: BrowserWindow): void {
   mainWindowRef = win;
+}
+
+function showHTHLoginWindow(): void {
+  if (!mainWindowRef || mainWindowRef.isDestroyed()) {
+    return;
+  }
+  if (process.platform === 'darwin' && app.dock) {
+    void app.dock.show();
+  }
+  if (mainWindowRef.isMinimized()) {
+    mainWindowRef.restore();
+  }
+  mainWindowRef.show();
+  mainWindowRef.focus();
 }
 
 export function initApplicationBridge(): void {
@@ -226,4 +243,17 @@ export function initApplicationBridge(): void {
       return { success: false, msg: e.message || e.toString() };
     }
   });
+
+  const hthAuthService = new HTHAuthService(undefined, { onLoginComplete: showHTHLoginWindow });
+  const hthConfigSyncService = new HTHConfigSyncService(hthAuthService);
+  const hthQuotaService = new HTHQuotaService(hthAuthService);
+
+  ipcBridge.hth.authStatus.provider(() => hthAuthService.getStatus());
+  ipcBridge.hth.startLogin.provider((request) => hthAuthService.startLogin(request));
+  ipcBridge.hth.exchangeLoginCode.provider((request) => hthAuthService.exchangeLoginCode(request));
+  ipcBridge.hth.logout.provider(() => hthAuthService.logout());
+  ipcBridge.hth.syncAgentConfigs.provider((request) => hthConfigSyncService.syncAgentConfigs(request));
+  ipcBridge.hth.injectProjectConfig.provider((request) => hthConfigSyncService.injectProjectConfig(request));
+  ipcBridge.hth.quotaSummary.provider(() => hthQuotaService.getSummary());
+  ipcBridge.hth.refreshQuotaSummary.provider(() => hthQuotaService.refreshSummary());
 }

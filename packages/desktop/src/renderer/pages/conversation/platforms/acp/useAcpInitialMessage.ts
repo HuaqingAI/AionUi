@@ -28,6 +28,7 @@ type UseAcpInitialMessageParams = {
   markSendFailed?: (failure: ConversationRuntimeSendFailure) => void;
   checkAndUpdateTitle: (conversation_id: string, input: string) => void;
   addOrUpdateMessage: (message: TMessage, prepend?: boolean) => void;
+  beforeSend?: () => Promise<void>;
 };
 
 /**
@@ -45,6 +46,7 @@ export const useAcpInitialMessage = ({
   markSendFailed,
   checkAndUpdateTitle,
   addOrUpdateMessage,
+  beforeSend,
 }: UseAcpInitialMessageParams): void => {
   const { t } = useTranslation();
 
@@ -67,6 +69,7 @@ export const useAcpInitialMessage = ({
         markSendStarted?.();
         setAiProcessing(true);
 
+        await beforeSend?.();
         void checkAndUpdateTitle(conversation_id, input);
         const result = await ipcBridge.acpConversation.sendMessage.invoke({
           input: displayMessage,
@@ -131,6 +134,7 @@ export const useAcpInitialMessage = ({
   }, [
     addOrUpdateMessage,
     backend,
+    beforeSend,
     checkAndUpdateTitle,
     conversation_id,
     markSendAccepted,

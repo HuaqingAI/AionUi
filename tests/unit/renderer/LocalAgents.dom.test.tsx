@@ -4,9 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  *
  * Render test for the LocalAgents settings surface. Its purpose is to lock in
- * that LocalAgents reads the management view (`useManagedAgents`) — the
- * include_disabled data path that keeps user-disabled agents listed — and
- * derives the detected/custom sections from it.
+ * that LocalAgents reads the management view (`useManagedAgents`) and renders
+ * the narrowed diagnostics list for visible local runtimes.
  */
 
 import { describe, expect, it, vi } from 'vitest';
@@ -31,9 +30,6 @@ const { messageSuccess, messageWarning, messageError } = vi.hoisted(() => ({
   messageSuccess: vi.fn(),
   messageWarning: vi.fn(),
   messageError: vi.fn(),
-}));
-const { openExternalUrl } = vi.hoisted(() => ({
-  openExternalUrl: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('@arco-design/web-react', async () => {
   const actual = await vi.importActual<typeof import('@arco-design/web-react')>('@arco-design/web-react');
@@ -61,7 +57,7 @@ vi.mock('@renderer/hooks/agent/useManagedAgents', () => ({
   useManagedAgents: () => useManagedAgents(),
 }));
 
-// Bridge is only touched by user-action handlers, not on render — stub the
+// Bridge is only touched by user-action handlers, not on render - stub the
 // shape the handlers reference so the import resolves.
 vi.mock('@/common', () => ({
   ipcBridge: {
@@ -72,6 +68,10 @@ vi.mock('@/common', () => ({
       setAgentEnabled: { invoke: vi.fn() },
       checkManagedAgentHealthById: { invoke: vi.fn() },
     },
+    runtime: {
+      statusChanged: { on: vi.fn(() => vi.fn()) },
+      localStatusChanged: { on: vi.fn(() => vi.fn()) },
+    },
     // Bound-assistant avatar stacks fetch the assistant list via SWR.
     assistants: {
       list: { invoke: vi.fn().mockResolvedValue([]) },
@@ -79,17 +79,14 @@ vi.mock('@/common', () => ({
   },
 }));
 
-vi.mock('@renderer/utils/platform', async () => {
-  const actual = await vi.importActual<typeof import('@renderer/utils/platform')>('@renderer/utils/platform');
-  return {
-    ...actual,
-    openExternalUrl,
-  };
-});
-
-// Keep the test focused on LocalAgents' own logic — stub heavy children.
-vi.mock('@/renderer/components/base/AionModal', () => ({ default: () => null }));
-vi.mock('@renderer/pages/settings/AgentSettings/InlineAgentEditor', () => ({ default: () => null }));
+// Keep the test focused on LocalAgents' own logic - stub heavy children.
+vi.mock('@/renderer/components/base/AionModal', () => ({
+  default: ({ visible, children }: { visible: boolean; children: React.ReactNode }) =>
+    visible ? <div data-testid='aion-modal'>{children}</div> : null,
+}));
+vi.mock('@renderer/pages/settings/AgentSettings/InlineAgentEditor', () => ({
+  default: () => <div data-testid='inline-agent-editor' />,
+}));
 vi.mock('@renderer/pages/settings/AgentSettings/AgentHubModal', () => ({ AgentHubModal: () => null }));
 
 import LocalAgents from '@renderer/pages/settings/AgentSettings/LocalAgents';
@@ -101,6 +98,28 @@ import { getBoundAssistants } from '@renderer/pages/settings/AgentSettings/Bound
 import type { Assistant } from '@/common/types/agent/assistantTypes';
 
 const makeAgents = () => [
+  {
+    id: 'codex',
+    name: 'Codex',
+    agent_type: 'acp',
+    agent_source: 'builtin',
+    backend: 'codex',
+    enabled: true,
+    available: true,
+    installed: true,
+    status: 'online',
+  },
+  {
+    id: 'opencode',
+    name: 'OpenCode',
+    agent_type: 'acp',
+    agent_source: 'builtin',
+    backend: 'opencode',
+    enabled: true,
+    available: false,
+    installed: false,
+    status: 'missing',
+  },
   {
     id: 'aionrs',
     name: 'Aion CLI',
@@ -118,6 +137,17 @@ const makeAgents = () => [
     agent_type: 'acp',
     agent_source: 'builtin',
     backend: 'claude',
+    enabled: true,
+    available: false,
+    installed: false,
+    status: 'missing',
+  },
+  {
+    id: 'acp-kimi',
+    name: 'Kimi',
+    agent_type: 'acp',
+    agent_source: 'builtin',
+    backend: 'kimi',
     enabled: true,
     available: false,
     installed: false,
@@ -148,7 +178,7 @@ const makeAgents = () => [
 ];
 
 describe('LocalAgents', () => {
-  it('runs the health probe and shows a success toast after an official-agent test connection succeeds', async () => {
+  it('runs the health probe and shows a success toast after a visible-agent test connection succeeds', async () => {
     const refreshCatalog = vi.fn().mockResolvedValue(undefined);
     useManagedAgents.mockReturnValue({ agents: makeAgents(), revalidate: vi.fn(), refreshCatalog });
     vi.mocked(ipcBridge.acpConversation.checkManagedAgentHealthById.invoke).mockResolvedValue({
@@ -158,10 +188,10 @@ describe('LocalAgents', () => {
 
     render(<LocalAgents />);
 
-    fireEvent.click(screen.getAllByText('settings.agentManagement.testConnection')[0]);
+    fireEvent.click(screen.getByTestId('agent-row-test-codex'));
 
     await waitFor(() => {
-      expect(ipcBridge.acpConversation.checkManagedAgentHealthById.invoke).toHaveBeenCalledWith({ id: 'aionrs' });
+      expect(ipcBridge.acpConversation.checkManagedAgentHealthById.invoke).toHaveBeenCalledWith({ id: 'codex' });
     });
     await waitFor(() => {
       expect(refreshCatalog).toHaveBeenCalled();
@@ -180,15 +210,14 @@ describe('LocalAgents', () => {
 
     render(<LocalAgents />);
 
-    fireEvent.click(screen.getAllByText('settings.agentManagement.testConnection')[0]);
+    fireEvent.click(screen.getByTestId('agent-row-test-codex'));
 
     await waitFor(() => {
-      // formatManagedAgentDiagnosticMessage maps auth_required → its errorCodes key.
       expect(messageWarning).toHaveBeenCalledWith('settings.agentManagement.errorCodes.auth_required');
     });
   });
 
-  it('reads the managed-agents view and renders detected + custom sections', () => {
+  it('reads the managed-agents view and renders only Codex and OpenCode in the official section', () => {
     useManagedAgents.mockReturnValue({
       agents: makeAgents(),
       revalidate: vi.fn(),
@@ -197,15 +226,24 @@ describe('LocalAgents', () => {
 
     render(<LocalAgents />);
 
-    // Proves L30 (useManagedAgents) ran and fed the derived lists.
     expect(useManagedAgents).toHaveBeenCalled();
-    expect(screen.getByText('Aion CLI')).toBeTruthy();
-    expect(screen.getByText('Claude Code')).toBeTruthy();
+    expect(screen.getByText('Codex')).toBeTruthy();
+    expect(screen.getByText('OpenCode')).toBeTruthy();
+    expect(screen.queryByText('Aion CLI')).toBeNull();
+    expect(screen.queryByText('Claude Code')).toBeNull();
+    expect(screen.queryByText('Kimi')).toBeNull();
     expect(screen.getByText('My Agent')).toBeTruthy();
+    expect(screen.queryByText('OpenClaw Gateway')).toBeNull();
   });
 
-  it('shows the empty state when no detected agents are present', () => {
-    useManagedAgents.mockReturnValue({ agents: [], revalidate: vi.fn(), refreshCatalog: vi.fn() });
+  it('shows the empty state when no visible local agents are present', () => {
+    useManagedAgents.mockReturnValue({
+      agents: makeAgents().filter(
+        (agent) => agent.backend !== 'codex' && agent.backend !== 'opencode' && agent.agent_source !== 'custom'
+      ),
+      revalidate: vi.fn(),
+      refreshCatalog: vi.fn(),
+    });
 
     render(<LocalAgents />);
 
@@ -214,7 +252,7 @@ describe('LocalAgents', () => {
     expect(screen.getByText('settings.agentManagement.customEmpty')).toBeTruthy();
   });
 
-  it('renders official/custom sections with management statuses and removes the chat shortcut', () => {
+  it('keeps the custom agent controls while removing setup guidance and unavailable filter controls', () => {
     useManagedAgents.mockReturnValue({
       agents: makeAgents(),
       revalidate: vi.fn(),
@@ -223,14 +261,13 @@ describe('LocalAgents', () => {
 
     render(<LocalAgents />);
 
-    expect(screen.getByText('settings.agents')).toBeTruthy();
-    expect(screen.getByText('settings.agentManagement.customAgents')).toBeTruthy();
-    // Only Claude Code shows 'missing' now; openclaw-gateway is filtered out as deprecated
-    expect(screen.getByText('settings.agentManagement.statusMissing')).toBeTruthy();
-    expect(screen.getByText('settings.agentManagement.statusOffline')).toBeTruthy();
-    expect(screen.queryByText('settings.agentManagement.goToChat')).toBeNull();
-    // Verify deprecated agent is filtered out
-    expect(screen.queryByText('OpenClaw Gateway')).toBeNull();
+    expect(screen.getByText('settings.agentManagement.localAgentsDescription')).toBeTruthy();
+    expect(screen.queryByText('settings.agentManagement.localAgentsSetupLink')).toBeNull();
+    expect(screen.getByTestId('btn-add-custom-agent')).toBeTruthy();
+    expect(screen.getByTestId('agent-management-custom-header')).toBeTruthy();
+    expect(screen.getByTestId('agent-management-custom-section')).toBeTruthy();
+    expect(screen.getByText('My Agent')).toBeTruthy();
+    expect(screen.queryByTestId('settings-tab-unavailable')).toBeNull();
   });
 
   it('shows a lightweight refresh hint while the management view is revalidating', () => {
@@ -244,26 +281,7 @@ describe('LocalAgents', () => {
     render(<LocalAgents />);
 
     expect(screen.getByText('settings.agentManagement.refreshingStatuses')).toBeInTheDocument();
-    expect(screen.getByText('Aion CLI')).toBeInTheDocument();
-  });
-
-  it('renders official agents as diagnostics cards and filters out deprecated types', () => {
-    useManagedAgents.mockReturnValue({
-      agents: makeAgents(),
-      revalidate: vi.fn(),
-      refreshCatalog: vi.fn(),
-    });
-
-    render(<LocalAgents />);
-
-    // Agent names render
-    expect(screen.getByText('Aion CLI')).toBeInTheDocument();
-    expect(screen.getByText('Claude Code')).toBeInTheDocument();
-    // Deprecated openclaw-gateway agent is filtered out
-    expect(screen.queryByText('OpenClaw Gateway')).toBeNull();
-    // Status tags render
-    expect(screen.getByText('settings.agentManagement.statusOnline')).toBeInTheDocument();
-    expect(screen.getByText('settings.agentManagement.statusMissing')).toBeInTheDocument();
+    expect(screen.getByText('Codex')).toBeInTheDocument();
   });
 
   it('does not render the market-install CTA in the diagnostics-only agent page', () => {
@@ -279,22 +297,10 @@ describe('LocalAgents', () => {
     expect(screen.queryByText('settings.agentManagement.discoverMoreAgents')).toBeNull();
   });
 
-  it('renders the setup-guide action for official agents diagnostics', () => {
-    useManagedAgents.mockReturnValue({
-      agents: makeAgents(),
-      revalidate: vi.fn(),
-      refreshCatalog: vi.fn(),
-    });
-
-    render(<LocalAgents />);
-
-    fireEvent.click(screen.getByText('settings.agentManagement.localAgentsSetupLink'));
-
-    expect(openExternalUrl).toHaveBeenCalledWith('https://github.com/iOfficeAI/AionUi/wiki/ACP-Setup');
-  });
-
   it('binds assistants to managed agents by agent_id instead of runtime backend', () => {
-    const [aionrsAgent, claudeAgent] = makeAgents();
+    const agents = makeAgents();
+    const codexAgent = agents.find((agent) => agent.id === 'codex')!;
+    const claudeAgent = agents.find((agent) => agent.id === 'acp-claude')!;
     const assistants: Assistant[] = [
       {
         id: 'assistant-on-claude-runtime',
@@ -343,38 +349,7 @@ describe('LocalAgents', () => {
     expect(getBoundAssistants(claudeAgent, assistants).map((assistant) => assistant.id)).toEqual([
       'assistant-on-claude-agent',
     ]);
-    expect(getBoundAssistants(aionrsAgent, assistants)).toEqual([]);
-  });
-
-  it('pins Kimi right after the aionrs agent in the official list', () => {
-    useManagedAgents.mockReturnValue({
-      agents: [
-        ...makeAgents(),
-        {
-          id: 'acp-kimi',
-          name: 'Kimi',
-          agent_type: 'acp',
-          agent_source: 'builtin',
-          backend: 'kimi',
-          enabled: true,
-          available: false,
-          installed: false,
-          status: 'missing',
-        },
-      ],
-      revalidate: vi.fn(),
-      refreshCatalog: vi.fn(),
-    });
-
-    render(<LocalAgents />);
-
-    // Alphabetically Claude Code < Kimi, so this order proves the pin rule:
-    // aionrs stays first, Kimi jumps ahead of the localeCompare ordering.
-    const aion = screen.getByText('Aion CLI');
-    const kimi = screen.getByText('Kimi');
-    const claude = screen.getByText('Claude Code');
-    expect(kimi.compareDocumentPosition(aion) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
-    expect(claude.compareDocumentPosition(kimi) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+    expect(getBoundAssistants(codexAgent, assistants)).toEqual([]);
   });
 
   it('renders agent management as a single diagnostics page without local/remote tabs', () => {
@@ -392,7 +367,7 @@ describe('LocalAgents', () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByText('Aion CLI')).toBeInTheDocument();
+    expect(screen.getByText('Codex')).toBeInTheDocument();
     expect(screen.queryByText('settings.agentManagement.localAgents')).toBeNull();
   });
 
@@ -403,7 +378,7 @@ describe('LocalAgents', () => {
       revalidate: vi.fn(),
       refreshCatalog,
     });
-    vi.mocked(ipcBridge.acpConversation.setAgentEnabled.invoke).mockRejectedValue({
+    vi.mocked(ipcBridge.acpConversation.setAgentEnabled.invoke).mockRejectedValueOnce({
       backendMessage: 'permission denied',
     });
 
@@ -421,7 +396,7 @@ describe('LocalAgents', () => {
     expect(refreshCatalog).not.toHaveBeenCalled();
   });
 
-  it('renders the availability filter as underline tabs and switches the visible official agents', () => {
+  it('renders only all and available tabs, and the available tab excludes hidden online agents', () => {
     useManagedAgents.mockReturnValue({
       agents: makeAgents(),
       revalidate: vi.fn(),
@@ -430,24 +405,18 @@ describe('LocalAgents', () => {
 
     render(<LocalAgents />);
 
-    // Filter tabs render as buttons (underline-tab style), not an Arco radio group.
     const allTab = screen.getByTestId('settings-tab-all');
     const availableTab = screen.getByTestId('settings-tab-available');
-    const unavailableTab = screen.getByTestId('settings-tab-unavailable');
     expect(allTab.tagName).toBe('BUTTON');
+    expect(screen.queryByTestId('settings-tab-unavailable')).toBeNull();
 
-    // Default "all": both official agents visible (Aion CLI online, Claude Code missing).
-    expect(screen.getByText('Aion CLI')).toBeInTheDocument();
-    expect(screen.getByText('Claude Code')).toBeInTheDocument();
-
-    // "available" keeps only the online agent.
-    fireEvent.click(availableTab);
-    expect(screen.getByText('Aion CLI')).toBeInTheDocument();
-    expect(screen.queryByText('Claude Code')).toBeNull();
-
-    // "unavailable" keeps only the non-online agent.
-    fireEvent.click(unavailableTab);
+    expect(screen.getByText('Codex')).toBeInTheDocument();
+    expect(screen.getByText('OpenCode')).toBeInTheDocument();
     expect(screen.queryByText('Aion CLI')).toBeNull();
-    expect(screen.getByText('Claude Code')).toBeInTheDocument();
+
+    fireEvent.click(availableTab);
+    expect(screen.getByText('Codex')).toBeInTheDocument();
+    expect(screen.queryByText('OpenCode')).toBeNull();
+    expect(screen.queryByText('Aion CLI')).toBeNull();
   });
 });

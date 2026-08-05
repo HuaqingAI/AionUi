@@ -31,6 +31,7 @@ import {
   type ConversationCommandQueueItem,
 } from '@/renderer/pages/conversation/platforms/useConversationCommandQueue';
 import { usePreviewContext } from '@/renderer/pages/conversation/Preview';
+import { useHTHProjectConfigInjection } from '@/renderer/pages/conversation/hooks/useHTHProjectConfigInjection';
 import { useConversationRuntimeView } from '@/renderer/pages/conversation/runtime/useConversationRuntimeView';
 import { getConversationRuntimeWorkspaceErrorMessage } from '@/renderer/pages/conversation/utils/conversationCreateError';
 import { getChatSurfaceWidthClass } from '@/renderer/pages/conversation/utils/chatSurfaceWidth';
@@ -152,6 +153,12 @@ const AcpSendBox: React.FC<{
   });
   const runtimeMode = runtimeConfig.mode;
   const runtimeThoughtLevel = runtimeConfig.thoughtLevel;
+  const injectHTHProjectConfig = useHTHProjectConfigInjection({
+    conversationId: conversation_id,
+    workspace: workspacePath,
+    assistantId: conversationContext?.assistantId,
+    prepareRuntime: teamPermission?.warmupSession,
+  });
   const handleThoughtLevelSetOption = useCallback(
     async (optionId: string, value: string) => runtimeConfig.setConfigOption(optionId, value),
     [runtimeConfig]
@@ -258,6 +265,7 @@ const AcpSendBox: React.FC<{
     markSendFailed,
     checkAndUpdateTitle,
     addOrUpdateMessage: addOrUpdateMessageRef.current,
+    beforeSend: injectHTHProjectConfig,
   });
 
   const executeCommand = useCallback(
@@ -266,6 +274,7 @@ const AcpSendBox: React.FC<{
 
       try {
         if (teamPermission) await teamPermission.warmupSession();
+        await injectHTHProjectConfig();
         void checkAndUpdateTitle(conversation_id, input);
         if (teamSendMessage) {
           await teamSendMessage({ input: displayMessage, files });
@@ -369,6 +378,7 @@ Please check your local CLI tool authentication status`,
       backend,
       checkAndUpdateTitle,
       conversation_id,
+      injectHTHProjectConfig,
       markSendAccepted,
       markSendFailed,
       markSendStarted,
@@ -389,7 +399,6 @@ Please check your local CLI tool authentication status`,
     enqueue,
     remove,
     prioritize,
-    sendNow,
     clear,
     reorder,
     toggleMode,

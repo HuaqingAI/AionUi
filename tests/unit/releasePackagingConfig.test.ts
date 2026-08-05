@@ -38,11 +38,25 @@ describe('release packaging configuration', () => {
     expect(winBlock).not.toContain('    - zip');
   });
 
+  it('brands Windows and macOS packaged app names as HTHBuddy', () => {
+    const config = readProjectFile('packages/desktop/electron-builder.yml');
+    const packageJson = JSON.parse(readProjectFile('package.json')) as { version?: string };
+
+    expect(packageJson.version).toBe('1.0.0');
+    expect(config).toContain('productName: HTHBuddy');
+    expect(config).toContain('executableName: HTHBuddy');
+    expect(config).toContain('copyright: Copyright © 2024 HTHBuddy');
+    expect(config).not.toContain('productName: AionUi');
+    expect(config).not.toContain('executableName: AionUi');
+    expect(config).toContain('artifactName: ${productName}-${version}-${os}-${arch}.${ext}');
+  });
+
   it('uploads mac zip artifacts without a stale Windows zip glob', () => {
     const workflow = readProjectFile('.github/workflows/_build-reusable.yml');
 
-    expect(workflow).toContain('out/AionUi-*-mac-*.zip');
-    expect(workflow).not.toContain('out/AionUi-*-win32-*.zip');
+    expect(workflow).toContain('out/HTHBuddy-*-mac-*.zip');
+    expect(workflow).not.toContain('out/AionUi-*-mac-*.zip');
+    expect(workflow).not.toContain('out/HTHBuddy-*-win32-*.zip');
   });
 
   it('retries mac prepackaged builds with both dmg and zip targets', () => {
@@ -65,7 +79,7 @@ describe('release packaging configuration', () => {
       });
       expect(createResult.status).toBe(0);
 
-      rmSync(resolve(artifactsDir, 'macos-build-arm64', 'AionUi-1.0.0-mac-arm64.zip'), { force: true });
+      rmSync(resolve(artifactsDir, 'macos-build-arm64', 'HTHBuddy-1.0.0-mac-arm64.zip'), { force: true });
 
       const prepareResult = spawnSync('bash', ['scripts/prepare-release-assets.sh', artifactsDir, outputDir], {
         cwd: projectRoot,

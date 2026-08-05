@@ -26,7 +26,6 @@ import {
 } from './autoUpdateDiagnostics';
 import { buildCdnFeedOptions } from './updateFeed';
 
-const FORCE_DEV_AUTO_UPDATE_ENV = 'AIONUI_FORCE_DEV_AUTO_UPDATE';
 const DEBUG_AUTO_UPDATE_CURRENT_VERSION_ENV = 'AIONUI_DEBUG_AUTO_UPDATE_CURRENT_VERSION';
 const MAC_NATIVE_INSTALL_READY_TIMEOUT_MS = 60_000;
 
@@ -130,8 +129,8 @@ class AutoUpdaterService extends EventEmitter {
     // Disable auto-download for manual control
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = true;
-    this.configureDevAutoUpdateDebug();
-    const cdnFeedOptions = buildCdnFeedOptions();
+    this.configureDevAutoUpdate();
+    const feedOptions = buildCdnFeedOptions();
 
     // Set the correct update channel based on platform and architecture before
     // any update checks are performed
@@ -140,24 +139,24 @@ class AutoUpdaterService extends EventEmitter {
       autoUpdater.channel = channel;
       log.info(`Update channel set to: ${channel}`);
     }
-    autoUpdater.setFeedURL(cdnFeedOptions);
-    log.info('Update feed set to CDN provider');
-    log.debug('[auto-update] CDN feed configured', {
-      provider: cdnFeedOptions.provider,
-      url: cdnFeedOptions.url,
+    autoUpdater.setFeedURL(feedOptions);
+    log.info('Update feed set to generic provider');
+    log.debug('[auto-update] generic feed configured', {
+      provider: feedOptions.provider,
+      url: feedOptions.url,
       channel: channel ?? 'latest',
       platform: process.platform,
       arch: process.arch,
     });
   }
 
-  private configureDevAutoUpdateDebug(): void {
-    if (app.isPackaged || process.env[FORCE_DEV_AUTO_UPDATE_ENV] !== '1') {
+  private configureDevAutoUpdate(): void {
+    if (app.isPackaged) {
       return;
     }
 
     autoUpdater.forceDevUpdateConfig = true;
-    log.warn(`[auto-update] Forced dev auto-update checks enabled by ${FORCE_DEV_AUTO_UPDATE_ENV}`);
+    log.warn('[auto-update] Dev auto-update checks enabled for new-api feed');
 
     // In dev mode electron-updater reads "dev-app-update.yml" from the app path to
     // resolve `updaterCacheDirName` during download. It does not exist in the repo,
@@ -194,14 +193,15 @@ class AutoUpdaterService extends EventEmitter {
    */
   private ensureDevUpdateConfig(): void {
     try {
-      const cdnFeedOptions = buildCdnFeedOptions();
+      const feedOptions = buildCdnFeedOptions();
       const devConfig = [
         'provider: generic',
-        `url: ${cdnFeedOptions.url}`,
+        `url: ${feedOptions.url}`,
         'updaterCacheDirName: com.aionui.app',
         '',
       ].join('\n');
       const configPath = path.join(app.getPath('userData'), 'dev-app-update.yml');
+      fs.mkdirSync(path.dirname(configPath), { recursive: true });
       fs.writeFileSync(configPath, devConfig, 'utf-8');
       autoUpdater.updateConfigPath = configPath;
       log.warn(`[auto-update] Dev update config written to: ${configPath}`);
@@ -631,12 +631,12 @@ class AutoUpdaterService extends EventEmitter {
       // When isUpdateAvailable is false, updateInfoAndProvider is NOT set internally,
       // so a subsequent downloadUpdate() call would fail with "Please check update first".
       if (!result.isUpdateAvailable) {
-        log.debug('[auto-update] no update available from CDN feed', {
+        log.debug('[auto-update] no update available from generic feed', {
           version: result.updateInfo.version,
         });
         return { success: true };
       }
-      log.debug('[auto-update] update available from CDN feed', {
+      log.debug('[auto-update] update available from generic feed', {
         version: result.updateInfo.version,
         releaseDate: result.updateInfo.releaseDate,
       });

@@ -143,7 +143,11 @@ const EnabledAssistantsList: React.FC<EnabledAssistantsListProps> = ({
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
   const enabledAssistants = useMemo(
-    () => selectableAssistants(assistants, assistantOrder),
+    () =>
+      selectableAssistants(
+        assistants.filter((assistant) => assistant.source === 'user'),
+        assistantOrder
+      ),
     [assistantOrder, assistants]
   );
   const sortingEnabled = !searchActive && enabledAssistants.length > 1;

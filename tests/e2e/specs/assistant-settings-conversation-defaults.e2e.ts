@@ -140,7 +140,7 @@ async function ensureAionrsTestModels(page: Page): Promise<EnsuredAionrsModels> 
     enabled?: boolean;
   }>(page, 'POST', '/api/providers', {
     id: providerId,
-    platform: 'new-api',
+    platform: 'hth',
     name: `E2E Provider ${Date.now()}`,
     base_url: 'https://api.example.com/v1',
     api_key: 'sk-e2e-test',

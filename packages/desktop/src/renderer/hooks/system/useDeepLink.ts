@@ -5,8 +5,11 @@
  */
 
 import { useCallback, useEffect } from 'react';
+import { Message } from '@arco-design/web-react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { ipcBridge } from '@/common';
+import { isHTHUnauthorizedSyncResult } from '@/common/types/hth';
 
 /**
  * Deep link event payload from main process
@@ -25,6 +28,8 @@ export type DeepLinkAddProviderDetail = {
 
 /** Pending deep link data for the add-provider action. Read-once: consumed by ModelModalContent on mount. */
 let pendingDeepLinkData: DeepLinkAddProviderDetail | null = null;
+
+const formatHTHText = (value: string): string => value.replace(/hth/gi, 'HTH');
 
 /**
  * Consume (read and clear) pending deep link data.
@@ -51,9 +56,41 @@ const ALLOWED_NAVIGATE_PATTERNS = [/^\/team\/[^/]+$/, /^\/conversation\/[^/]+$/]
  */
 export const useDeepLink = () => {
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   const handler = useCallback(
     (payload: DeepLinkPayload) => {
+      if (payload.action === 'auth/hth-callback') {
+        const code = payload.params.code;
+        const state = payload.params.state;
+        if (!code || !state) {
+          Message.error(formatHTHText(t('login.hth.callbackMissing')));
+          return;
+        }
+
+        void ipcBridge.hth.exchangeLoginCode
+          .invoke({ code, state })
+          .then(async () => {
+            Message.success(formatHTHText(t('login.hth.success')));
+            try {
+              const syncResult = await ipcBridge.hth.syncAgentConfigs.invoke({ force: true });
+              if (isHTHUnauthorizedSyncResult(syncResult)) {
+                await navigate('/hth-login', { replace: true });
+                return;
+              }
+            } catch (error) {
+              console.error('[DeepLink] Failed to sync hth configs after login:', error);
+              Message.warning(formatHTHText(t('settings.hth.syncFailed')));
+            }
+            await navigate('/guid', { replace: true });
+          })
+          .catch((error) => {
+            console.error('[DeepLink] Failed to exchange hth login code:', error);
+            Message.error(formatHTHText(t('login.hth.exchangeFailed')));
+          });
+        return;
+      }
+
       // Support both formats: "add-provider" and "provider/add" (one-api style)
       if (payload.action === 'add-provider' || payload.action === 'provider/add') {
         pendingDeepLinkData = {
@@ -84,7 +121,7 @@ export const useDeepLink = () => {
         void navigate(route);
       }
     },
-    [navigate]
+    [navigate, t]
   );
 
   useEffect(() => {

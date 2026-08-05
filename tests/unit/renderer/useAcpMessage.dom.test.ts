@@ -7,6 +7,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAcpMessage } from '@/renderer/pages/conversation/platforms/acp/useAcpMessage';
+import { isQuotaSummaryInsufficient } from '@/renderer/pages/conversation/platforms/quotaErrorPrompt';
 import { getConversationOrNull } from '@/renderer/pages/conversation/utils/conversationCache';
 import { resetEnsureConversationRuntimeStateForTests } from '@/renderer/pages/conversation/utils/ensureConversationRuntime';
 import type { IResponseMessage } from '@/common/adapter/ipcBridge';
@@ -15,15 +16,31 @@ const {
   addOrUpdateMessageMock,
   ensureRuntimeInvokeMock,
   getSlashCommandsInvokeMock,
+  modalInfoMock,
+  quotaSummaryInvokeMock,
+  refreshQuotaSummaryInvokeMock,
   responseStreamOnMock,
   responseStreamHandlerRef,
 } = vi.hoisted(() => ({
   addOrUpdateMessageMock: vi.fn(),
   ensureRuntimeInvokeMock: vi.fn(),
   getSlashCommandsInvokeMock: vi.fn(),
+  modalInfoMock: vi.fn(),
+  quotaSummaryInvokeMock: vi.fn(),
+  refreshQuotaSummaryInvokeMock: vi.fn(),
   responseStreamOnMock: vi.fn(),
   responseStreamHandlerRef: {
     current: undefined as ((message: IResponseMessage) => void) | undefined,
+  },
+}));
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key: string) => key }),
+}));
+
+vi.mock('@arco-design/web-react', () => ({
+  Modal: {
+    info: modalInfoMock,
   },
 }));
 
@@ -54,6 +71,17 @@ vi.mock('@/common', () => ({
         invoke: getSlashCommandsInvokeMock,
       },
     },
+    hth: {
+      authStatus: {
+        invoke: vi.fn(async () => ({ quotaApplyUrl: 'http://127.0.0.1:3001/wallet' })),
+      },
+      quotaSummary: {
+        invoke: quotaSummaryInvokeMock,
+      },
+      refreshQuotaSummary: {
+        invoke: refreshQuotaSummaryInvokeMock,
+      },
+    },
   },
 }));
 
@@ -73,6 +101,10 @@ describe('useAcpMessage', () => {
     resetEnsureConversationRuntimeStateForTests();
     ensureRuntimeInvokeMock.mockResolvedValue({ recovered: false, config_options: [], runtime: null });
     getSlashCommandsInvokeMock.mockResolvedValue([]);
+    quotaSummaryInvokeMock.mockResolvedValue({
+      quota_apply_url: 'http://127.0.0.1:3001/wallet',
+    });
+    refreshQuotaSummaryInvokeMock.mockResolvedValue(makeQuotaSummary({ walletAvailable: 1 }));
     responseStreamHandlerRef.current = undefined;
   });
 
@@ -430,4 +462,69 @@ describe('useAcpMessage', () => {
     );
     expect(result.current.running).toBe(false);
   });
+
+  it('detects insufficient quota from API total available display field', () => {
+    expect(
+      isQuotaSummaryInsufficient(
+        makeQuotaSummary({ walletAvailable: 1, subscriptionAvailable: 1, totalAvailableDisplay: '$0.00' })
+      )
+    ).toBe(true);
+    expect(
+      isQuotaSummaryInsufficient(
+        makeQuotaSummary({ walletAvailable: 0, subscriptionAvailable: 0, totalAvailableDisplay: '$0.01' })
+      )
+    ).toBe(false);
+    expect(isQuotaSummaryInsufficient(makeQuotaSummary({ walletAvailable: 0, subscriptionAvailable: 0 }))).toBe(false);
+  });
+
+  it('does not refresh quota on stream error because turn completion owns quota checks', async () => {
+    vi.mocked(getConversationOrNull).mockResolvedValue(null);
+
+    renderHook(() => useAcpMessage('conv-1'));
+
+    act(() => {
+      responseStreamHandlerRef.current?.({
+        type: 'error',
+        data: {
+          code: 'UnknownUpstreamError',
+        },
+        msg_id: 'msg-error-1',
+        turn_id: 'turn-1',
+        conversation_id: 'conv-1',
+      });
+    });
+
+    expect(refreshQuotaSummaryInvokeMock).not.toHaveBeenCalled();
+    expect(modalInfoMock).not.toHaveBeenCalled();
+  });
 });
+
+function makeQuotaSummary({
+  walletAvailable,
+  subscriptionAvailable = 0,
+  totalAvailableDisplay,
+}: {
+  walletAvailable: number;
+  subscriptionAvailable?: number;
+  totalAvailableDisplay?: string;
+}) {
+  return {
+    wallet: {
+      remain_quota: walletAvailable,
+      used_quota: 0,
+    },
+    subscriptions: [
+      {
+        group_key: 'personal',
+        group_name: 'Personal',
+        amount_total: subscriptionAvailable,
+        amount_used: 0,
+        amount_available: subscriptionAvailable,
+        items: [],
+      },
+    ],
+    total_available: 0,
+    total_available_display: totalAvailableDisplay,
+    refreshed_at: 1,
+  };
+}

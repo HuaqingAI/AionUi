@@ -32,11 +32,11 @@ export type CheckUpdateOutcome =
       message: string;
     };
 
-export const getIncludePrerelease = () => localStorage.getItem('update.includePrerelease') === 'true';
+export const getIncludePrerelease = () => false;
 
 /**
- * Single source of truth for "is there an update?". Runs the best-effort
- * auto-updater check plus the authoritative manual check, then returns a
+ * Single source of truth for "is there an update?". Uses the configured
+ * electron-updater generic feed from new-api, then returns a
  * discriminated outcome. Performs no UI side effects and no dispatch — callers
  * decide how to present the result.
  */
@@ -46,46 +46,34 @@ export const runUpdateCheck = async (opts: {
   checkFailedLabel: string;
 }): Promise<CheckUpdateOutcome> => {
   try {
-    let autoUpdateAvailable = false;
-    let autoUpdateInfo: { version: string; releaseNotes?: string } | null = null;
-    try {
-      const autoRes = await ipcBridge.autoUpdate.check.invoke({ includePrerelease: opts.includePrerelease });
-      if (autoRes?.success && autoRes.data?.updateInfo) {
-        autoUpdateAvailable = true;
-        autoUpdateInfo = {
-          version: autoRes.data.updateInfo.version,
-          releaseNotes: autoRes.data.updateInfo.releaseNotes,
-        };
-      }
-    } catch (error) {
-      console.warn('Auto-update check error, using manual mode:', error);
-    }
-
-    const res = await ipcBridge.update.check.invoke({ includePrerelease: opts.includePrerelease });
+    const res = await ipcBridge.autoUpdate.check.invoke({ includePrerelease: opts.includePrerelease });
     if (!res?.success) {
       throw new Error(res?.msg || opts.checkFailedLabel);
     }
 
-    const currentVersion = res.data?.currentVersion || opts.fallbackVersion;
-    const latest = res.data?.latest ?? null;
-    const releasePageUrl = latest?.htmlUrl || '';
+    const autoUpdateInfo = res.data?.updateInfo
+      ? {
+          version: res.data.updateInfo.version,
+          releaseNotes: res.data.updateInfo.releaseNotes,
+        }
+      : null;
 
-    if (autoUpdateAvailable || (res.data?.updateAvailable && latest)) {
+    if (autoUpdateInfo) {
       return {
         kind: 'available',
-        currentVersion,
-        updateInfo: latest,
-        releasePageUrl,
-        autoUpdateAvailable,
+        currentVersion: opts.fallbackVersion,
+        updateInfo: null,
+        releasePageUrl: '',
+        autoUpdateAvailable: true,
         autoUpdateInfo,
       };
     }
 
     return {
       kind: 'upToDate',
-      currentVersion,
-      updateInfo: latest,
-      releasePageUrl,
+      currentVersion: opts.fallbackVersion,
+      updateInfo: null,
+      releasePageUrl: '',
     };
   } catch (error) {
     return {

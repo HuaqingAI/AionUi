@@ -110,6 +110,13 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
     const finalWorkspace = dir || '';
 
     const assistantConversationId = selectedAssistantId;
+    const injectHTHProjectConfig = async (conversationId: string, workspace?: string) => {
+      await ipcBridge.hth.injectProjectConfig.invoke({
+        conversationId,
+        workspace,
+        assistantId: assistantConversationId,
+      });
+    };
     const assistantBackend = selectedAssistantBackend;
     const enabled_skills_to_send = guidEnabledSkills ?? assistantDefaultSkillIds;
     const excludeBuiltinSkills = guidDisabledBuiltinSkills ?? assistantDefaultDisabledBuiltinSkillIds;
@@ -182,6 +189,8 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
           updateWorkspaceTime(finalWorkspace);
         }
 
+        await injectHTHProjectConfig(conversation.id, conversation.extra?.workspace);
+
         if (assistantConversationId) {
           await Promise.all([
             swrMutate(`guid.assistant.detail.${assistantConversationId}.${localeKey}`),
@@ -230,6 +239,8 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
       if (isCustomWorkspace) {
         updateWorkspaceTime(finalWorkspace);
       }
+
+      await injectHTHProjectConfig(conversation.id, conversation.extra?.workspace);
 
       if (assistantConversationId) {
         await Promise.all([

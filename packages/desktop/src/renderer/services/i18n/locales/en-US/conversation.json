@@ -458,7 +458,11 @@
       "recordingUnsupported": "Live recording is not supported here. Please upload an audio file instead",
       "transcriptionFailed": "Audio transcription failed",
       "genericError": "Voice input failed. Please try again"
-    }
+    },
+    "quotaApplyTitle": "Model quota is insufficient",
+    "quotaApplyBody": "The current model quota is insufficient. Please apply for quota before continuing.",
+    "quotaApplyNoLink": "The current model quota is insufficient. Please contact an administrator to apply for quota.",
+    "quotaApplyOk": "Apply for quota"
   },
   "sideQuestion": {
     "title": "Side Question",

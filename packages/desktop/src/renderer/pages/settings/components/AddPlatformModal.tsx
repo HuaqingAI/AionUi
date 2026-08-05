@@ -20,12 +20,12 @@ import AionModal from '@/renderer/components/base/AionModal';
 import {
   DEFAULT_PLATFORM_VALUE,
   MODEL_PLATFORMS,
-  NEW_API_PROTOCOL_OPTIONS,
-  detectNewApiProtocol,
+  HTH_PROTOCOL_OPTIONS,
+  detectHTHProtocol,
   getPlatformByValue,
   isCustomOption,
   isGeminiPlatform,
-  isNewApiPlatform,
+  isHTHPlatform,
   type PlatformConfig,
 } from '@/renderer/utils/model/modelPlatforms';
 import type { DeepLinkAddProviderDetail } from '@/renderer/hooks/system/useDeepLink';
@@ -237,23 +237,23 @@ const AddPlatformModal = ModalHOC<{
   const isCustom = isCustomOption(platformValue);
   const isBedrock = platform === 'bedrock';
   const isGemini = isGeminiPlatform(platform);
-  const isNewApi = isNewApiPlatform(platform);
+  const isHTH = isHTHPlatform(platform);
 
-  // new-api 每模型协议选择状态 / new-api per-model protocol selection state
+  // hth 每模型协议选择状态 / hth per-model protocol selection state
   const [modelProtocol, setModelProtocol] = useState<string>('openai');
   const [imageInput, setImageInput] = useState<ModelImageInputChoice>('auto');
   const [openAiApiMode, setOpenAiApiMode] = useState<ModelOpenAiApiModeChoice>('auto');
   const [isFullUrl, setIsFullUrl] = useState(false);
   const showOpenAiApiMode = supportsOpenAiApiMode(platform, modelProtocol);
 
-  // Auto-detect protocol when model changes (for new-api platforms). The model
+  // Auto-detect protocol when model changes (for hth platforms). The model
   // field is multi-select, so detect from the most recently added model.
   useEffect(() => {
     const lastModel = Array.isArray(modelValue) ? modelValue[modelValue.length - 1] : modelValue;
-    if (isNewApi && lastModel) {
-      setModelProtocol(detectNewApiProtocol(lastModel));
+    if (isHTH && lastModel) {
+      setModelProtocol(detectHTHProtocol(lastModel));
     }
-  }, [modelValue, isNewApi]);
+  }, [modelValue, isHTH]);
 
   // 计算实际使用的 base_url（优先使用用户输入，否则使用平台预设）
   // Calculate actual base_url (prefer user input, fallback to platform preset)
@@ -323,8 +323,8 @@ const AddPlatformModal = ModalHOC<{
 
       // Pre-fill from deep link data (aionui:// protocol)
       if (deepLinkData?.base_url || deepLinkData?.api_key) {
-        // Default to new-api platform for deep links (typical one-api/new-api usage)
-        form.setFieldValue('platform', deepLinkData.platform || 'new-api');
+        // Default to hth platform for deep links (typical one-api/hth usage)
+        form.setFieldValue('platform', deepLinkData.platform || 'hth');
         if (deepLinkData.base_url) form.setFieldValue('base_url', deepLinkData.base_url);
         if (deepLinkData.api_key) form.setFieldValue('api_key', deepLinkData.api_key);
       } else {
@@ -386,11 +386,11 @@ const AddPlatformModal = ModalHOC<{
           };
         }
 
-        // new-api 平台：保存每模型协议配置 / new-api platform: save per-model protocol config
+        // hth 平台：保存每模型协议配置 / hth platform: save per-model protocol config
         // Multi-select: apply the chosen protocol to every selected model so we
         // never produce a comma-joined ("a,b") dirty key. Per-model fine-tuning
         // still lives on the platform list tag switcher.
-        if (isNewApi && values.model) {
+        if (isHTH && values.model) {
           const selectedModels: string[] = Array.isArray(values.model) ? values.model : [values.model];
           provider.model_protocols = Object.fromEntries(selectedModels.filter(Boolean).map((m) => [m, modelProtocol]));
         }
@@ -448,7 +448,7 @@ const AddPlatformModal = ModalHOC<{
                   // '' (which would surface as a stray empty tag).
                   form.setFieldValue('model', []);
                   // Prefill the platform's default Base URL so users can see and
-                  // edit it. Custom / New API have no preset — clear the field so
+                  // edit it. Custom / HTH have no preset, so clear the field so
                   // it doesn't carry over the previously selected platform's URL.
                   form.setFieldValue('base_url', plat.base_url ?? '');
                 }
@@ -493,15 +493,15 @@ const AddPlatformModal = ModalHOC<{
               </span>
             }
             field={'base_url'}
-            required={isCustom || isNewApi}
-            rules={[{ required: isCustom || isNewApi }]}
+            required={isCustom || isHTH}
+            rules={[{ required: isCustom || isHTH }]}
           >
             <Input
               placeholder={
                 isFullUrl
                   ? 'https://your-api-endpoint.com/v1/chat/completions'
-                  : isNewApi
-                    ? 'https://your-newapi-instance.com'
+                  : isHTH
+                    ? 'https://your-hth-instance.com'
                     : selectedPlatform?.base_url || ''
               }
               onBlur={() => {
@@ -511,12 +511,12 @@ const AddPlatformModal = ModalHOC<{
           </Form.Item>
 
           {/*
-            Full URL toggle - only for custom and new-api platforms.
+            Full URL toggle - only for custom and hth platforms.
             Use a positive marginTop so the Switch row sits below the Input.
             A negative marginTop would overlap the Input's bottom edge and
             intercept clicks on its lower rim (see ELECTRON-1K4).
           */}
-          {(isCustom || isNewApi) && !isBedrock && (
+          {(isCustom || isHTH) && !isBedrock && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, marginBottom: 12 }}>
               <Switch size='small' checked={isFullUrl} onChange={setIsFullUrl} />
               <span className='text-12px text-t-secondary'>{t('settings.fullUrlMode', '完整 URL')}</span>
@@ -653,7 +653,7 @@ const AddPlatformModal = ModalHOC<{
                   <Search
                     onClick={async (e) => {
                       e.stopPropagation();
-                      if ((isCustom || isNewApi) && !base_url) {
+                      if ((isCustom || isHTH) && !base_url) {
                         message.warning(t('settings.pleaseEnterBaseUrl'));
                         return;
                       }
@@ -726,13 +726,13 @@ const AddPlatformModal = ModalHOC<{
             />
           </Form.Item>
 
-          {/* New API 协议选择 / New API Protocol Selection */}
-          {isNewApi && (
+          {/* HTH 协议选择 / HTH protocol selection */}
+          {isHTH && (
             <Form.Item
               label={t('settings.modelProtocol')}
               extra={<span className='text-11px text-t-secondary'>{t('settings.modelProtocolTip')}</span>}
             >
-              <Select value={modelProtocol} onChange={setModelProtocol} options={NEW_API_PROTOCOL_OPTIONS} />
+              <Select value={modelProtocol} onChange={setModelProtocol} options={HTH_PROTOCOL_OPTIONS} />
             </Form.Item>
           )}
 

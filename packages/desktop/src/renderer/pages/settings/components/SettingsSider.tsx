@@ -1,10 +1,10 @@
 import FlexFullContainer from '@/renderer/components/layout/FlexFullContainer';
+import { ipcBridge } from '@/common';
 import { isElectronDesktop, resolveExtensionAssetUrl } from '@/renderer/utils/platform';
 import { type IExtensionSettingsTab } from '@/common/adapter/ipcBridge';
 import { useExtI18n } from '@/renderer/hooks/system/useExtI18n';
 import { useExtensionSettingsTabs } from '@/renderer/hooks/system/useExtensionSettingsTabs';
 import {
-  Cat,
   Communication,
   Computer,
   Earth,
@@ -15,26 +15,17 @@ import {
   Speed,
   System,
   Toolkit,
+  Logout,
 } from '@icon-park/react';
 import classNames from 'classnames';
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Tooltip } from '@arco-design/web-react';
+import { Message, Tooltip } from '@arco-design/web-react';
 import { getSiderTooltipProps } from '@/renderer/utils/ui/siderTooltip';
 
 /** Builtin settings tab IDs in display order (must match router paths). */
-export const BUILTIN_TAB_IDS = [
-  'agent',
-  'model',
-  'skills',
-  'tools',
-  'appearance',
-  'webui',
-  'pet',
-  'system',
-  'about',
-] as const;
+export const BUILTIN_TAB_IDS = ['agent', 'skills', 'tools', 'appearance', 'webui', 'system', 'about'] as const;
 
 /**
  * Legacy anchor IDs that have been merged into other tabs.
@@ -58,6 +49,8 @@ const GROUP_HEADER_BEFORE: Record<string, string> = {
   about: 'settings.groupAbout',
 };
 
+const formatHTHText = (value: string): string => value.replace(/hth/gi, 'HTH');
+
 type SiderItem = {
   id: string;
   label: string;
@@ -75,6 +68,8 @@ const SettingsSider: React.FC<{ collapsed?: boolean; tooltipEnabled?: boolean }>
   const { t } = useTranslation();
   const { pathname } = useLocation();
   const isDesktop = isElectronDesktop();
+  const [message, messageContext] = Message.useMessage({ maxCount: 3 });
+  const [loggingOutFromHTH, setLoggingOutFromHTH] = useState(false);
 
   const extensionTabs = useExtensionSettingsTabs();
   const { resolveExtTabName } = useExtI18n();
@@ -108,13 +103,11 @@ const SettingsSider: React.FC<{ collapsed?: boolean; tooltipEnabled?: boolean }>
         icon: isDesktop ? <Earth /> : <Communication />,
         path: 'webui',
       },
-      pet: { id: 'pet', label: t('pet.desktopPet'), icon: <Cat />, path: 'pet' },
       system: { id: 'system', label: t('settings.system'), icon: <System />, path: 'system' },
       about: { id: 'about', label: t('settings.about'), icon: <Info />, path: 'about' },
     };
 
-    // Start with ordered builtin IDs, hiding desktop-only tabs in browser mode
-    const result: SiderItem[] = BUILTIN_TAB_IDS.filter((id) => isDesktop || id !== 'pet').map((id) => builtinMap[id]);
+    const result: SiderItem[] = BUILTIN_TAB_IDS.map((id) => builtinMap[id]);
 
     // Extension tabs with position anchoring
     const beforeMap = new Map<string, IExtensionSettingsTab[]>();
@@ -191,12 +184,33 @@ const SettingsSider: React.FC<{ collapsed?: boolean; tooltipEnabled?: boolean }>
   }, [t, isDesktop, extensionTabs, resolveExtTabName]);
 
   const siderTooltipProps = getSiderTooltipProps(tooltipEnabled);
+
+  const handleLogoutFromHTH = async () => {
+    if (loggingOutFromHTH) {
+      return;
+    }
+    setLoggingOutFromHTH(true);
+    try {
+      await ipcBridge.hth.logout.invoke();
+      message.success(formatHTHText(t('settings.hth.logoutSuccess')));
+      await navigate('/hth-login', { replace: true });
+    } catch (error) {
+      console.error('[SettingsSider] Failed to logout from hth:', error);
+      message.error(formatHTHText(t('settings.hth.logoutFailed')));
+    } finally {
+      setLoggingOutFromHTH(false);
+    }
+  };
+
+  const logoutLabel = formatHTHText(t('settings.hth.logout'));
+
   return (
     <div
       className={classNames('h-full settings-sider flex flex-col gap-2px overflow-y-auto overflow-x-hidden', {
         'settings-sider--collapsed': collapsed,
       })}
     >
+      {messageContext}
       {menus.map((item, index) => {
         const isSelected = pathname.includes(item.path);
         const groupHeaderKey = groupHeaderAt.get(index);
@@ -258,6 +272,26 @@ const SettingsSider: React.FC<{ collapsed?: boolean; tooltipEnabled?: boolean }>
           </React.Fragment>
         );
       })}
+      <Tooltip {...siderTooltipProps} content={logoutLabel} position='right'>
+        <div
+          data-settings-id='hth-logout'
+          className={classNames(
+            'settings-sider__item h-34px rd-8px flex items-center gap-8px group relative overflow-hidden shrink-0 conversation-item [&.conversation-item+&.conversation-item]:mt-2px transition-colors',
+            collapsed ? 'w-full justify-center px-0' : 'justify-start px-10px',
+            loggingOutFromHTH ? 'cursor-wait opacity-60' : 'cursor-pointer hover:bg-fill-3'
+          )}
+          onClick={() => void handleLogoutFromHTH()}
+        >
+          <span className='size-22px flex items-center justify-center shrink-0 line-height-0'>
+            <Logout theme='outline' size='16' strokeWidth={3} className='block leading-none text-t-secondary' />
+          </span>
+          <FlexFullContainer className='h-24px collapsed-hidden'>
+            <div className='settings-sider__item-label text-nowrap overflow-hidden inline-block w-full text-14px font-[500] lh-24px whitespace-nowrap text-t-primary'>
+              {logoutLabel}
+            </div>
+          </FlexFullContainer>
+        </div>
+      </Tooltip>
     </div>
   );
 };

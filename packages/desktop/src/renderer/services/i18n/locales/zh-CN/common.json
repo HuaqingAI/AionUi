@@ -158,5 +158,10 @@
     "second_short": "秒"
   },
   "selectedCount": "已选 {{count}}",
-  "selectedSkills": "已选技能"
+  "selectedSkills": "已选技能",
+  "modelQuota": "模型额度",
+  "walletQuota": "钱包",
+  "enterpriseSubscriptionQuota": "企业订阅",
+  "personalSubscriptionQuota": "个人订阅",
+  "totalAvailableQuota": "总可用"
 }

@@ -1,6 +1,6 @@
 {
-  "pageTitle": "AionUi - 登入",
-  "brand": "AionUi",
+  "pageTitle": "HTHBuddy - 登入",
+  "brand": "HTHBuddy",
   "subtitle": "歡迎回來，請登入您的帳號",
   "username": "使用者名稱",
   "usernamePlaceholder": "請輸入使用者名稱",
@@ -22,5 +22,17 @@
     "networkError": "連線失敗，請稍後再試",
     "serverError": "伺服器發生錯誤，請稍後再試",
     "unknown": "登入失敗，請稍後再試"
+  },
+  "hth": {
+    "title": "Sign in with HTH",
+    "description": "HTHBuddy requires your HTH account before assistants can be used.",
+    "baseUrl": "HTH URL",
+    "baseUrlPlaceholder": "http://127.0.0.1:3001",
+    "loginWithDingTalk": "Sign in with DingTalk",
+    "browserOpened": "Sign-in page opened in your browser",
+    "startFailed": "Unable to open HTH sign-in",
+    "callbackMissing": "HTH sign-in callback is missing required data",
+    "exchangeFailed": "HTH sign-in failed",
+    "success": "HTH sign-in successful"
   }
 }

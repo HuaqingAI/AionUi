@@ -22,7 +22,7 @@ const buildLogoAssetUrl = (path: string): string => {
  * 平台类型
  * Platform type
  */
-export type PlatformType = 'gemini' | 'gemini-vertex-ai' | 'anthropic' | 'custom' | 'new-api' | 'bedrock';
+export type PlatformType = 'gemini' | 'gemini-vertex-ai' | 'anthropic' | 'custom' | 'hth' | 'bedrock';
 
 /**
  * 模型平台配置接口
@@ -50,7 +50,7 @@ export interface PlatformConfig {
  * 顺序：
  * 1. 自定义（需要用户输入 base url）
  * 2. Moonshot/Kimi（战略合作，置顶展示）
- * 3. New API / Gemini 官方平台
+ * 3. HTH / Gemini 官方平台
  * 4+ 预设供应商
  */
 export const MODEL_PLATFORMS: PlatformConfig[] = [
@@ -73,13 +73,13 @@ export const MODEL_PLATFORMS: PlatformConfig[] = [
     base_url: 'https://api.moonshot.ai/v1',
   },
 
-  // New API 多模型网关 / New API multi-model gateway
+  // HTH 多模型网关 / HTH multi-model gateway
   {
-    name: 'New API',
-    value: 'new-api',
-    logo: buildLogoAssetUrl('ai-cloud/newapi.svg'),
-    platform: 'new-api',
-    i18nKey: 'settings.platformNewApi',
+    name: 'HTH',
+    value: 'hth',
+    logo: buildLogoAssetUrl('ai-cloud/hth.svg'),
+    platform: 'hth',
+    i18nKey: 'settings.platformHTH',
   },
 
   // 官方 Gemini 平台
@@ -264,20 +264,20 @@ export const MODEL_PLATFORMS: PlatformConfig[] = [
 ];
 
 /**
- * New API 协议选项
- * New API protocol options for per-model protocol configuration
+ * HTH 协议选项
+ * HTH protocol options for per-model protocol configuration
  */
-export const NEW_API_PROTOCOL_OPTIONS = [
+export const HTH_PROTOCOL_OPTIONS = [
   { label: 'OpenAI', value: 'openai' },
   { label: 'Gemini', value: 'gemini' },
   { label: 'Anthropic', value: 'anthropic' },
 ];
 
 /**
- * 根据模型名称自动推断 New API 协议类型
- * Auto-detect New API protocol type based on model name
+ * 根据模型名称自动推断 HTH 协议类型
+ * Auto-detect HTH protocol type based on model name
  */
-export const detectNewApiProtocol = (modelName: string): string => {
+export const detectHTHProtocol = (modelName: string): string => {
   const name = modelName.toLowerCase();
   if (name.startsWith('claude') || name.startsWith('anthropic')) return 'anthropic';
   if (name.startsWith('gemini') || name.startsWith('models/gemini')) return 'gemini';
@@ -375,7 +375,7 @@ export const isCustomOption = (value: string): boolean => {
 };
 
 // Re-export from common for renderer convenience
-export { isNewApiPlatform } from '@/common/utils/platformConstants';
+export { isHTHPlatform } from '@/common/utils/platformConstants';
 
 /**
  * 根据名称搜索平台（不区分大小写）
