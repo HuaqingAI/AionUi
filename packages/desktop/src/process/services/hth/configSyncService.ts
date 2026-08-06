@@ -228,7 +228,7 @@ export class HTHConfigSyncService {
       return { injected: false, files: [], reason: 'projectConfigMissing' };
     }
 
-    const copied = await copyManagedSection(manifest.extractDir, 'project', request.workspace);
+    const copied = await copyManagedSection(manifest.extractDir, 'project', request.workspace, manifest.version);
     const access = await this.getAccessOrLogout();
     if (access) {
       await this.replaceRuntimePlaceholdersInFiles(request.workspace, copied, access);
@@ -420,7 +420,7 @@ export class HTHConfigSyncService {
     const projectFiles = entries.filter((entry) => entry.section === 'project').map((entry) => entry.relativePath);
     const globalTarget = this.globalTargetForCliType(params.cliType);
     const globalConfigDir = this.globalConfigDirForCliType(params.cliType);
-    const copiedGlobalFiles = await copyManagedSection(extractDir, 'global', globalConfigDir);
+    const copiedGlobalFiles = await copyManagedSection(extractDir, 'global', globalConfigDir, params.agent.version);
     await this.replaceRuntimePlaceholdersInFiles(globalConfigDir, copiedGlobalFiles, params.access);
 
     const nextManifest: HTHPackageManifest = {

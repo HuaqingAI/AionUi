@@ -23,6 +23,13 @@ const { verifyBundledAioncoreResources } = require('./verify-bundled-aioncore-re
 
 const GITHUB_OWNER = 'iOfficeAI';
 const GITHUB_REPO = 'AionCore';
+const UV_VERSION = '0.11.31';
+
+const UV_RELEASE_ARTIFACTS = {
+  'darwin-arm64': 'uv-aarch64-apple-darwin.tar.gz',
+  'darwin-x64': 'uv-x86_64-apple-darwin.tar.gz',
+  'win32-x64': 'uv-x86_64-pc-windows-msvc.zip',
+};
 
 const ACTIONS_ARTIFACT_TARGETS = {
   'darwin-arm64': {
@@ -134,6 +141,19 @@ function prepareManagedResources(binaryPath, targetDir) {
 
   removeDirectorySafe(dataDir);
   return bundleOut;
+}
+
+function prepareBundledUvArtifact(projectRoot, targetDir, platform, arch) {
+  const artifactName = UV_RELEASE_ARTIFACTS[`${platform}-${arch}`];
+  if (!artifactName) return;
+
+  const sourcePath = path.join(projectRoot, 'resources', 'uv-artifacts', artifactName);
+  if (!fs.existsSync(sourcePath) || !fs.statSync(sourcePath).isFile()) {
+    throw new Error(`Bundled uv artifact is missing: resources/uv-artifacts/${artifactName}`);
+  }
+  const targetPath = path.join(targetDir, 'managed-resources', 'uv', artifactName);
+  copyFileSafe(sourcePath, targetPath);
+  console.log(`  Bundled uv ${UV_VERSION} artifact: ${artifactName}`);
 }
 
 function verifyPreparedAioncoreBundle(projectRoot, platform, arch) {
@@ -483,6 +503,7 @@ function prepareAioncore(options) {
       fs.existsSync(localManagedResourcesDir)
     ) {
       copyDirectorySafe(resolvedLocalBundleDir, targetDir);
+      prepareBundledUvArtifact(projectRoot, targetDir, platform, arch);
       ensureExecutableMode(targetBinaryPath);
       const manifest = {
         platform,
@@ -555,6 +576,7 @@ function prepareAioncore(options) {
     copyFileSafe(sourcePath, targetBinaryPath);
     ensureExecutableMode(targetBinaryPath);
     const bundledManagedResourcesDir = prepareManagedResources(targetBinaryPath, targetDir);
+    prepareBundledUvArtifact(projectRoot, targetDir, platform, arch);
 
     // The release tag is the authoritative version — the aioncore
     // binary does not expose a --version flag (it has --app-version which

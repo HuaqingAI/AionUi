@@ -60,7 +60,12 @@ export function assertPathInside(baseDir: string, targetPath: string): void {
   throw new Error(`Resolved path escapes target directory: ${targetPath}`);
 }
 
-export async function copyManagedSection(sourceDir: string, section: ZipSection, targetDir: string): Promise<string[]> {
+export async function copyManagedSection(
+  sourceDir: string,
+  section: ZipSection,
+  targetDir: string,
+  version: string
+): Promise<string[]> {
   const sectionDir = path.join(sourceDir, section);
   try {
     const stat = await fs.stat(sectionDir);
@@ -73,7 +78,7 @@ export async function copyManagedSection(sourceDir: string, section: ZipSection,
 
   const copied: string[] = [];
   await copyDirectory(sectionDir, targetDir, '', copied);
-  await writeSyncManifest(targetDir, copied);
+  await writeSyncManifest(targetDir, version);
   return copied;
 }
 
@@ -102,7 +107,7 @@ async function copyDirectory(
   }
 }
 
-async function writeSyncManifest(targetDir: string, files: string[]): Promise<void> {
+async function writeSyncManifest(targetDir: string, version: string): Promise<void> {
   const manifestPath = path.join(targetDir, '.aionui-hth-sync.json');
   assertPathInside(targetDir, manifestPath);
   await fs.mkdir(targetDir, { recursive: true });
@@ -110,8 +115,7 @@ async function writeSyncManifest(targetDir: string, files: string[]): Promise<vo
     manifestPath,
     JSON.stringify(
       {
-        managedBy: 'aionui-hth',
-        files,
+        version,
         updatedAt: Date.now(),
       },
       null,
