@@ -119,41 +119,59 @@ const HTHLogin: React.FC = () => {
         </div>
         {showWindowControls && <WindowControls />}
       </div>
-      <div className='flex min-h-0 flex-1 items-center justify-center px-24px'>
-        <div className='flex w-full max-w-420px flex-col gap-24px rounded-8px border border-border-2 bg-bg-1 p-32px shadow-sm'>
-          <div className='flex flex-col gap-8px'>
-            <Typography.Title heading={4} className='!m-0 text-t-primary'>
-              {t('login.hth.title')}
+      <main className={styles.loginCanvas}>
+        <section className={styles.loginPanel} aria-label={t('login.hth.title')}>
+          <div className={styles.brandPanel}>
+            <div className={styles.brandLogoShell}>
+              <HTHBuddyLogo className={styles.brandLogo} title={t('login.brand')} />
+            </div>
+            <Typography.Title heading={3} className={styles.brandName}>
+              {t('login.brand')}
             </Typography.Title>
-            <Typography.Text className='text-t-secondary'>{t('login.hth.description')}</Typography.Text>
+            <div className={styles.brandRule} aria-hidden='true' />
           </div>
 
-          <div className='flex flex-col gap-8px'>
-            <Button
-              type='text'
-              size='small'
-              className='self-start !px-0'
-              icon={baseUrlVisible ? <Down /> : <Right />}
-              disabled={loading}
-              onClick={() => setBaseUrlVisible((visible) => !visible)}
-            >
-              {t('login.hth.baseUrl')}
-            </Button>
-            {baseUrlVisible && (
-              <Input
-                value={baseUrl}
-                onChange={setBaseUrl}
-                placeholder={t('login.hth.baseUrlPlaceholder')}
+          <div className={styles.formPanel}>
+            <div className={styles.formHeader}>
+              <Typography.Title heading={4} className='!m-0 text-t-primary'>
+                {t('login.hth.title')}
+              </Typography.Title>
+              <Typography.Text className='text-t-secondary'>{t('login.hth.description')}</Typography.Text>
+            </div>
+
+            <div className={styles.endpointSection}>
+              <Button
+                type='text'
+                size='small'
+                className={styles.endpointToggle}
+                icon={baseUrlVisible ? <Down /> : <Right />}
                 disabled={loading}
-              />
-            )}
-          </div>
+                onClick={() => setBaseUrlVisible((visible) => !visible)}
+              >
+                {t('login.hth.baseUrl')}
+              </Button>
+              {baseUrlVisible && (
+                <Input
+                  value={baseUrl}
+                  onChange={setBaseUrl}
+                  placeholder={t('login.hth.baseUrlPlaceholder')}
+                  disabled={loading}
+                />
+              )}
+            </div>
 
-          <Button type='primary' icon={<Login />} loading={loading} onClick={handleLogin}>
-            {t('login.hth.loginWithDingTalk')}
-          </Button>
-        </div>
-      </div>
+            <Button
+              className={styles.loginButton}
+              type='primary'
+              icon={<Login />}
+              loading={loading}
+              onClick={handleLogin}
+            >
+              {t('login.hth.loginWithDingTalk')}
+            </Button>
+          </div>
+        </section>
+      </main>
     </div>
   );
 };
