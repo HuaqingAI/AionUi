@@ -161,14 +161,8 @@ describe('UpdateNotificationCard', () => {
     expect(card).toHaveClass('bottom-24px');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 
-    await waitFor(() => {
-      expect(mocks.updateCheckMock).toHaveBeenCalled();
-    });
-
-    // Release notes moved to a centered modal opened via the Release Log link.
+    expect(screen.queryByText('update.releaseLog')).not.toBeInTheDocument();
     expect(screen.queryByText('notes')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByText('update.releaseLog'));
-    expect(await screen.findByText('notes')).toBeInTheDocument();
   });
 
   it('restores a cached completed auto-update on mount', async () => {
@@ -341,46 +335,6 @@ describe('UpdateNotificationCard', () => {
     expect(screen.queryByText('update.manualInstall')).not.toBeInTheDocument();
     expect(screen.getByText('update.later')).toBeInTheDocument();
     expect(screen.getByText('update.downloadButton')).toBeInTheDocument();
-  });
-
-  it('shows release-note loading and failure states instead of empty notes', async () => {
-    mocks.updateCheckMock.mockImplementation(() => new Promise(() => undefined));
-    render(<UpdateNotificationCard />);
-
-    await waitFor(() => {
-      expect(mocks.autoStatusHandler).toBeTruthy();
-    });
-
-    await act(async () => {
-      mocks.autoStatusHandler?.({
-        status: 'available',
-        version: '2.1.14',
-        currentVersion: '2.1.13',
-      });
-    });
-
-    fireEvent.click(await screen.findByText('update.releaseLog'));
-    expect(await screen.findByText('update.releaseNotesLoading')).toBeInTheDocument();
-
-    cleanup();
-    mocks.updateCheckMock.mockRejectedValue(new Error('network failed'));
-    render(<UpdateNotificationCard />);
-
-    await waitFor(() => {
-      expect(mocks.autoStatusHandler).toBeTruthy();
-    });
-
-    await act(async () => {
-      mocks.autoStatusHandler?.({
-        status: 'available',
-        version: '2.1.14',
-        currentVersion: '2.1.13',
-      });
-    });
-
-    fireEvent.click(await screen.findByText('update.releaseLog'));
-    expect(await screen.findByText('update.releaseNotesFailed')).toBeInTheDocument();
-    expect(screen.getByText('update.viewRelease')).toBeInTheDocument();
   });
 
   it('keeps the cancel action available while downloading and cancel restores the initial state', async () => {
@@ -584,7 +538,7 @@ describe('UpdateNotificationCard', () => {
   });
 
   it('does not render a close button in the error state', async () => {
-    mocks.updateCheckMock.mockRejectedValue(new Error('network failed'));
+    mocks.autoUpdateCheckMock.mockRejectedValue(new Error('network failed'));
     render(<UpdateNotificationCard />);
 
     await waitFor(() => {

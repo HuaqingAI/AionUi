@@ -33,6 +33,7 @@ import {
   ensureDwsReadyOnStartup,
   ensureOfficeCliReadyOnStartup,
   ensureOpenCodeReadyOnStartup,
+  ensureZiniaoOpenReadyOnStartup,
   type OpenCodeBootstrapResult,
   type OpenCodeManagedAgentHealthResult,
 } from './process/startup/opencodeStartup';
@@ -507,6 +508,9 @@ function scheduleOpenCodeManagedAgentHealthAfterRendererReady(backendPort: numbe
     console.log(
       `[AionUi:ready] officecliHealth:${healthResult.checked ? healthResult.status || 'checked' : 'skipped'}`
     );
+  });
+  void ensureZiniaoOpenReadyOnStartup({ dataPath: openCodeRuntimeDataPath ?? undefined }).then((result) => {
+    console.log(`[AionUi:ready] ziniaoOpen:${result.status}`);
   });
 }
 

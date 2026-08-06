@@ -34,11 +34,12 @@ type ManagedAcpTool = {
     | 'AIONUI_CODEX_BOOTSTRAP'
     | 'AIONUI_DWS_BOOTSTRAP'
     | 'AIONUI_OFFICECLI_BOOTSTRAP'
-    | 'AIONUI_OPENCODE_BOOTSTRAP';
+    | 'AIONUI_OPENCODE_BOOTSTRAP'
+    | 'AIONUI_ZINIAO_OPEN_BOOTSTRAP';
   match: string | readonly string[];
   packageName: string;
   scope: IRuntimeStatusScope;
-  toolId: 'codex' | 'dws' | 'officecli' | 'opencode';
+  toolId: 'codex' | 'dws' | 'officecli' | 'opencode' | 'ziniao-open';
 };
 
 type EnsureNodeRuntime = (params: { scope: IRuntimeStatusScope }) => Promise<{ ready: boolean }>;
@@ -60,6 +61,7 @@ type OpenCodeStartupEnv = {
   AIONUI_OFFICECLI_BOOTSTRAP?: string;
   AIONUI_E2E_TEST?: string;
   AIONUI_OPENCODE_BOOTSTRAP?: string;
+  AIONUI_ZINIAO_OPEN_BOOTSTRAP?: string;
 };
 
 export type EnsureOpenCodeReadyOptions = {
@@ -121,6 +123,13 @@ const OFFICECLI_STARTUP_SCOPE: IRuntimeStatusScope = {
   kind: 'custom_agent',
   id: 'startup-officecli',
 };
+const ZINIAO_OPEN_TOOL_ID = 'ziniao-open';
+const ZINIAO_OPEN_COMMAND_NAME = 'ziniao-cli';
+const ZINIAO_OPEN_PACKAGE_NAME = '@ziniao-open/cli';
+const ZINIAO_OPEN_STARTUP_SCOPE: IRuntimeStatusScope = {
+  kind: 'mcp',
+  id: 'startup-ziniao-open',
+};
 const HEALTH_CHECK_TIMEOUT_MS = 30000;
 const OPENCODE_INSTALL_TIMEOUT_MS = 180000;
 const MANAGED_NPM_REGISTRY = 'https://registry.npmmirror.com';
@@ -165,7 +174,17 @@ const OFFICECLI_TOOL: ManagedAcpTool = {
   toolId: OFFICECLI_TOOL_ID,
 };
 
-const STARTUP_TOOLS = [OPENCODE_TOOL, CODEX_TOOL, DWS_TOOL, OFFICECLI_TOOL] as const;
+const ZINIAO_OPEN_TOOL: ManagedAcpTool = {
+  commandName: ZINIAO_OPEN_COMMAND_NAME,
+  displayName: 'Ziniao Open',
+  envDisabledKey: 'AIONUI_ZINIAO_OPEN_BOOTSTRAP',
+  match: ZINIAO_OPEN_TOOL_ID,
+  packageName: ZINIAO_OPEN_PACKAGE_NAME,
+  scope: ZINIAO_OPEN_STARTUP_SCOPE,
+  toolId: ZINIAO_OPEN_TOOL_ID,
+};
+
+const STARTUP_TOOLS = [OPENCODE_TOOL, CODEX_TOOL, DWS_TOOL, OFFICECLI_TOOL, ZINIAO_OPEN_TOOL] as const;
 
 const execFileAsync = promisify(execFile);
 
@@ -304,6 +323,10 @@ export function addDwsGlobalBinToPath(dataPath = getDataPath(), env: NodeJS.Proc
 
 export function addOfficeCliGlobalBinToPath(dataPath = getDataPath(), env: NodeJS.ProcessEnv = process.env): string {
   return addManagedToolGlobalBinToPath(OFFICECLI_TOOL, dataPath, env);
+}
+
+export function addZiniaoOpenGlobalBinToPath(dataPath = getDataPath(), env: NodeJS.ProcessEnv = process.env): string {
+  return addManagedToolGlobalBinToPath(ZINIAO_OPEN_TOOL, dataPath, env);
 }
 
 export function addStartupManagedAcpToolBinsToPath(
@@ -471,6 +494,10 @@ export function shouldEnsureOfficeCliOnStartup(env: OpenCodeStartupEnv = process
   return shouldEnsureManagedToolOnStartup(OFFICECLI_TOOL, env);
 }
 
+export function shouldEnsureZiniaoOpenOnStartup(env: OpenCodeStartupEnv = process.env): boolean {
+  return shouldEnsureManagedToolOnStartup(ZINIAO_OPEN_TOOL, env);
+}
+
 async function ensureManagedToolReady(
   tool: ManagedAcpTool,
   options: EnsureOpenCodeReadyOptions = {}
@@ -540,6 +567,10 @@ export function ensureDwsReady(options: EnsureOpenCodeReadyOptions = {}): Promis
 
 export function ensureOfficeCliReady(options: EnsureOpenCodeReadyOptions = {}): Promise<OpenCodeBootstrapResult> {
   return ensureManagedToolReady(OFFICECLI_TOOL, options);
+}
+
+export function ensureZiniaoOpenReady(options: EnsureOpenCodeReadyOptions = {}): Promise<OpenCodeBootstrapResult> {
+  return ensureManagedToolReady(ZINIAO_OPEN_TOOL, options);
 }
 
 export function ensureOpenCodeReadyOnce(options: EnsureOpenCodeReadyOptions = {}): Promise<OpenCodeBootstrapResult> {
@@ -616,6 +647,24 @@ export async function ensureOfficeCliReadyOnStartup(
       break;
     case 'failed':
       console.warn('[OfficeCLI] managed runtime bootstrap failed:', result.error);
+      break;
+  }
+  return result;
+}
+
+export async function ensureZiniaoOpenReadyOnStartup(
+  options: EnsureOpenCodeReadyOptions = {}
+): Promise<OpenCodeBootstrapResult> {
+  const result = await ensureZiniaoOpenReady(options);
+  switch (result.status) {
+    case 'ready':
+      console.info('[Ziniao Open] managed CLI is ready');
+      break;
+    case 'skipped':
+      console.info('[Ziniao Open] startup bootstrap skipped');
+      break;
+    case 'failed':
+      console.warn('[Ziniao Open] managed CLI bootstrap failed:', result.error);
       break;
   }
   return result;

@@ -4,9 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import MarkdownView from '@/renderer/components/Markdown';
 import { useFeedback } from '@/renderer/hooks/context/FeedbackContext';
-import { Button, Modal, Progress } from '@arco-design/web-react';
+import { Button, Progress } from '@arco-design/web-react';
 import { CheckOne, Close, Download, Minus } from '@icon-park/react';
 import React from 'react';
 import { createPortal } from 'react-dom';
@@ -25,7 +24,6 @@ const UpdateNotificationCard: React.FC = () => {
   const { t } = useTranslation();
   const { state, versionLabel, actions } = useUpdateNotificationController();
   const { openFeedback } = useFeedback();
-  const [releaseLogVisible, setReleaseLogVisible] = React.useState(false);
 
   if (!state.visible) return null;
 
@@ -110,13 +108,6 @@ const UpdateNotificationCard: React.FC = () => {
             <span>
               {state.currentVersion} → {versionLabel}
             </span>
-            <button
-              type='button'
-              className='bg-transparent border-none p-0 cursor-pointer text-inherit underline underline-offset-2'
-              onClick={() => setReleaseLogVisible(true)}
-            >
-              {t('update.releaseLog')}
-            </button>
           </div>
         );
       case 'downloading':
@@ -252,90 +243,49 @@ const UpdateNotificationCard: React.FC = () => {
     );
   };
 
-  const releaseNotes = state.updateInfo?.body || state.autoUpdateInfo?.releaseNotes || '';
-
   return renderNotificationLayer(
-    <>
-      <section
-        data-testid='update-notification-card'
-        className='fixed right-24px bottom-24px z-1000 w-max min-w-300px max-w-[calc(100vw-32px)] bg-1 border border-border-2 rd-8px shadow-[0_2px_16px_rgba(0,0,0,0.12)] overflow-hidden'
-      >
-        <div className='flex items-center gap-10px px-16px pt-12px pb-6px min-w-0'>
-          <Download
-            size='18'
-            fill={state.status === 'installer-last-failure' ? 'rgb(var(--warning-6))' : 'rgb(var(--primary-6))'}
-          />
-          <div className='text-14px text-t-primary font-600 truncate flex-1'>
-            {state.status === 'installer-last-failure'
-              ? t('update.installerLastFailure.title')
-              : t('update.modalTitle')}
+    <section
+      data-testid='update-notification-card'
+      className='fixed right-24px bottom-24px z-1000 w-max min-w-300px max-w-[calc(100vw-32px)] bg-1 border border-border-2 rd-8px shadow-[0_2px_16px_rgba(0,0,0,0.12)] overflow-hidden'
+    >
+      <div className='flex items-center gap-10px px-16px pt-12px pb-6px min-w-0'>
+        <Download
+          size='18'
+          fill={state.status === 'installer-last-failure' ? 'rgb(var(--warning-6))' : 'rgb(var(--primary-6))'}
+        />
+        <div className='text-14px text-t-primary font-600 truncate flex-1'>
+          {state.status === 'installer-last-failure' ? t('update.installerLastFailure.title') : t('update.modalTitle')}
+        </div>
+        {state.status === 'downloading' && (
+          <div className='flex items-center gap-4px'>
+            <Button
+              type='text'
+              size='mini'
+              className='!p-0 !w-24px !h-24px !text-t-tertiary hover:!text-t-primary'
+              icon={<Minus size='16' />}
+              onClick={actions.minimize}
+              aria-label={t('update.minimize')}
+            />
+            <Button
+              type='text'
+              size='mini'
+              className='!p-0 !w-24px !h-24px !text-t-tertiary hover:!text-t-primary'
+              icon={<Close size='16' />}
+              onClick={actions.cancelDownload}
+              aria-label={t('update.cancel')}
+            />
           </div>
-          {state.status === 'downloading' && (
-            <div className='flex items-center gap-4px'>
-              <Button
-                type='text'
-                size='mini'
-                className='!p-0 !w-24px !h-24px !text-t-tertiary hover:!text-t-primary'
-                icon={<Minus size='16' />}
-                onClick={actions.minimize}
-                aria-label={t('update.minimize')}
-              />
-              <Button
-                type='text'
-                size='mini'
-                className='!p-0 !w-24px !h-24px !text-t-tertiary hover:!text-t-primary'
-                icon={<Close size='16' />}
-                onClick={actions.cancelDownload}
-                aria-label={t('update.cancel')}
-              />
-            </div>
-          )}
-        </div>
-        {state.status === 'downloading' ? (
-          <div className='px-16px pt-6px pb-12px'>{renderBody()}</div>
-        ) : (
-          <>
-            <div className='px-16px py-6px'>{renderBody()}</div>
-            <div className='flex justify-start gap-8px px-16px pt-6px pb-12px'>{renderActions()}</div>
-          </>
         )}
-      </section>
-      <Modal
-        title={t('update.releaseLog')}
-        visible={releaseLogVisible}
-        onCancel={() => setReleaseLogVisible(false)}
-        footer={null}
-        autoFocus={false}
-        focusLock={false}
-        unmountOnExit
-      >
-        <div
-          data-testid='update-release-log'
-          className='max-h-60vh overflow-y-auto text-13px text-t-secondary leading-relaxed custom-scrollbar'
-        >
-          {state.releaseNotesStatus === 'loading' ? (
-            <span>{t('update.releaseNotesLoading')}</span>
-          ) : state.releaseNotesStatus === 'failed' ? (
-            <div className='flex items-center gap-6px'>
-              <span>{t('update.releaseNotesFailed')}</span>
-              {state.releasePageUrl && (
-                <button
-                  type='button'
-                  className='bg-transparent border-none p-0 cursor-pointer text-[rgb(var(--primary-6))] underline underline-offset-2'
-                  onClick={actions.openReleasePage}
-                >
-                  {t('update.viewRelease')}
-                </button>
-              )}
-            </div>
-          ) : releaseNotes ? (
-            <MarkdownView allowHtml>{releaseNotes}</MarkdownView>
-          ) : (
-            <span>{t('update.releaseNotesLoading')}</span>
-          )}
-        </div>
-      </Modal>
-    </>
+      </div>
+      {state.status === 'downloading' ? (
+        <div className='px-16px pt-6px pb-12px'>{renderBody()}</div>
+      ) : (
+        <>
+          <div className='px-16px py-6px'>{renderBody()}</div>
+          <div className='flex justify-start gap-8px px-16px pt-6px pb-12px'>{renderActions()}</div>
+        </>
+      )}
+    </section>
   );
 };
 

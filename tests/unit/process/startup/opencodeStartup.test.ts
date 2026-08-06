@@ -13,6 +13,7 @@ import {
   addDwsGlobalBinToPath,
   addOfficeCliGlobalBinToPath,
   addOpenCodeGlobalBinToPath,
+  addZiniaoOpenGlobalBinToPath,
   checkOpenCodeManagedAgentHealth,
   checkCodexManagedAgentHealth,
   checkDwsManagedAgentHealth,
@@ -21,10 +22,12 @@ import {
   ensureDwsReady,
   ensureOfficeCliReady,
   ensureOpenCodeReady,
+  ensureZiniaoOpenReady,
   shouldEnsureCodexOnStartup,
   shouldEnsureDwsOnStartup,
   shouldEnsureOfficeCliOnStartup,
   shouldEnsureOpenCodeOnStartup,
+  shouldEnsureZiniaoOpenOnStartup,
 } from '@process/startup/opencodeStartup';
 import { acpConversation } from '@/common/adapter/ipcBridge';
 
@@ -300,6 +303,44 @@ describe('opencode startup bootstrap', () => {
     );
   });
 
+  it('uses managed Node npm to install Ziniao Open into npm-global', async () => {
+    const fixture = await createManagedNodeFixture();
+    const prefix = path.join(fixture.dataPath, 'runtime', 'npm-global', 'ziniao-open');
+    const commandPath = path.join(prefix, process.platform === 'win32' ? 'ziniao-cli.cmd' : 'bin/ziniao-cli');
+    const commandRunner = vi.fn(async () => {
+      await mkdir(path.dirname(commandPath), { recursive: true });
+      await writeFile(commandPath, '');
+      return {};
+    });
+
+    const result = await ensureZiniaoOpenReady({
+      commandRunner,
+      dataPath: fixture.dataPath,
+      emitStatus: vi.fn(),
+      ensureNodeRuntime: async () => ({ ready: true }),
+      env: {},
+    });
+
+    expect(result).toEqual({ status: 'ready' });
+    expect(commandRunner).toHaveBeenCalledWith(
+      fixture.nodeExecutable,
+      [
+        fixture.npmCliPath,
+        'install',
+        '--global',
+        '@ziniao-open/cli',
+        '--prefix',
+        prefix,
+        '--registry',
+        'https://registry.npmmirror.com',
+      ],
+      expect.objectContaining({
+        cwd: fixture.dataPath,
+        timeout: 180000,
+      })
+    );
+  });
+
   it('emits Codex installation status before preparing managed Node', async () => {
     const fixture = await createManagedNodeFixture();
     const calls: string[] = [];
@@ -413,6 +454,20 @@ describe('opencode startup bootstrap', () => {
     }
   });
 
+  it('prepends the managed Ziniao Open bin directory to PATH', async () => {
+    const dataPath = await mkdtemp(path.join(tmpdir(), 'aionui-ziniao-open-path-'));
+    const env: NodeJS.ProcessEnv = {
+      PATH: ['C:\\existing\\bin'].join(path.delimiter),
+    };
+
+    const binDir = addZiniaoOpenGlobalBinToPath(dataPath, env);
+
+    expect(env.PATH?.split(path.delimiter)[0]).toBe(binDir);
+    if (process.platform === 'win32') {
+      expect(env.Path).toBe(env.PATH);
+    }
+  });
+
   it('emits local runtime status while preparing OpenCode', async () => {
     const fixture = await createManagedNodeFixture();
     const emitStatus = vi.fn();
@@ -490,6 +545,9 @@ describe('opencode startup bootstrap', () => {
     expect(shouldEnsureOfficeCliOnStartup({ AIONUI_E2E_TEST: '1' })).toBe(false);
     expect(shouldEnsureOfficeCliOnStartup({ AIONUI_OFFICECLI_BOOTSTRAP: '0' })).toBe(false);
     expect(shouldEnsureOfficeCliOnStartup({})).toBe(true);
+    expect(shouldEnsureZiniaoOpenOnStartup({ AIONUI_E2E_TEST: '1' })).toBe(false);
+    expect(shouldEnsureZiniaoOpenOnStartup({ AIONUI_ZINIAO_OPEN_BOOTSTRAP: '0' })).toBe(false);
+    expect(shouldEnsureZiniaoOpenOnStartup({})).toBe(true);
   });
 
   it('runs backend health-check for the managed opencode agent after runtime is ready', async () => {

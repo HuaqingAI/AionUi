@@ -5,12 +5,11 @@
  */
 
 import { Typography, Button, Message } from '@arco-design/web-react';
-import { Github } from '@icon-park/react';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import classNames from 'classnames';
 import { useSettingsViewMode } from '../settingsViewContext';
-import { isElectronDesktop, openExternalUrl } from '@/renderer/utils/platform';
+import { isElectronDesktop } from '@/renderer/utils/platform';
 import { ipcBridge } from '@/common';
 import { runUpdateCheck } from '@/renderer/components/settings/checkForUpdatesShared';
 import { UPDATE_AVAILABLE_EVENT } from '@/renderer/components/settings/useUpdateNotificationController';
@@ -37,14 +36,6 @@ const AboutModalContent: React.FC = () => {
   const [checking, setChecking] = useState(false);
 
   useEffect(() => subscribeUpdateReadyState(setLocalUpdateReadyState), []);
-
-  const openLink = async (url: string) => {
-    try {
-      await openExternalUrl(url);
-    } catch (error) {
-      console.log('Failed to open link:', error);
-    }
-  };
 
   const checkUpdate = async () => {
     if (updateReadyState.ready) {
@@ -105,16 +96,6 @@ const AboutModalContent: React.FC = () => {
               <span className='px-10px py-4px rd-6px text-13px bg-fill-2 text-t-primary font-500'>
                 v{__APP_VERSION__}
               </span>
-              <div
-                className='text-t-primary cursor-pointer hover:text-t-secondary transition-colors p-4px'
-                onClick={() =>
-                  openLink('https://github.com/iOfficeAI/AionUi').catch((error) =>
-                    console.error('Failed to open link:', error)
-                  )
-                }
-              >
-                <Github theme='outline' size='20' />
-              </div>
             </div>
 
             {/* Check Update Section */}
