@@ -32,6 +32,23 @@ export type AgentRuntimeDerivedOption = {
   options: AgentRuntimeSelectOption[];
 };
 
+type OpenCodeZenModelCandidate = {
+  id?: string | null;
+  value?: string | null;
+  name?: string | null;
+  label?: string | null;
+};
+
+function isOpenCodeZenModel(model: OpenCodeZenModelCandidate): boolean {
+  return [model.label, model.name, model.value, model.id].some((value) => {
+    return typeof value === 'string' && /^opencode[\s-]+zen\//i.test(value.trim());
+  });
+}
+
+export function filterOpenCodeZenModels<T extends OpenCodeZenModelCandidate>(models: T[]): T[] {
+  return models.filter((model) => !isOpenCodeZenModel(model));
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
@@ -78,22 +95,31 @@ function buildModelInfoFromPayload(value: unknown): AcpModelInfo | null {
     return null;
   }
 
-  const available_models = payload.available_models.map(normalizeModelOption).filter((item) => item !== null);
+  const available_models = filterOpenCodeZenModels(
+    payload.available_models.map(normalizeModelOption).filter((item) => item !== null)
+  );
   if (available_models.length === 0) return null;
 
-  const current_model_id =
+  const payloadCurrentModelId =
     typeof payload.current_model_id === 'string'
       ? payload.current_model_id
       : typeof payload.currentModelId === 'string'
         ? payload.currentModelId
         : (available_models[0]?.id ?? null);
+  const current_model_id = available_models.some((model) => model.id === payloadCurrentModelId)
+    ? payloadCurrentModelId
+    : (available_models[0]?.id ?? null);
   const matchedModel = available_models.find((model) => model.id === current_model_id);
-  const current_model_label =
+  const payloadCurrentModelLabel =
     typeof payload.current_model_label === 'string'
       ? payload.current_model_label
       : typeof payload.currentModelLabel === 'string'
         ? payload.currentModelLabel
-        : (matchedModel?.label ?? current_model_id);
+        : undefined;
+  const current_model_label =
+    payloadCurrentModelId === current_model_id && payloadCurrentModelLabel
+      ? payloadCurrentModelLabel
+      : (matchedModel?.label ?? current_model_id);
 
   return {
     current_model_id,
@@ -137,12 +163,19 @@ function buildModelInfoFromConfigOptions(configOptions: AcpSessionConfigOption[]
   const modelOption = configOptions.find((option) => option.category === 'model' && option.type === 'select');
   if (!modelOption?.options || modelOption.options.length === 0) return null;
 
-  const available_models = modelOption.options.map((option) => ({
-    id: option.value,
-    label: option.label || option.name || option.value,
-    description: option.description || undefined,
-  }));
-  const current_model_id = getConfigOptionCurrentValue(modelOption) || available_models[0]?.id || null;
+  const available_models = filterOpenCodeZenModels(
+    modelOption.options.map((option) => ({
+      id: option.value,
+      label: option.label || option.name || option.value,
+      description: option.description || undefined,
+    }))
+  );
+  if (available_models.length === 0) return null;
+
+  const optionCurrentValue = getConfigOptionCurrentValue(modelOption);
+  const current_model_id = available_models.some((model) => model.id === optionCurrentValue)
+    ? optionCurrentValue
+    : (available_models[0]?.id ?? null);
   const matchedModel = available_models.find((model) => model.id === current_model_id);
 
   return {

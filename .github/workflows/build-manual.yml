@@ -89,5 +89,5 @@ jobs:
       skip_code_quality: ${{ inputs.skip_code_quality }}
       aioncore_run_id: ${{ inputs.aioncore_run_id }}
       append_commit_hash: true
-      upload_installers_only: true
+      upload_installers_only: false
     secrets: inherit

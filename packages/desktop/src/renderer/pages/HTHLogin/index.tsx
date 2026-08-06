@@ -9,6 +9,7 @@ import { isHTHUnauthorizedSyncResult } from '@/common/types/hth';
 import AppLoader from '@renderer/components/layout/AppLoader';
 import HTHBuddyLogo from '@renderer/components/layout/HTHBuddyLogo';
 import WindowControls from '@renderer/components/layout/WindowControls';
+import { isElectronDesktop, isMacOS } from '@renderer/utils/platform';
 import { Button, Input, Message, Typography } from '@arco-design/web-react';
 import { Down, Login, Right } from '@icon-park/react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -27,6 +28,8 @@ const HTHLogin: React.FC = () => {
   const [checking, setChecking] = useState(true);
   const [loading, setLoading] = useState(false);
   const disposedRef = useRef(false);
+  const isMacRuntime = isElectronDesktop() && isMacOS();
+  const showWindowControls = isElectronDesktop() && !isMacRuntime;
 
   useEffect(() => {
     let disposed = false;
@@ -109,12 +112,12 @@ const HTHLogin: React.FC = () => {
 
   return (
     <div className='flex h-full w-full flex-col bg-bg-0'>
-      <div className={styles.loginTitlebar}>
+      <div className={`${styles.loginTitlebar} ${isMacRuntime ? styles.loginTitlebarMac : ''}`}>
         <div className={styles.loginTitlebarBrand} data-testid='hth-login-titlebar-brand'>
           <HTHBuddyLogo className={styles.loginTitlebarLogo} title={t('login.brand')} />
           <span>{t('login.brand')}</span>
         </div>
-        <WindowControls />
+        {showWindowControls && <WindowControls />}
       </div>
       <div className='flex min-h-0 flex-1 items-center justify-center px-24px'>
         <div className='flex w-full max-w-420px flex-col gap-24px rounded-8px border border-border-2 bg-bg-1 p-32px shadow-sm'>

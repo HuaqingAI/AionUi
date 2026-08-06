@@ -345,6 +345,73 @@ describe('useGuidAssistantSelection', () => {
     ]);
   });
 
+  it('filters OpenCode Zen free models from the guid page managed runtime model list', async () => {
+    mockAssistants = [
+      {
+        id: 'assistant-opencode',
+        source: 'generated',
+        name: 'OpenCode',
+        name_i18n: {},
+        description_i18n: {},
+        enabled: true,
+        sort_order: 1,
+        agent_id: 'agent-opencode',
+        agent: {
+          type: 'acp',
+          source: 'builtin',
+          acp_backend: 'opencode',
+        },
+        enabled_skills: [],
+        custom_skill_names: [],
+        disabled_builtin_skills: [],
+        context_i18n: {},
+        prompts: [],
+        prompts_i18n: {},
+        models: [],
+        agent_status: 'online',
+        team_selectable: true,
+        deletable: false,
+      } satisfies Assistant,
+    ];
+    mockManagedAgents = [
+      {
+        id: 'agent-opencode',
+        backend: 'opencode',
+        config_options: {
+          config_options: [
+            {
+              id: 'model',
+              category: 'model',
+              type: 'select',
+              currentValue: 'opencode-zen/ling-3.0-flash-free',
+              options: [
+                { value: 'opencode-zen/ling-3.0-flash-free', label: 'OpenCode Zen/Ling-3.0-flash Free' },
+                { value: 'hth/gpt-5.3-codex', label: 'HTH/gpt-5.3-codex' },
+                { value: 'hth/gpt-5.6-terra', label: 'HTH/gpt-5.6-terra' },
+              ],
+            },
+          ],
+        },
+      } as unknown as ManagedAgent,
+    ];
+
+    const { result } = renderHook(() =>
+      useGuidAssistantSelection({
+        resetAssistant: false,
+      })
+    );
+
+    await waitFor(() => {
+      expect(result.current.selectedAssistantId).toBe('assistant-opencode');
+    });
+
+    expect(result.current.selectedAcpModel).toBe('hth/gpt-5.3-codex');
+    expect(result.current.currentAcpCachedModelInfo?.available_models.map((model) => model.label)).toEqual([
+      'HTH/gpt-5.3-codex',
+      'HTH/gpt-5.6-terra',
+    ]);
+  });
+
   it('keeps a guid-page model selection in memory across same-assistant runtime catalog refreshes', async () => {
     mockAssistants = [
       {

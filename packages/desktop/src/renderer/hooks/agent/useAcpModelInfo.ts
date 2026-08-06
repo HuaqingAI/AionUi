@@ -13,6 +13,7 @@ import {
   type AcpDerivedOption,
   useAcpConfigOptions,
 } from './useAcpConfigOptions';
+import { filterOpenCodeZenModels } from '@/renderer/utils/model/agentRuntimeCatalog';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 type UseAcpModelInfoArgs = {
@@ -63,23 +64,6 @@ function normalizeInitialModel(info: AcpModelInfo, initialModelId?: string): Acp
   };
 }
 
-function isOpenCodeZenModel(model: {
-  id?: string | null;
-  value?: string | null;
-  name?: string | null;
-  label?: string | null;
-}): boolean {
-  return [model.label, model.name, model.value, model.id].some((value) => {
-    return typeof value === 'string' && /^opencode\s+zen\//i.test(value.trim());
-  });
-}
-
-function filterOpenCodeZenModels<
-  T extends { id?: string | null; value?: string | null; name?: string | null; label?: string | null },
->(models: T[]): T[] {
-  return models.filter((model) => !isOpenCodeZenModel(model));
-}
-
 export const useAcpModelInfo = ({
   conversation_id,
   backend: _backend,
@@ -102,11 +86,16 @@ export const useAcpModelInfo = ({
 
   const configModelInfo = useMemo<AcpModelInfo | null>(() => {
     if (!model) return null;
-    const currentModelId = model.currentValue || initialModelId || null;
+    const availableOptions = filterOpenCodeZenModels(model.options);
+    const requestedCurrentModelId = model.currentValue || initialModelId || null;
+    const currentModelId = availableOptions.some((item) => item.value === requestedCurrentModelId)
+      ? requestedCurrentModelId
+      : (availableOptions[0]?.value ?? null);
     return {
       current_model_id: currentModelId,
-      current_model_label: model.options.find((item) => item.value === currentModelId)?.label || currentModelId || null,
-      available_models: filterOpenCodeZenModels(model.options).map((item) => ({
+      current_model_label:
+        availableOptions.find((item) => item.value === currentModelId)?.label || currentModelId || null,
+      available_models: availableOptions.map((item) => ({
         id: item.value,
         label: item.label,
         description: item.description ?? undefined,
