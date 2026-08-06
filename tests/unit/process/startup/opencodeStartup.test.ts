@@ -10,12 +10,20 @@ import { tmpdir } from 'os';
 import path from 'path';
 import {
   addCodexGlobalBinToPath,
+  addDwsGlobalBinToPath,
+  addOfficeCliGlobalBinToPath,
   addOpenCodeGlobalBinToPath,
   checkOpenCodeManagedAgentHealth,
   checkCodexManagedAgentHealth,
+  checkDwsManagedAgentHealth,
+  checkOfficeCliManagedAgentHealth,
   ensureCodexReady,
+  ensureDwsReady,
+  ensureOfficeCliReady,
   ensureOpenCodeReady,
   shouldEnsureCodexOnStartup,
+  shouldEnsureDwsOnStartup,
+  shouldEnsureOfficeCliOnStartup,
   shouldEnsureOpenCodeOnStartup,
 } from '@process/startup/opencodeStartup';
 import { acpConversation } from '@/common/adapter/ipcBridge';
@@ -30,8 +38,12 @@ describe('opencode startup bootstrap', () => {
     codexCommandPath: string;
     codexPrefix: string;
     dataPath: string;
+    dwsCommandPath: string;
+    dwsPrefix: string;
     npmCliPath: string;
     nodeExecutable: string;
+    officeCliCommandPath: string;
+    officeCliPrefix: string;
     prefix: string;
   }> {
     const dataPath = await mkdtemp(path.join(tmpdir(), 'aionui-opencode-startup-'));
@@ -43,6 +55,13 @@ describe('opencode startup bootstrap', () => {
     const commandPath = path.join(prefix, process.platform === 'win32' ? 'opencode.cmd' : 'bin/opencode');
     const codexPrefix = path.join(dataPath, 'runtime', 'npm-global', 'codex');
     const codexCommandPath = path.join(codexPrefix, process.platform === 'win32' ? 'codex.cmd' : 'bin/codex');
+    const dwsPrefix = path.join(dataPath, 'runtime', 'npm-global', 'dws');
+    const dwsCommandPath = path.join(dwsPrefix, process.platform === 'win32' ? 'dws.cmd' : 'bin/dws');
+    const officeCliPrefix = path.join(dataPath, 'runtime', 'npm-global', 'officecli');
+    const officeCliCommandPath = path.join(
+      officeCliPrefix,
+      process.platform === 'win32' ? 'officecli.cmd' : 'bin/officecli'
+    );
 
     await mkdir(path.dirname(nodeExecutable), { recursive: true });
     await mkdir(path.dirname(npmCliPath), { recursive: true });
@@ -54,8 +73,12 @@ describe('opencode startup bootstrap', () => {
       codexCommandPath,
       codexPrefix,
       dataPath,
+      dwsCommandPath,
+      dwsPrefix,
       npmCliPath,
       nodeExecutable,
+      officeCliCommandPath,
+      officeCliPrefix,
       prefix,
     };
   }
@@ -116,6 +139,41 @@ describe('opencode startup bootstrap', () => {
     );
   });
 
+  it('uses the macOS managed Node npm CLI location to install OpenCode', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
+    const dataPath = await mkdtemp(path.join(tmpdir(), 'aionui-opencode-macos-'));
+    const nodeRoot = path.join(dataPath, 'runtime', 'node', 'node-v24.11.0-test');
+    const nodeExecutable = path.join(nodeRoot, 'bin', 'node');
+    const npmCliPath = path.join(nodeRoot, 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js');
+    const commandPath = path.join(dataPath, 'runtime', 'npm-global', 'opencode', 'bin', 'opencode');
+
+    await mkdir(path.dirname(nodeExecutable), { recursive: true });
+    await mkdir(path.dirname(npmCliPath), { recursive: true });
+    await writeFile(nodeExecutable, '');
+    await writeFile(npmCliPath, '');
+
+    const commandRunner = vi.fn(async () => {
+      await mkdir(path.dirname(commandPath), { recursive: true });
+      await writeFile(commandPath, '');
+      return {};
+    });
+
+    const result = await ensureOpenCodeReady({
+      commandRunner,
+      dataPath,
+      emitStatus: vi.fn(),
+      ensureNodeRuntime: async () => ({ ready: true }),
+      env: {},
+    });
+
+    expect(result).toEqual({ status: 'ready' });
+    expect(commandRunner).toHaveBeenCalledWith(
+      nodeExecutable,
+      expect.arrayContaining([npmCliPath, 'install', '--global', 'opencode-ai']),
+      expect.any(Object)
+    );
+  });
+
   it('uses managed Node npm to install Codex into npm-global', async () => {
     const fixture = await createManagedNodeFixture();
     const commandRunner = vi.fn(async () => {
@@ -151,6 +209,90 @@ describe('opencode startup bootstrap', () => {
           NPM_CONFIG_PREFIX: fixture.codexPrefix,
           NPM_CONFIG_REGISTRY: 'https://registry.npmmirror.com',
           npm_config_prefix: fixture.codexPrefix,
+          npm_config_registry: 'https://registry.npmmirror.com',
+        }),
+        timeout: 180000,
+      }
+    );
+  });
+
+  it('uses managed Node npm to install DingTalk DWS into npm-global', async () => {
+    const fixture = await createManagedNodeFixture();
+    const commandRunner = vi.fn(async () => {
+      await mkdir(path.dirname(fixture.dwsCommandPath), { recursive: true });
+      await writeFile(fixture.dwsCommandPath, '');
+      return {};
+    });
+
+    const result = await ensureDwsReady({
+      commandRunner,
+      dataPath: fixture.dataPath,
+      emitStatus: vi.fn(),
+      ensureNodeRuntime: async () => ({ ready: true }),
+      env: {},
+    });
+
+    expect(result).toEqual({ status: 'ready' });
+    expect(commandRunner).toHaveBeenCalledWith(
+      fixture.nodeExecutable,
+      [
+        fixture.npmCliPath,
+        'install',
+        '--global',
+        'dingtalk-workspace-cli',
+        '--prefix',
+        fixture.dwsPrefix,
+        '--registry',
+        'https://registry.npmmirror.com',
+      ],
+      {
+        cwd: fixture.dataPath,
+        env: expect.objectContaining({
+          NPM_CONFIG_PREFIX: fixture.dwsPrefix,
+          NPM_CONFIG_REGISTRY: 'https://registry.npmmirror.com',
+          npm_config_prefix: fixture.dwsPrefix,
+          npm_config_registry: 'https://registry.npmmirror.com',
+        }),
+        timeout: 180000,
+      }
+    );
+  });
+
+  it('uses managed Node npm to install OfficeCLI into npm-global', async () => {
+    const fixture = await createManagedNodeFixture();
+    const commandRunner = vi.fn(async () => {
+      await mkdir(path.dirname(fixture.officeCliCommandPath), { recursive: true });
+      await writeFile(fixture.officeCliCommandPath, '');
+      return {};
+    });
+
+    const result = await ensureOfficeCliReady({
+      commandRunner,
+      dataPath: fixture.dataPath,
+      emitStatus: vi.fn(),
+      ensureNodeRuntime: async () => ({ ready: true }),
+      env: {},
+    });
+
+    expect(result).toEqual({ status: 'ready' });
+    expect(commandRunner).toHaveBeenCalledWith(
+      fixture.nodeExecutable,
+      [
+        fixture.npmCliPath,
+        'install',
+        '--global',
+        '@officecli/officecli',
+        '--prefix',
+        fixture.officeCliPrefix,
+        '--registry',
+        'https://registry.npmmirror.com',
+      ],
+      {
+        cwd: fixture.dataPath,
+        env: expect.objectContaining({
+          NPM_CONFIG_PREFIX: fixture.officeCliPrefix,
+          NPM_CONFIG_REGISTRY: 'https://registry.npmmirror.com',
+          npm_config_prefix: fixture.officeCliPrefix,
           npm_config_registry: 'https://registry.npmmirror.com',
         }),
         timeout: 180000,
@@ -243,6 +385,34 @@ describe('opencode startup bootstrap', () => {
     }
   });
 
+  it('prepends the managed DingTalk DWS bin directory to PATH', async () => {
+    const dataPath = await mkdtemp(path.join(tmpdir(), 'aionui-dws-path-'));
+    const env: NodeJS.ProcessEnv = {
+      PATH: ['C:\\existing\\bin'].join(path.delimiter),
+    };
+
+    const binDir = addDwsGlobalBinToPath(dataPath, env);
+
+    expect(env.PATH?.split(path.delimiter)[0]).toBe(binDir);
+    if (process.platform === 'win32') {
+      expect(env.Path).toBe(env.PATH);
+    }
+  });
+
+  it('prepends the managed OfficeCLI bin directory to PATH', async () => {
+    const dataPath = await mkdtemp(path.join(tmpdir(), 'aionui-officecli-path-'));
+    const env: NodeJS.ProcessEnv = {
+      PATH: ['C:\\existing\\bin'].join(path.delimiter),
+    };
+
+    const binDir = addOfficeCliGlobalBinToPath(dataPath, env);
+
+    expect(env.PATH?.split(path.delimiter)[0]).toBe(binDir);
+    if (process.platform === 'win32') {
+      expect(env.Path).toBe(env.PATH);
+    }
+  });
+
   it('emits local runtime status while preparing OpenCode', async () => {
     const fixture = await createManagedNodeFixture();
     const emitStatus = vi.fn();
@@ -314,6 +484,12 @@ describe('opencode startup bootstrap', () => {
     expect(shouldEnsureCodexOnStartup({ AIONUI_E2E_TEST: '1' })).toBe(false);
     expect(shouldEnsureCodexOnStartup({ AIONUI_CODEX_BOOTSTRAP: '0' })).toBe(false);
     expect(shouldEnsureCodexOnStartup({})).toBe(true);
+    expect(shouldEnsureDwsOnStartup({ AIONUI_E2E_TEST: '1' })).toBe(false);
+    expect(shouldEnsureDwsOnStartup({ AIONUI_DWS_BOOTSTRAP: '0' })).toBe(false);
+    expect(shouldEnsureDwsOnStartup({})).toBe(true);
+    expect(shouldEnsureOfficeCliOnStartup({ AIONUI_E2E_TEST: '1' })).toBe(false);
+    expect(shouldEnsureOfficeCliOnStartup({ AIONUI_OFFICECLI_BOOTSTRAP: '0' })).toBe(false);
+    expect(shouldEnsureOfficeCliOnStartup({})).toBe(true);
   });
 
   it('runs backend health-check for the managed opencode agent after runtime is ready', async () => {
@@ -445,6 +621,82 @@ describe('opencode startup bootstrap', () => {
           value: expect.stringContaining(path.join('runtime', 'codex-home')),
         },
       ],
+    });
+  });
+
+  it('runs backend health-check for the managed MonoSkill/DWS agent after runtime is ready', async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.endsWith('/api/agents/management')) {
+        return new Response(
+          JSON.stringify({
+            data: [
+              { id: 'agent-opencode', name: 'OpenCode', backend: 'opencode', enabled: true },
+              { id: 'agent-monoskill', name: 'MonoSkill', backend: 'acp', enabled: true },
+            ],
+          }),
+          {
+            headers: { 'Content-Type': 'application/json' },
+            status: 200,
+          }
+        );
+      }
+      if (url.endsWith('/api/agents/agent-monoskill/health-check')) {
+        return new Response(JSON.stringify({ data: { id: 'agent-monoskill', status: 'online' } }), {
+          headers: { 'Content-Type': 'application/json' },
+          status: 200,
+        });
+      }
+      return new Response('not found', { status: 404 });
+    });
+
+    const result = await checkDwsManagedAgentHealth({
+      backendPort: 13400,
+      bootstrapResult: { status: 'ready' },
+      fetchImpl,
+    });
+
+    expect(result).toEqual({
+      checked: true,
+      agentId: 'agent-monoskill',
+      status: 'online',
+    });
+  });
+
+  it('runs backend health-check for the managed OfficeCLI agent after runtime is ready', async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.endsWith('/api/agents/management')) {
+        return new Response(
+          JSON.stringify({
+            data: [
+              { id: 'agent-monoskill', name: 'MonoSkill', backend: 'acp', enabled: true },
+              { id: 'agent-officecli', name: 'OfficeCLI', backend: 'officecli', enabled: true },
+            ],
+          }),
+          {
+            headers: { 'Content-Type': 'application/json' },
+            status: 200,
+          }
+        );
+      }
+      if (url.endsWith('/api/agents/agent-officecli/health-check')) {
+        return new Response(JSON.stringify({ data: { id: 'agent-officecli', status: 'online' } }), {
+          headers: { 'Content-Type': 'application/json' },
+          status: 200,
+        });
+      }
+      return new Response('not found', { status: 404 });
+    });
+
+    const result = await checkOfficeCliManagedAgentHealth({
+      backendPort: 13400,
+      bootstrapResult: { status: 'ready' },
+      fetchImpl,
+    });
+
+    expect(result).toEqual({
+      checked: true,
+      agentId: 'agent-officecli',
+      status: 'online',
     });
   });
 });

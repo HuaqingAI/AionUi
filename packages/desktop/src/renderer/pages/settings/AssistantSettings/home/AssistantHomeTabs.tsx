@@ -12,7 +12,6 @@ import TalkToButlerButton from '@/renderer/components/base/TalkToButlerButton';
 import { AionSearchInput } from '@/renderer/components/base';
 import SettingsPageHeader from '../../components/SettingsPageHeader';
 import { Button } from '@arco-design/web-react';
-import { Refresh } from '@icon-park/react';
 import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -130,13 +129,13 @@ const AssistantHomeTabs: React.FC<AssistantHomeTabsProps> = ({
                   data-testid='btn-create-assistant'
                 />
                 <Button
-                  type='outline'
-                  className='shrink-0 !border-primary-5 !bg-primary-1 !text-primary-6 hover:!border-primary-6 hover:!bg-primary-2'
+                  type='primary'
+                  size='small'
+                  className='shrink-0 !h-32px !rounded-8px !px-14px'
                   loading={syncingFromHTH}
                   onClick={() => void onSyncFromHTH()}
                 >
                   <span className='inline-flex items-center gap-8px font-500'>
-                    {!syncingFromHTH && <Refresh theme='outline' size='16' />}
                     <span>{formatHTHText(t('settings.hth.syncAssistants'))}</span>
                   </span>
                 </Button>

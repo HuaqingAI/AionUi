@@ -26,8 +26,12 @@ import { classifyBackendStartupFailure } from './process/startup/backendStartupF
 import {
   addStartupManagedAcpToolBinsToPath,
   checkCodexManagedAgentHealthOnStartup,
+  checkDwsManagedAgentHealthOnStartup,
+  checkOfficeCliManagedAgentHealthOnStartup,
   checkOpenCodeManagedAgentHealthOnStartup,
   ensureCodexReadyOnStartup,
+  ensureDwsReadyOnStartup,
+  ensureOfficeCliReadyOnStartup,
   ensureOpenCodeReadyOnStartup,
   type OpenCodeBootstrapResult,
   type OpenCodeManagedAgentHealthResult,
@@ -221,11 +225,15 @@ let backendStartupFailureInfo: BackendStartupFailureInfo | null = null;
 let rendererInitialLanguage: string | null = null;
 let openCodeBootstrapResult: OpenCodeBootstrapResult | null = null;
 let codexBootstrapResult: OpenCodeBootstrapResult | null = null;
+let dwsBootstrapResult: OpenCodeBootstrapResult | null = null;
+let officeCliBootstrapResult: OpenCodeBootstrapResult | null = null;
 let openCodeRuntimeDataPath: string | null = null;
 let backendMigrationsScheduled = false;
 let ensureAdminUserPromise: Promise<void> | null = null;
 let openCodeManagedAgentHealthPromise: Promise<OpenCodeManagedAgentHealthResult> | null = null;
 let codexManagedAgentHealthPromise: Promise<OpenCodeManagedAgentHealthResult> | null = null;
+let dwsManagedAgentHealthPromise: Promise<OpenCodeManagedAgentHealthResult> | null = null;
+let officeCliManagedAgentHealthPromise: Promise<OpenCodeManagedAgentHealthResult> | null = null;
 let rendererReadyForRuntimeStatus = false;
 
 ipcMain.on('get-backend-port', (event) => {
@@ -423,6 +431,62 @@ function checkCodexManagedAgentHealthOnce(backendPort: number): Promise<OpenCode
   return codexManagedAgentHealthPromise;
 }
 
+function checkDwsManagedAgentHealthOnce(backendPort: number): Promise<OpenCodeManagedAgentHealthResult> {
+  if (!dwsManagedAgentHealthPromise) {
+    dwsManagedAgentHealthPromise = (async () => {
+      try {
+        dwsBootstrapResult = await ensureDwsReadyOnStartup({
+          dataPath: openCodeRuntimeDataPath ?? undefined,
+        });
+      } catch (error) {
+        console.warn('[DingTalk DWS] unexpected startup bootstrap error:', error);
+        dwsBootstrapResult = { status: 'failed', error: error instanceof Error ? error.message : String(error) };
+      }
+
+      const result = await checkDwsManagedAgentHealthOnStartup({
+        backendPort,
+        bootstrapResult: dwsBootstrapResult,
+      });
+      if (result.checked) {
+        void ipcBridge.acpConversation.managedAgentHealthChanged.emit({
+          id: result.agentId,
+          status: result.status,
+        });
+      }
+      return result;
+    })();
+  }
+  return dwsManagedAgentHealthPromise;
+}
+
+function checkOfficeCliManagedAgentHealthOnce(backendPort: number): Promise<OpenCodeManagedAgentHealthResult> {
+  if (!officeCliManagedAgentHealthPromise) {
+    officeCliManagedAgentHealthPromise = (async () => {
+      try {
+        officeCliBootstrapResult = await ensureOfficeCliReadyOnStartup({
+          dataPath: openCodeRuntimeDataPath ?? undefined,
+        });
+      } catch (error) {
+        console.warn('[OfficeCLI] unexpected startup bootstrap error:', error);
+        officeCliBootstrapResult = { status: 'failed', error: error instanceof Error ? error.message : String(error) };
+      }
+
+      const result = await checkOfficeCliManagedAgentHealthOnStartup({
+        backendPort,
+        bootstrapResult: officeCliBootstrapResult,
+      });
+      if (result.checked) {
+        void ipcBridge.acpConversation.managedAgentHealthChanged.emit({
+          id: result.agentId,
+          status: result.status,
+        });
+      }
+      return result;
+    })();
+  }
+  return officeCliManagedAgentHealthPromise;
+}
+
 function scheduleOpenCodeManagedAgentHealthAfterRendererReady(backendPort: number): void {
   if (!rendererReadyForRuntimeStatus || !mainWindow || mainWindow.isDestroyed()) {
     return;
@@ -432,6 +496,14 @@ function scheduleOpenCodeManagedAgentHealthAfterRendererReady(backendPort: numbe
   });
   void checkCodexManagedAgentHealthOnce(backendPort).then((healthResult) => {
     console.log(`[AionUi:ready] codexHealth:${healthResult.checked ? healthResult.status || 'checked' : 'skipped'}`);
+  });
+  void checkDwsManagedAgentHealthOnce(backendPort).then((healthResult) => {
+    console.log(`[AionUi:ready] dwsHealth:${healthResult.checked ? healthResult.status || 'checked' : 'skipped'}`);
+  });
+  void checkOfficeCliManagedAgentHealthOnce(backendPort).then((healthResult) => {
+    console.log(
+      `[AionUi:ready] officecliHealth:${healthResult.checked ? healthResult.status || 'checked' : 'skipped'}`
+    );
   });
 }
 

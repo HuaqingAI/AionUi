@@ -30,11 +30,15 @@ export type OpenCodeManagedAgentHealthResult = {
 type ManagedAcpTool = {
   commandName: string;
   displayName: string;
-  envDisabledKey: 'AIONUI_CODEX_BOOTSTRAP' | 'AIONUI_OPENCODE_BOOTSTRAP';
-  match: string;
+  envDisabledKey:
+    | 'AIONUI_CODEX_BOOTSTRAP'
+    | 'AIONUI_DWS_BOOTSTRAP'
+    | 'AIONUI_OFFICECLI_BOOTSTRAP'
+    | 'AIONUI_OPENCODE_BOOTSTRAP';
+  match: string | readonly string[];
   packageName: string;
   scope: IRuntimeStatusScope;
-  toolId: 'codex' | 'opencode';
+  toolId: 'codex' | 'dws' | 'officecli' | 'opencode';
 };
 
 type EnsureNodeRuntime = (params: { scope: IRuntimeStatusScope }) => Promise<{ ready: boolean }>;
@@ -52,6 +56,8 @@ type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 type OpenCodeStartupEnv = {
   AIONUI_CODEX_BOOTSTRAP?: string;
+  AIONUI_DWS_BOOTSTRAP?: string;
+  AIONUI_OFFICECLI_BOOTSTRAP?: string;
   AIONUI_E2E_TEST?: string;
   AIONUI_OPENCODE_BOOTSTRAP?: string;
 };
@@ -100,6 +106,21 @@ const CODEX_STARTUP_SCOPE: IRuntimeStatusScope = {
   kind: 'custom_agent',
   id: 'startup-codex',
 };
+const DWS_TOOL_ID = 'dws';
+const DWS_COMMAND_NAME = 'dws';
+const DWS_PACKAGE_NAME = 'dingtalk-workspace-cli';
+const DWS_AGENT_MATCH = ['monoskill', 'dws', 'dingtalk'] as const;
+const DWS_STARTUP_SCOPE: IRuntimeStatusScope = {
+  kind: 'custom_agent',
+  id: 'startup-dws',
+};
+const OFFICECLI_TOOL_ID = 'officecli';
+const OFFICECLI_PACKAGE_NAME = '@officecli/officecli';
+const OFFICECLI_AGENT_MATCH = 'officecli';
+const OFFICECLI_STARTUP_SCOPE: IRuntimeStatusScope = {
+  kind: 'custom_agent',
+  id: 'startup-officecli',
+};
 const HEALTH_CHECK_TIMEOUT_MS = 30000;
 const OPENCODE_INSTALL_TIMEOUT_MS = 180000;
 const MANAGED_NPM_REGISTRY = 'https://registry.npmmirror.com';
@@ -124,7 +145,27 @@ const CODEX_TOOL: ManagedAcpTool = {
   toolId: CODEX_TOOL_ID,
 };
 
-const STARTUP_TOOLS = [OPENCODE_TOOL, CODEX_TOOL] as const;
+const DWS_TOOL: ManagedAcpTool = {
+  commandName: DWS_COMMAND_NAME,
+  displayName: 'DingTalk DWS',
+  envDisabledKey: 'AIONUI_DWS_BOOTSTRAP',
+  match: DWS_AGENT_MATCH,
+  packageName: DWS_PACKAGE_NAME,
+  scope: DWS_STARTUP_SCOPE,
+  toolId: DWS_TOOL_ID,
+};
+
+const OFFICECLI_TOOL: ManagedAcpTool = {
+  commandName: OFFICECLI_TOOL_ID,
+  displayName: 'OfficeCLI',
+  envDisabledKey: 'AIONUI_OFFICECLI_BOOTSTRAP',
+  match: OFFICECLI_AGENT_MATCH,
+  packageName: OFFICECLI_PACKAGE_NAME,
+  scope: OFFICECLI_STARTUP_SCOPE,
+  toolId: OFFICECLI_TOOL_ID,
+};
+
+const STARTUP_TOOLS = [OPENCODE_TOOL, CODEX_TOOL, DWS_TOOL, OFFICECLI_TOOL] as const;
 
 const execFileAsync = promisify(execFile);
 
@@ -171,10 +212,11 @@ async function fetchJsonWithTimeout<T>(
   }
 }
 
-function findManagedAgent(rows: ManagedAgentRow[], match: string): ManagedAgentRow | undefined {
+function findManagedAgent(rows: ManagedAgentRow[], match: string | readonly string[]): ManagedAgentRow | undefined {
+  const matches = Array.isArray(match) ? match : [match];
   return rows.find((agent) => {
     const fields = [agent.id, agent.name, agent.backend, agent.agent_type].filter(Boolean).join(' ').toLowerCase();
-    return fields.includes(match) && agent.enabled !== false;
+    return matches.some((item) => fields.includes(item)) && agent.enabled !== false;
   });
 }
 
@@ -256,6 +298,14 @@ export function addCodexGlobalBinToPath(dataPath = getDataPath(), env: NodeJS.Pr
   return addManagedToolGlobalBinToPath(CODEX_TOOL, dataPath, env);
 }
 
+export function addDwsGlobalBinToPath(dataPath = getDataPath(), env: NodeJS.ProcessEnv = process.env): string {
+  return addManagedToolGlobalBinToPath(DWS_TOOL, dataPath, env);
+}
+
+export function addOfficeCliGlobalBinToPath(dataPath = getDataPath(), env: NodeJS.ProcessEnv = process.env): string {
+  return addManagedToolGlobalBinToPath(OFFICECLI_TOOL, dataPath, env);
+}
+
 export function addStartupManagedAcpToolBinsToPath(
   dataPath = getDataPath(),
   env: NodeJS.ProcessEnv = process.env
@@ -307,9 +357,12 @@ async function findManagedNodeExecutable(dataPath = getDataPath()): Promise<stri
 }
 
 function getNpmCliPath(nodeExecutable: string): string {
-  const nodeRoot =
-    process.platform === 'win32' ? path.dirname(nodeExecutable) : path.dirname(path.dirname(nodeExecutable));
-  return path.join(nodeRoot, 'node_modules', 'npm', 'bin', 'npm-cli.js');
+  if (process.platform === 'win32') {
+    return path.join(path.dirname(nodeExecutable), 'node_modules', 'npm', 'bin', 'npm-cli.js');
+  }
+
+  const nodeRoot = path.dirname(path.dirname(nodeExecutable));
+  return path.join(nodeRoot, 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js');
 }
 
 async function runCommand(
@@ -410,6 +463,14 @@ export function shouldEnsureCodexOnStartup(env: OpenCodeStartupEnv = process.env
   return shouldEnsureManagedToolOnStartup(CODEX_TOOL, env);
 }
 
+export function shouldEnsureDwsOnStartup(env: OpenCodeStartupEnv = process.env): boolean {
+  return shouldEnsureManagedToolOnStartup(DWS_TOOL, env);
+}
+
+export function shouldEnsureOfficeCliOnStartup(env: OpenCodeStartupEnv = process.env): boolean {
+  return shouldEnsureManagedToolOnStartup(OFFICECLI_TOOL, env);
+}
+
 async function ensureManagedToolReady(
   tool: ManagedAcpTool,
   options: EnsureOpenCodeReadyOptions = {}
@@ -473,6 +534,14 @@ export function ensureCodexReady(options: EnsureOpenCodeReadyOptions = {}): Prom
   return ensureManagedToolReady(CODEX_TOOL, options);
 }
 
+export function ensureDwsReady(options: EnsureOpenCodeReadyOptions = {}): Promise<OpenCodeBootstrapResult> {
+  return ensureManagedToolReady(DWS_TOOL, options);
+}
+
+export function ensureOfficeCliReady(options: EnsureOpenCodeReadyOptions = {}): Promise<OpenCodeBootstrapResult> {
+  return ensureManagedToolReady(OFFICECLI_TOOL, options);
+}
+
 export function ensureOpenCodeReadyOnce(options: EnsureOpenCodeReadyOptions = {}): Promise<OpenCodeBootstrapResult> {
   if (!startupPromise) {
     startupPromise = ensureOpenCodeReady(options);
@@ -511,6 +580,42 @@ export async function ensureCodexReadyOnStartup(
       break;
     case 'failed':
       console.warn('[Codex] managed runtime bootstrap failed:', result.error);
+      break;
+  }
+  return result;
+}
+
+export async function ensureDwsReadyOnStartup(
+  options: EnsureOpenCodeReadyOptions = {}
+): Promise<OpenCodeBootstrapResult> {
+  const result = await ensureDwsReady(options);
+  switch (result.status) {
+    case 'ready':
+      console.info('[DingTalk DWS] managed runtime is ready');
+      break;
+    case 'skipped':
+      console.info('[DingTalk DWS] startup bootstrap skipped');
+      break;
+    case 'failed':
+      console.warn('[DingTalk DWS] managed runtime bootstrap failed:', result.error);
+      break;
+  }
+  return result;
+}
+
+export async function ensureOfficeCliReadyOnStartup(
+  options: EnsureOpenCodeReadyOptions = {}
+): Promise<OpenCodeBootstrapResult> {
+  const result = await ensureOfficeCliReady(options);
+  switch (result.status) {
+    case 'ready':
+      console.info('[OfficeCLI] managed runtime is ready');
+      break;
+    case 'skipped':
+      console.info('[OfficeCLI] startup bootstrap skipped');
+      break;
+    case 'failed':
+      console.warn('[OfficeCLI] managed runtime bootstrap failed:', result.error);
       break;
   }
   return result;
@@ -610,6 +715,98 @@ export async function checkCodexManagedAgentHealth(
   }
 }
 
+export async function checkDwsManagedAgentHealth(
+  options: CheckOpenCodeManagedAgentHealthOptions
+): Promise<OpenCodeManagedAgentHealthResult> {
+  if (!isReadyForManagedAgentHealthCheck(options.bootstrapResult)) {
+    return { checked: false };
+  }
+  if (!Number.isFinite(options.backendPort) || options.backendPort <= 0) {
+    return { checked: false, error: 'backend port is not available' };
+  }
+
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const timeoutMs = options.timeoutMs ?? HEALTH_CHECK_TIMEOUT_MS;
+  const baseUrl = `http://127.0.0.1:${options.backendPort}`;
+
+  try {
+    const rows = await fetchJsonWithTimeout<ManagedAgentRow[]>(
+      fetchImpl,
+      `${baseUrl}/api/agents/management`,
+      { method: 'GET' },
+      timeoutMs
+    );
+    const agent = findManagedAgent(Array.isArray(rows) ? rows : [], DWS_TOOL.match);
+    if (!agent?.id) {
+      return { checked: false, error: 'dingtalk dws managed agent was not found' };
+    }
+    const health = await fetchJsonWithTimeout<ManagedAgentRow>(
+      fetchImpl,
+      `${baseUrl}/api/agents/${encodeURIComponent(agent.id)}/health-check`,
+      {
+        method: 'POST',
+      },
+      timeoutMs
+    );
+    return {
+      checked: true,
+      agentId: agent.id,
+      status: health.status,
+    };
+  } catch (error) {
+    return {
+      checked: false,
+      error: normalizeError(error),
+    };
+  }
+}
+
+export async function checkOfficeCliManagedAgentHealth(
+  options: CheckOpenCodeManagedAgentHealthOptions
+): Promise<OpenCodeManagedAgentHealthResult> {
+  if (!isReadyForManagedAgentHealthCheck(options.bootstrapResult)) {
+    return { checked: false };
+  }
+  if (!Number.isFinite(options.backendPort) || options.backendPort <= 0) {
+    return { checked: false, error: 'backend port is not available' };
+  }
+
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const timeoutMs = options.timeoutMs ?? HEALTH_CHECK_TIMEOUT_MS;
+  const baseUrl = `http://127.0.0.1:${options.backendPort}`;
+
+  try {
+    const rows = await fetchJsonWithTimeout<ManagedAgentRow[]>(
+      fetchImpl,
+      `${baseUrl}/api/agents/management`,
+      { method: 'GET' },
+      timeoutMs
+    );
+    const agent = findManagedAgent(Array.isArray(rows) ? rows : [], OFFICECLI_TOOL.match);
+    if (!agent?.id) {
+      return { checked: false, error: 'officecli managed agent was not found' };
+    }
+    const health = await fetchJsonWithTimeout<ManagedAgentRow>(
+      fetchImpl,
+      `${baseUrl}/api/agents/${encodeURIComponent(agent.id)}/health-check`,
+      {
+        method: 'POST',
+      },
+      timeoutMs
+    );
+    return {
+      checked: true,
+      agentId: agent.id,
+      status: health.status,
+    };
+  } catch (error) {
+    return {
+      checked: false,
+      error: normalizeError(error),
+    };
+  }
+}
+
 export async function checkOpenCodeManagedAgentHealthOnStartup(
   options: CheckOpenCodeManagedAgentHealthOptions
 ): Promise<OpenCodeManagedAgentHealthResult> {
@@ -634,6 +831,34 @@ export async function checkCodexManagedAgentHealthOnStartup(
     );
   } else if (result.error) {
     console.warn('[Codex] managed agent health-check skipped or failed:', result.error);
+  }
+  return result;
+}
+
+export async function checkDwsManagedAgentHealthOnStartup(
+  options: CheckOpenCodeManagedAgentHealthOptions
+): Promise<OpenCodeManagedAgentHealthResult> {
+  const result = await checkDwsManagedAgentHealth(options);
+  if (result.checked) {
+    console.info(
+      `[DingTalk DWS] managed agent health-check completed (id=${result.agentId}, status=${result.status ?? 'unknown'})`
+    );
+  } else if (result.error) {
+    console.warn('[DingTalk DWS] managed agent health-check skipped or failed:', result.error);
+  }
+  return result;
+}
+
+export async function checkOfficeCliManagedAgentHealthOnStartup(
+  options: CheckOpenCodeManagedAgentHealthOptions
+): Promise<OpenCodeManagedAgentHealthResult> {
+  const result = await checkOfficeCliManagedAgentHealth(options);
+  if (result.checked) {
+    console.info(
+      `[OfficeCLI] managed agent health-check completed (id=${result.agentId}, status=${result.status ?? 'unknown'})`
+    );
+  } else if (result.error) {
+    console.warn('[OfficeCLI] managed agent health-check skipped or failed:', result.error);
   }
   return result;
 }
