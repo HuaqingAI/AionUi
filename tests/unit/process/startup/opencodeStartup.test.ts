@@ -518,6 +518,34 @@ describe('opencode startup bootstrap', () => {
     expect(launcher).toContain(cliPath);
   });
 
+  it('repairs the macOS OpenCode launcher to execute the native binary directly', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
+    const fixture = await createManagedNodeFixture();
+    const packageRoot = path.join(fixture.prefix, 'lib', 'node_modules', 'opencode-ai');
+    const nativePath = path.join(packageRoot, 'bin', 'opencode.exe');
+    await mkdir(path.dirname(fixture.commandPath), { recursive: true });
+    await mkdir(path.dirname(nativePath), { recursive: true });
+    await writeFile(
+      path.join(packageRoot, 'package.json'),
+      JSON.stringify({
+        bin: {
+          opencode: 'bin/opencode.exe',
+        },
+      })
+    );
+    await writeFile(nativePath, Buffer.from([0, 1, 2, 3]));
+    await writeFile(fixture.commandPath, '#!/bin/sh\nexec node ./opencode.exe "$@"\n');
+
+    addStartupManagedAcpToolBinsToPath(fixture.dataPath, {
+      PATH: path.join(fixture.dataPath, 'system-node-bin'),
+    });
+
+    const launcher = await readFile(fixture.commandPath, 'utf8');
+    expect(launcher).toContain('AionUi managed direct launcher');
+    expect(launcher).toContain(nativePath);
+    expect(launcher).not.toContain(fixture.nodeExecutable);
+  });
+
   it('prepends the managed OpenCode bin directory to PATH', async () => {
     const dataPath = await mkdtemp(path.join(tmpdir(), 'aionui-opencode-path-'));
     const env: NodeJS.ProcessEnv = {

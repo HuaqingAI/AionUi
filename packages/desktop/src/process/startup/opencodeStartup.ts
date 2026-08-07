@@ -7,7 +7,17 @@
 import { ipcBridge } from '@/common';
 import type { IRuntimeStatusEvent, IRuntimeStatusScope } from '@/common/adapter/ipcBridge';
 import { execFile } from 'child_process';
-import { chmodSync, existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'fs';
+import {
+  chmodSync,
+  closeSync,
+  existsSync,
+  openSync,
+  readFileSync,
+  readSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'fs';
 import fs from 'fs/promises';
 import path from 'path';
 import { promisify } from 'util';
@@ -135,6 +145,7 @@ const HEALTH_CHECK_TIMEOUT_MS = 30000;
 const OPENCODE_INSTALL_TIMEOUT_MS = 180000;
 const MANAGED_NPM_REGISTRY = 'https://registry.npmmirror.com';
 const MANAGED_NODE_LAUNCHER_MARKER = 'AionUi managed Node launcher';
+const MANAGED_DIRECT_LAUNCHER_MARKER = 'AionUi managed direct launcher';
 
 const OPENCODE_TOOL: ManagedAcpTool = {
   commandName: OPENCODE_TOOL_ID,
@@ -511,6 +522,78 @@ function buildManagedNodeLauncher(nodeExecutable: string, targetPath: string): s
   ].join('\n');
 }
 
+function buildManagedDirectLauncher(targetPath: string): string {
+  const encodedTarget = Buffer.from(targetPath, 'utf8').toString('base64');
+  return [
+    '#!/bin/sh',
+    `# ${MANAGED_DIRECT_LAUNCHER_MARKER}`,
+    `# target_b64=${encodedTarget}`,
+    `exec ${shellQuote(targetPath)} "$@"`,
+    '',
+  ].join('\n');
+}
+
+async function isManagedToolNodeScriptTarget(targetPath: string): Promise<boolean> {
+  const extension = path.extname(targetPath).toLowerCase();
+  if (extension === '.js' || extension === '.mjs' || extension === '.cjs') {
+    return true;
+  }
+  try {
+    const handle = await fs.open(targetPath, 'r');
+    try {
+      const buffer = Buffer.alloc(256);
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+      const chunk = buffer.subarray(0, bytesRead);
+      if (chunk.includes(0)) {
+        return false;
+      }
+      const firstLine = chunk.toString('utf8').split(/\r?\n/, 1)[0] ?? '';
+      return /^#!.*\bnode\b/i.test(firstLine);
+    } finally {
+      await handle.close();
+    }
+  } catch {
+    return false;
+  }
+}
+
+function isManagedToolNodeScriptTargetSync(targetPath: string): boolean {
+  const extension = path.extname(targetPath).toLowerCase();
+  if (extension === '.js' || extension === '.mjs' || extension === '.cjs') {
+    return true;
+  }
+  try {
+    const fd = openSync(targetPath, 'r');
+    const buffer = Buffer.alloc(256);
+    let bytesRead = 0;
+    try {
+      bytesRead = readSync(fd, buffer, 0, buffer.length, 0);
+    } finally {
+      closeSync(fd);
+    }
+    const chunk = buffer.subarray(0, bytesRead);
+    if (chunk.includes(0)) {
+      return false;
+    }
+    const firstLine = chunk.toString('utf8').split(/\r?\n/, 1)[0] ?? '';
+    return /^#!.*\bnode\b/i.test(firstLine);
+  } catch {
+    return false;
+  }
+}
+
+async function buildManagedToolLauncher(nodeExecutable: string, targetPath: string): Promise<string> {
+  return (await isManagedToolNodeScriptTarget(targetPath))
+    ? buildManagedNodeLauncher(nodeExecutable, targetPath)
+    : buildManagedDirectLauncher(targetPath);
+}
+
+function buildManagedToolLauncherSync(nodeExecutable: string, targetPath: string): string {
+  return isManagedToolNodeScriptTargetSync(targetPath)
+    ? buildManagedNodeLauncher(nodeExecutable, targetPath)
+    : buildManagedDirectLauncher(targetPath);
+}
+
 async function ensureManagedToolLauncherUsesManagedNode(
   tool: ManagedAcpTool,
   dataPath: string,
@@ -530,7 +613,7 @@ async function ensureManagedToolLauncherUsesManagedNode(
     return;
   }
 
-  const launcher = buildManagedNodeLauncher(nodeExecutable, targetPath);
+  const launcher = await buildManagedToolLauncher(nodeExecutable, targetPath);
   try {
     const current = await fs.readFile(commandPath, 'utf8');
     if (current === launcher) {
@@ -564,7 +647,7 @@ function ensureManagedToolLauncherUsesManagedNodeSync(
     return;
   }
 
-  const launcher = buildManagedNodeLauncher(nodeExecutable, targetPath);
+  const launcher = buildManagedToolLauncherSync(nodeExecutable, targetPath);
   try {
     if (readFileSync(commandPath, 'utf8') === launcher) {
       return;
