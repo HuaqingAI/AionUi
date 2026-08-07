@@ -154,7 +154,7 @@ const HTHLogin: React.FC = () => {
                 <Input
                   value={baseUrl}
                   onChange={setBaseUrl}
-                  placeholder={t('login.hth.baseUrlPlaceholder')}
+                  placeholder={baseUrl || t('login.hth.baseUrlPlaceholder')}
                   disabled={loading}
                 />
               )}

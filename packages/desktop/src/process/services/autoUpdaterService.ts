@@ -130,7 +130,6 @@ class AutoUpdaterService extends EventEmitter {
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = true;
     this.configureDevAutoUpdate();
-    const feedOptions = buildCdnFeedOptions();
 
     // Set the correct update channel based on platform and architecture before
     // any update checks are performed
@@ -139,15 +138,7 @@ class AutoUpdaterService extends EventEmitter {
       autoUpdater.channel = channel;
       log.info(`Update channel set to: ${channel}`);
     }
-    autoUpdater.setFeedURL(feedOptions);
-    log.info('Update feed set to generic provider');
-    log.debug('[auto-update] generic feed configured', {
-      provider: feedOptions.provider,
-      url: feedOptions.url,
-      channel: channel ?? 'latest',
-      platform: process.platform,
-      arch: process.arch,
-    });
+    this.applyFeedOptions();
   }
 
   private configureDevAutoUpdate(): void {
@@ -182,6 +173,19 @@ class AutoUpdaterService extends EventEmitter {
       value: parsedVersion,
     });
     log.warn(`[auto-update] Debug current version override enabled: ${parsedVersion.version}`);
+  }
+
+  private applyFeedOptions(): void {
+    const feedOptions = buildCdnFeedOptions();
+    autoUpdater.setFeedURL(feedOptions);
+    log.info('Update feed set to generic provider');
+    log.debug('[auto-update] generic feed configured', {
+      provider: feedOptions.provider,
+      url: feedOptions.url,
+      channel: autoUpdater.channel ?? 'latest',
+      platform: process.platform,
+      arch: process.arch,
+    });
   }
 
   /**
@@ -621,6 +625,7 @@ class AutoUpdaterService extends EventEmitter {
         return { success: true };
       }
 
+      this.applyFeedOptions();
       const result = await autoUpdater.checkForUpdates();
       if (!result) {
         const { default: i18n } = await import('./i18n');

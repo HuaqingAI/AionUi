@@ -15,6 +15,7 @@ import fs from 'fs/promises';
 import http from 'http';
 import path from 'path';
 import { randomUUID } from 'crypto';
+import { getHTHAuthFilePath, normalizeHTHBaseUrl, resolveDefaultHTHBaseUrl } from './baseUrl';
 
 type StoredAuth = {
   baseUrl: string;
@@ -77,7 +78,6 @@ type ApiEnvelope<T> = {
   msg?: string;
 };
 
-const DEFAULT_BASE_URL = 'http://127.0.0.1:3001';
 const REDIRECT_URI = 'aionui://auth/hth-callback';
 const LOOPBACK_CALLBACK_PATH = '/hth/callback';
 const LOGIN_STATE_TTL_MS = 10 * 60 * 1000;
@@ -96,7 +96,7 @@ export class HTHAuthService {
   private readonly authFile: string;
   private readonly onLoginComplete?: () => void;
 
-  constructor(authFile = path.join(app.getPath('userData'), 'hth', 'auth.json'), options: HTHAuthServiceOptions = {}) {
+  constructor(authFile = getHTHAuthFilePath(), options: HTHAuthServiceOptions = {}) {
     this.authFile = authFile;
     this.onLoginComplete = options.onLoginComplete;
   }
@@ -454,15 +454,11 @@ const timer = window.setInterval(() => {
   }
 
   private normalizeBaseUrl(baseUrl: string): string {
-    const url = new URL(baseUrl);
-    url.pathname = url.pathname.replace(/\/+$/, '');
-    url.search = '';
-    url.hash = '';
-    return url.toString().replace(/\/+$/, '');
+    return normalizeHTHBaseUrl(baseUrl);
   }
 
   private resolveBaseUrl(): string {
-    return process.env.AIONUI_HTH_BASE_URL || process.env.VITE_HTH_BASE_URL || DEFAULT_BASE_URL;
+    return resolveDefaultHTHBaseUrl();
   }
 
   private isExpired(auth: StoredAuth): boolean {
