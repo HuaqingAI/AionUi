@@ -1288,11 +1288,11 @@
   "providerIdConflict": "El ID del proveedor ya existe. Inténtalo de nuevo.",
   "autoInjectedSkillsHint": "Se cargan automáticamente en cada conversación: no hace falta activarlas; el agente decide cuándo usarlas.",
   "hth": {
-    "syncAssistants": "Sync from HTH",
+    "syncAssistants": "Sync Assistants",
     "syncSuccess": "HTH sync complete: {{success}} successful, {{failed}} failed",
     "syncFailed": "HTH sync failed",
-    "logout": "Sign out of HTH",
-    "logoutSuccess": "Signed out of HTH",
-    "logoutFailed": "Failed to sign out of HTH"
+    "logout": "Sign out",
+    "logoutSuccess": "Signed out",
+    "logoutFailed": "Failed to sign out"
   }
 }

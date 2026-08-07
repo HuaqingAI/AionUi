@@ -1287,12 +1287,12 @@
     "solveWithButler": "找管家排查"
   },
   "hth": {
-    "syncAssistants": "从 HTH 同步",
+    "syncAssistants": "同步助手",
     "syncSuccess": "HTH 同步完成：成功 {{success}}，失败 {{failed}}",
     "syncFailed": "HTH 同步失败",
-    "logout": "退出 HTH 登录",
-    "logoutSuccess": "已退出 HTH 登录",
-    "logoutFailed": "退出 HTH 登录失败"
+    "logout": "退出登录",
+    "logoutSuccess": "已退出登录",
+    "logoutFailed": "退出登录失败"
   },
   "providerIdConflict": "Provider ID 已存在，请重试。",
   "autoInjectedSkillsHint": "每次对话都会自动加载，无需手动启用；由智能体自行决定何时调用。"

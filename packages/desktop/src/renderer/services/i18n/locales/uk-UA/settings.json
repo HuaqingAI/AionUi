@@ -1289,11 +1289,11 @@
   "channels.wecomDesc": "Chat with AionUi assistant via WeCom (Enterprise WeChat AI Bot)",
   "autoInjectedSkillsHint": "Автоматично завантажуються в кожну розмову — вмикати не потрібно; агент сам вирішує, коли їх використовувати.",
   "hth": {
-    "syncAssistants": "Sync from HTH",
+    "syncAssistants": "Sync Assistants",
     "syncSuccess": "HTH sync complete: {{success}} successful, {{failed}} failed",
     "syncFailed": "HTH sync failed",
-    "logout": "Sign out of HTH",
-    "logoutSuccess": "Signed out of HTH",
-    "logoutFailed": "Failed to sign out of HTH"
+    "logout": "Sign out",
+    "logoutSuccess": "Signed out",
+    "logoutFailed": "Failed to sign out"
   }
 }

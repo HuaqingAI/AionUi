@@ -11,7 +11,7 @@ import HTHBuddyLogo from '@renderer/components/layout/HTHBuddyLogo';
 import WindowControls from '@renderer/components/layout/WindowControls';
 import { isElectronDesktop, isMacOS } from '@renderer/utils/platform';
 import { Button, Input, Message, Typography } from '@arco-design/web-react';
-import { Down, Login, Right } from '@icon-park/react';
+import { Down, Right } from '@icon-park/react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
@@ -160,13 +160,7 @@ const HTHLogin: React.FC = () => {
               )}
             </div>
 
-            <Button
-              className={styles.loginButton}
-              type='primary'
-              icon={<Login />}
-              loading={loading}
-              onClick={handleLogin}
-            >
+            <Button className={styles.loginButton} type='primary' loading={loading} onClick={handleLogin}>
               {t('login.hth.loginWithDingTalk')}
             </Button>
           </div>

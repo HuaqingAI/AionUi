@@ -1288,11 +1288,11 @@
   "providerIdConflict": "شناسه ارائه‌دهنده از قبل وجود دارد. دوباره تلاش کنید.",
   "autoInjectedSkillsHint": "در هر گفتگو به‌طور خودکار بارگذاری می‌شوند — نیازی به فعال‌سازی نیست؛ عامل تصمیم می‌گیرد چه زمانی از آن‌ها استفاده کند.",
   "hth": {
-    "syncAssistants": "Sync from HTH",
+    "syncAssistants": "Sync Assistants",
     "syncSuccess": "HTH sync complete: {{success}} successful, {{failed}} failed",
     "syncFailed": "HTH sync failed",
-    "logout": "Sign out of HTH",
-    "logoutSuccess": "Signed out of HTH",
-    "logoutFailed": "Failed to sign out of HTH"
+    "logout": "Sign out",
+    "logoutSuccess": "Signed out",
+    "logoutFailed": "Failed to sign out"
   }
 }

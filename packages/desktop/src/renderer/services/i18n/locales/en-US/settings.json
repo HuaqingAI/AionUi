@@ -1286,12 +1286,12 @@
     "solveWithButler": "Ask the Butler"
   },
   "hth": {
-    "syncAssistants": "Sync from HTH",
+    "syncAssistants": "Sync Assistants",
     "syncSuccess": "HTH sync complete: {{success}} successful, {{failed}} failed",
     "syncFailed": "HTH sync failed",
-    "logout": "Sign out of HTH",
-    "logoutSuccess": "Signed out of HTH",
-    "logoutFailed": "Failed to sign out of HTH"
+    "logout": "Sign out",
+    "logoutSuccess": "Signed out",
+    "logoutFailed": "Failed to sign out"
   },
   "providerIdConflict": "Provider ID already exists. Please try again.",
   "autoInjectedSkillsHint": "Loaded automatically into every conversation — no need to enable them; the agent decides when to use them."

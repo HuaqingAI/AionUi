@@ -24,7 +24,7 @@
     "unknown": "登入失敗，請稍後再試"
   },
   "hth": {
-    "title": "Sign in with HTH",
+    "title": "使用者登入",
     "description": "HTHBuddy requires your HTH account before assistants can be used.",
     "baseUrl": "HTH URL",
     "baseUrlPlaceholder": "http://127.0.0.1:3001",

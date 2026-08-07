@@ -24,7 +24,7 @@
     "unknown": "ログインに失敗しました。後でもう一度お試しください"
   },
   "hth": {
-    "title": "Sign in with HTH",
+    "title": "User Login",
     "description": "HTHBuddy requires your HTH account before assistants can be used.",
     "baseUrl": "HTH URL",
     "baseUrlPlaceholder": "http://127.0.0.1:3001",

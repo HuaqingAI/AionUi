@@ -16,7 +16,7 @@
   "footerPrimary": "命令行 AI 的现代化体验",
   "footerSecondary": "高效且优雅",
   "hth": {
-    "title": "使用 HTH 登录",
+    "title": "用户登录",
     "description": "使用 HTHBuddy 前需要先完成 HTH 账号登录。",
     "baseUrl": "HTH 地址",
     "baseUrlPlaceholder": "http://127.0.0.1:3001",
