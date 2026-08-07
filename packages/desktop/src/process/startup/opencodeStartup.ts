@@ -7,6 +7,7 @@
 import { ipcBridge } from '@/common';
 import type { IRuntimeStatusEvent, IRuntimeStatusScope } from '@/common/adapter/ipcBridge';
 import { execFile } from 'child_process';
+import { existsSync, readdirSync } from 'fs';
 import fs from 'fs/promises';
 import path from 'path';
 import { promisify } from 'util';
@@ -299,6 +300,38 @@ function prependPathEntry(binDir: string, env: NodeJS.ProcessEnv = process.env):
   }
 }
 
+function findManagedNodeExecutableSync(dataPath = getDataPath()): string | null {
+  const nodeRuntimeDir = path.join(dataPath, 'runtime', 'node');
+  let entries: string[];
+  try {
+    entries = readdirSync(nodeRuntimeDir);
+  } catch {
+    return null;
+  }
+
+  const candidates = entries
+    .filter((entry) => entry.startsWith('node-v'))
+    .toSorted()
+    .toReversed()
+    .map((entry) => {
+      const runtimeRoot = path.join(nodeRuntimeDir, entry);
+      return process.platform === 'win32' ? path.join(runtimeRoot, 'node.exe') : path.join(runtimeRoot, 'bin', 'node');
+    });
+
+  return candidates.find((candidate) => existsSync(candidate)) ?? null;
+}
+
+function addManagedNodeBinToPath(dataPath = getDataPath(), env: NodeJS.ProcessEnv = process.env): string | null {
+  const nodeExecutable = findManagedNodeExecutableSync(dataPath);
+  if (!nodeExecutable) {
+    return null;
+  }
+
+  const binDir = path.dirname(nodeExecutable);
+  prependPathEntry(binDir, env);
+  return binDir;
+}
+
 function addManagedToolGlobalBinToPath(
   tool: ManagedAcpTool,
   dataPath = getDataPath(),
@@ -333,6 +366,7 @@ export function addStartupManagedAcpToolBinsToPath(
   dataPath = getDataPath(),
   env: NodeJS.ProcessEnv = process.env
 ): void {
+  addManagedNodeBinToPath(dataPath, env);
   for (const tool of STARTUP_TOOLS) {
     addManagedToolGlobalBinToPath(tool, dataPath, env);
   }
@@ -415,13 +449,15 @@ async function ensureManagedToolInstalledWithManagedNode(options: {
   tool: ManagedAcpTool;
 }): Promise<void> {
   const commandPath = getManagedToolCommandPath(options.tool, options.dataPath);
-  if (await pathExists(commandPath)) {
-    return;
-  }
-
   const nodeExecutable = await findManagedNodeExecutable(options.dataPath);
   if (!nodeExecutable) {
     throw new Error('managed Node executable was not found');
+  }
+
+  const nodeBinDir = path.dirname(nodeExecutable);
+  prependPathEntry(nodeBinDir);
+  if (await pathExists(commandPath)) {
+    return;
   }
 
   const npmCliPath = getNpmCliPath(nodeExecutable);
@@ -438,7 +474,7 @@ async function ensureManagedToolInstalledWithManagedNode(options: {
     npm_config_registry: MANAGED_NPM_REGISTRY,
     NPM_CONFIG_PREFIX: prefix,
     NPM_CONFIG_REGISTRY: MANAGED_NPM_REGISTRY,
-    PATH: [binDir, process.env.PATH ?? process.env.Path ?? ''].filter(Boolean).join(path.delimiter),
+    PATH: [binDir, nodeBinDir, process.env.PATH ?? process.env.Path ?? ''].filter(Boolean).join(path.delimiter),
   };
   if (options.tool.toolId === OPENCODE_TOOL_ID) {
     commandEnv.OPENCODE_CONFIG_DIR = getOpenCodeConfigDir(options.dataPath);

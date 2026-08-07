@@ -13,6 +13,7 @@ import {
   addDwsGlobalBinToPath,
   addOfficeCliGlobalBinToPath,
   addOpenCodeGlobalBinToPath,
+  addStartupManagedAcpToolBinsToPath,
   addZiniaoOpenGlobalBinToPath,
   checkOpenCodeManagedAgentHealth,
   checkCodexManagedAgentHealth,
@@ -31,8 +32,21 @@ import {
 } from '@process/startup/opencodeStartup';
 import { acpConversation } from '@/common/adapter/ipcBridge';
 
+const originalPath = process.env.PATH;
+const originalLegacyPath = process.env.Path;
+
 afterEach(() => {
   vi.restoreAllMocks();
+  if (originalPath === undefined) {
+    delete process.env.PATH;
+  } else {
+    process.env.PATH = originalPath;
+  }
+  if (originalLegacyPath === undefined) {
+    delete process.env.Path;
+  } else {
+    process.env.Path = originalLegacyPath;
+  }
 });
 
 describe('opencode startup bootstrap', () => {
@@ -140,6 +154,8 @@ describe('opencode startup bootstrap', () => {
         timeout: 180000,
       }
     );
+    const commandEnv = commandRunner.mock.calls[0]?.[2].env;
+    expect(commandEnv?.PATH?.split(path.delimiter)).toContain(path.dirname(fixture.nodeExecutable));
   });
 
   it('uses the macOS managed Node npm CLI location to install OpenCode', async () => {
@@ -396,6 +412,47 @@ describe('opencode startup bootstrap', () => {
 
     expect(result).toEqual({ status: 'ready' });
     expect(commandRunner).not.toHaveBeenCalled();
+  });
+
+  it('prepends managed Node when the Codex command already exists', async () => {
+    const fixture = await createManagedNodeFixture();
+    const oldPath = path.join(fixture.dataPath, 'system-node-bin');
+    process.env.PATH = oldPath;
+    process.env.Path = oldPath;
+    await mkdir(path.dirname(fixture.codexCommandPath), { recursive: true });
+    await writeFile(fixture.codexCommandPath, '');
+    const commandRunner = vi.fn(async () => ({}));
+
+    const result = await ensureCodexReady({
+      commandRunner,
+      dataPath: fixture.dataPath,
+      emitStatus: vi.fn(),
+      ensureNodeRuntime: async () => ({ ready: true }),
+      env: {},
+    });
+
+    const entries = process.env.PATH?.split(path.delimiter) ?? [];
+    expect(result).toEqual({ status: 'ready' });
+    expect(commandRunner).not.toHaveBeenCalled();
+    expect(entries.indexOf(path.dirname(fixture.nodeExecutable))).toBeLessThan(entries.indexOf(oldPath));
+  });
+
+  it('prepends managed Node before existing PATH during startup path setup', async () => {
+    const fixture = await createManagedNodeFixture();
+    const env: NodeJS.ProcessEnv = {
+      PATH: path.join(fixture.dataPath, 'system-node-bin'),
+    };
+
+    addStartupManagedAcpToolBinsToPath(fixture.dataPath, env);
+
+    const entries = env.PATH?.split(path.delimiter) ?? [];
+    expect(entries).toContain(path.dirname(fixture.nodeExecutable));
+    expect(entries.indexOf(path.dirname(fixture.nodeExecutable))).toBeLessThan(
+      entries.indexOf(path.join(fixture.dataPath, 'system-node-bin'))
+    );
+    if (process.platform === 'win32') {
+      expect(env.Path).toBe(env.PATH);
+    }
   });
 
   it('prepends the managed OpenCode bin directory to PATH', async () => {
