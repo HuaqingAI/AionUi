@@ -5,7 +5,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdir, mkdtemp, writeFile } from 'fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
 import {
@@ -437,6 +437,41 @@ describe('opencode startup bootstrap', () => {
     expect(entries.indexOf(path.dirname(fixture.nodeExecutable))).toBeLessThan(entries.indexOf(oldPath));
   });
 
+  it('rewrites an existing macOS Codex launcher to use managed Node directly', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
+    const fixture = await createManagedNodeFixture();
+    const packageRoot = path.join(fixture.codexPrefix, 'lib', 'node_modules', '@openai', 'codex');
+    const cliPath = path.join(packageRoot, 'bin', 'codex.js');
+    await mkdir(path.dirname(fixture.codexCommandPath), { recursive: true });
+    await mkdir(path.dirname(cliPath), { recursive: true });
+    await writeFile(
+      path.join(packageRoot, 'package.json'),
+      JSON.stringify({
+        bin: {
+          codex: 'bin/codex.js',
+        },
+      })
+    );
+    await writeFile(cliPath, '#!/usr/bin/env node\nawait Promise.resolve();\n');
+    await writeFile(fixture.codexCommandPath, '#!/usr/bin/env node\nawait Promise.resolve();\n');
+    const commandRunner = vi.fn(async () => ({}));
+
+    const result = await ensureCodexReady({
+      commandRunner,
+      dataPath: fixture.dataPath,
+      emitStatus: vi.fn(),
+      ensureNodeRuntime: async () => ({ ready: true }),
+      env: {},
+    });
+
+    const launcher = await readFile(fixture.codexCommandPath, 'utf8');
+    expect(result).toEqual({ status: 'ready' });
+    expect(commandRunner).not.toHaveBeenCalled();
+    expect(launcher).toContain('AionUi managed Node launcher');
+    expect(launcher).toContain(fixture.nodeExecutable);
+    expect(launcher).toContain(cliPath);
+  });
+
   it('prepends managed Node before existing PATH during startup path setup', async () => {
     const fixture = await createManagedNodeFixture();
     const env: NodeJS.ProcessEnv = {
@@ -453,6 +488,34 @@ describe('opencode startup bootstrap', () => {
     if (process.platform === 'win32') {
       expect(env.Path).toBe(env.PATH);
     }
+  });
+
+  it('repairs the macOS Codex launcher before backend startup', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
+    const fixture = await createManagedNodeFixture();
+    const packageRoot = path.join(fixture.codexPrefix, 'lib', 'node_modules', '@openai', 'codex');
+    const cliPath = path.join(packageRoot, 'bin', 'codex.js');
+    await mkdir(path.dirname(fixture.codexCommandPath), { recursive: true });
+    await mkdir(path.dirname(cliPath), { recursive: true });
+    await writeFile(
+      path.join(packageRoot, 'package.json'),
+      JSON.stringify({
+        bin: {
+          codex: 'bin/codex.js',
+        },
+      })
+    );
+    await writeFile(cliPath, '#!/usr/bin/env node\nawait Promise.resolve();\n');
+    await writeFile(fixture.codexCommandPath, '#!/usr/bin/env node\nawait Promise.resolve();\n');
+
+    addStartupManagedAcpToolBinsToPath(fixture.dataPath, {
+      PATH: path.join(fixture.dataPath, 'system-node-bin'),
+    });
+
+    const launcher = await readFile(fixture.codexCommandPath, 'utf8');
+    expect(launcher).toContain('AionUi managed Node launcher');
+    expect(launcher).toContain(fixture.nodeExecutable);
+    expect(launcher).toContain(cliPath);
   });
 
   it('prepends the managed OpenCode bin directory to PATH', async () => {

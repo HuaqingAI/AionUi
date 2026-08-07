@@ -7,7 +7,7 @@
 import { ipcBridge } from '@/common';
 import type { IRuntimeStatusEvent, IRuntimeStatusScope } from '@/common/adapter/ipcBridge';
 import { execFile } from 'child_process';
-import { existsSync, readdirSync } from 'fs';
+import { chmodSync, existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'fs';
 import fs from 'fs/promises';
 import path from 'path';
 import { promisify } from 'util';
@@ -134,6 +134,7 @@ const ZINIAO_OPEN_STARTUP_SCOPE: IRuntimeStatusScope = {
 const HEALTH_CHECK_TIMEOUT_MS = 30000;
 const OPENCODE_INSTALL_TIMEOUT_MS = 180000;
 const MANAGED_NPM_REGISTRY = 'https://registry.npmmirror.com';
+const MANAGED_NODE_LAUNCHER_MARKER = 'AionUi managed Node launcher';
 
 const OPENCODE_TOOL: ManagedAcpTool = {
   commandName: OPENCODE_TOOL_ID,
@@ -366,15 +367,28 @@ export function addStartupManagedAcpToolBinsToPath(
   dataPath = getDataPath(),
   env: NodeJS.ProcessEnv = process.env
 ): void {
-  addManagedNodeBinToPath(dataPath, env);
+  const nodeExecutable = findManagedNodeExecutableSync(dataPath);
+  if (nodeExecutable) {
+    prependPathEntry(path.dirname(nodeExecutable), env);
+  }
   for (const tool of STARTUP_TOOLS) {
     addManagedToolGlobalBinToPath(tool, dataPath, env);
+    if (nodeExecutable) {
+      ensureManagedToolLauncherUsesManagedNodeSync(tool, dataPath, nodeExecutable);
+    }
   }
 }
 
 function getManagedToolCommandPath(tool: ManagedAcpTool, dataPath = getDataPath()): string {
   const binDir = getManagedToolGlobalBinDir(tool, dataPath);
   return path.join(binDir, process.platform === 'win32' ? `${tool.commandName}.cmd` : tool.commandName);
+}
+
+function getManagedToolPackageRoot(tool: ManagedAcpTool, dataPath = getDataPath()): string {
+  const prefix = getManagedToolNpmPrefix(tool, dataPath);
+  return process.platform === 'win32'
+    ? path.join(prefix, 'node_modules', tool.packageName)
+    : path.join(prefix, 'lib', 'node_modules', tool.packageName);
 }
 
 async function pathExists(filePath: string): Promise<boolean> {
@@ -422,6 +436,148 @@ function getNpmCliPath(nodeExecutable: string): string {
   return path.join(nodeRoot, 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js');
 }
 
+async function findManagedToolPackageBinTarget(tool: ManagedAcpTool, dataPath = getDataPath()): Promise<string | null> {
+  const packageRoot = getManagedToolPackageRoot(tool, dataPath);
+  const packageJsonPath = path.join(packageRoot, 'package.json');
+  let packageJson: unknown;
+  try {
+    packageJson = JSON.parse(await fs.readFile(packageJsonPath, 'utf8'));
+  } catch {
+    return null;
+  }
+  if (!packageJson || typeof packageJson !== 'object' || !('bin' in packageJson)) {
+    return null;
+  }
+
+  const bin = (packageJson as { bin?: unknown }).bin;
+  if (typeof bin === 'string') {
+    return path.join(packageRoot, bin);
+  }
+  if (bin && typeof bin === 'object') {
+    const commandTarget = (bin as Record<string, unknown>)[tool.commandName];
+    if (typeof commandTarget === 'string') {
+      return path.join(packageRoot, commandTarget);
+    }
+    const fallbackTarget = Object.values(bin).find((value): value is string => typeof value === 'string');
+    if (fallbackTarget) {
+      return path.join(packageRoot, fallbackTarget);
+    }
+  }
+  return null;
+}
+
+function findManagedToolPackageBinTargetSync(tool: ManagedAcpTool, dataPath = getDataPath()): string | null {
+  const packageRoot = getManagedToolPackageRoot(tool, dataPath);
+  const packageJsonPath = path.join(packageRoot, 'package.json');
+  let packageJson: unknown;
+  try {
+    packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+  } catch {
+    return null;
+  }
+  if (!packageJson || typeof packageJson !== 'object' || !('bin' in packageJson)) {
+    return null;
+  }
+
+  const bin = (packageJson as { bin?: unknown }).bin;
+  if (typeof bin === 'string') {
+    return path.join(packageRoot, bin);
+  }
+  if (bin && typeof bin === 'object') {
+    const commandTarget = (bin as Record<string, unknown>)[tool.commandName];
+    if (typeof commandTarget === 'string') {
+      return path.join(packageRoot, commandTarget);
+    }
+    const fallbackTarget = Object.values(bin).find((value): value is string => typeof value === 'string');
+    if (fallbackTarget) {
+      return path.join(packageRoot, fallbackTarget);
+    }
+  }
+  return null;
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+function buildManagedNodeLauncher(nodeExecutable: string, targetPath: string): string {
+  const encodedTarget = Buffer.from(targetPath, 'utf8').toString('base64');
+  return [
+    '#!/bin/sh',
+    `# ${MANAGED_NODE_LAUNCHER_MARKER}`,
+    `# target_b64=${encodedTarget}`,
+    `exec ${shellQuote(nodeExecutable)} ${shellQuote(targetPath)} "$@"`,
+    '',
+  ].join('\n');
+}
+
+async function ensureManagedToolLauncherUsesManagedNode(
+  tool: ManagedAcpTool,
+  dataPath: string,
+  nodeExecutable: string
+): Promise<void> {
+  if (process.platform === 'win32') {
+    return;
+  }
+
+  const commandPath = getManagedToolCommandPath(tool, dataPath);
+  if (!(await pathExists(commandPath))) {
+    return;
+  }
+
+  const targetPath = await findManagedToolPackageBinTarget(tool, dataPath);
+  if (!targetPath || !(await pathExists(targetPath))) {
+    return;
+  }
+
+  const launcher = buildManagedNodeLauncher(nodeExecutable, targetPath);
+  try {
+    const current = await fs.readFile(commandPath, 'utf8');
+    if (current === launcher) {
+      return;
+    }
+  } catch {
+    // npm commonly creates a symlink here; reading can fail on broken or stale launchers.
+  }
+
+  await fs.rm(commandPath, { force: true });
+  await fs.writeFile(commandPath, launcher, { mode: 0o755 });
+  await fs.chmod(commandPath, 0o755);
+}
+
+function ensureManagedToolLauncherUsesManagedNodeSync(
+  tool: ManagedAcpTool,
+  dataPath: string,
+  nodeExecutable: string
+): void {
+  if (process.platform === 'win32') {
+    return;
+  }
+
+  const commandPath = getManagedToolCommandPath(tool, dataPath);
+  if (!existsSync(commandPath)) {
+    return;
+  }
+
+  const targetPath = findManagedToolPackageBinTargetSync(tool, dataPath);
+  if (!targetPath || !existsSync(targetPath)) {
+    return;
+  }
+
+  const launcher = buildManagedNodeLauncher(nodeExecutable, targetPath);
+  try {
+    if (readFileSync(commandPath, 'utf8') === launcher) {
+      return;
+    }
+  } catch {
+    // npm commonly creates a symlink here; reading can fail on broken or stale launchers.
+  }
+
+  rmSync(commandPath, { force: true });
+  writeFileSync(commandPath, launcher, { mode: 0o755 });
+  chmodSync(commandPath, 0o755);
+}
+
 async function runCommand(
   file: string,
   args: string[],
@@ -457,6 +613,7 @@ async function ensureManagedToolInstalledWithManagedNode(options: {
   const nodeBinDir = path.dirname(nodeExecutable);
   prependPathEntry(nodeBinDir);
   if (await pathExists(commandPath)) {
+    await ensureManagedToolLauncherUsesManagedNode(options.tool, options.dataPath, nodeExecutable);
     return;
   }
 
@@ -505,6 +662,7 @@ async function ensureManagedToolInstalledWithManagedNode(options: {
   if (!(await pathExists(commandPath))) {
     throw new Error(`${options.tool.displayName} command was not created after installation`);
   }
+  await ensureManagedToolLauncherUsesManagedNode(options.tool, options.dataPath, nodeExecutable);
 }
 
 function shouldEnsureManagedToolOnStartup(tool: ManagedAcpTool, env: OpenCodeStartupEnv = process.env): boolean {
