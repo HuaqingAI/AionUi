@@ -243,6 +243,46 @@ const UpdateNotificationCard: React.FC = () => {
     );
   };
 
+  const renderHeaderActions = () => {
+    if (state.status === 'downloading') {
+      return (
+        <div className='flex items-center gap-4px'>
+          <Button
+            type='text'
+            size='mini'
+            className='!p-0 !w-24px !h-24px !text-t-tertiary hover:!text-t-primary'
+            icon={<Minus size='16' />}
+            onClick={actions.minimize}
+            aria-label={t('update.minimize')}
+          />
+          <Button
+            type='text'
+            size='mini'
+            className='!p-0 !w-24px !h-24px !text-t-tertiary hover:!text-t-primary'
+            icon={<Close size='16' />}
+            onClick={actions.cancelDownload}
+            aria-label={t('update.cancel')}
+          />
+        </div>
+      );
+    }
+
+    if (state.status === 'checking' || state.status === 'preparing-install') {
+      return null;
+    }
+
+    return (
+      <Button
+        type='text'
+        size='mini'
+        className='!p-0 !w-24px !h-24px !text-t-tertiary hover:!text-t-primary'
+        icon={<Close size='16' />}
+        onClick={() => actions.dismiss('close')}
+        aria-label={t('common.close')}
+      />
+    );
+  };
+
   return renderNotificationLayer(
     <section
       data-testid='update-notification-card'
@@ -256,26 +296,7 @@ const UpdateNotificationCard: React.FC = () => {
         <div className='text-14px text-t-primary font-600 truncate flex-1'>
           {state.status === 'installer-last-failure' ? t('update.installerLastFailure.title') : t('update.modalTitle')}
         </div>
-        {state.status === 'downloading' && (
-          <div className='flex items-center gap-4px'>
-            <Button
-              type='text'
-              size='mini'
-              className='!p-0 !w-24px !h-24px !text-t-tertiary hover:!text-t-primary'
-              icon={<Minus size='16' />}
-              onClick={actions.minimize}
-              aria-label={t('update.minimize')}
-            />
-            <Button
-              type='text'
-              size='mini'
-              className='!p-0 !w-24px !h-24px !text-t-tertiary hover:!text-t-primary'
-              icon={<Close size='16' />}
-              onClick={actions.cancelDownload}
-              aria-label={t('update.cancel')}
-            />
-          </div>
-        )}
+        {renderHeaderActions()}
       </div>
       {state.status === 'downloading' ? (
         <div className='px-16px pt-6px pb-12px'>{renderBody()}</div>

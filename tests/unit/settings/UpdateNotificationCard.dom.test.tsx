@@ -165,6 +165,28 @@ describe('UpdateNotificationCard', () => {
     expect(screen.queryByText('notes')).not.toBeInTheDocument();
   });
 
+  it('does not render a close button while checking for updates', async () => {
+    mocks.autoUpdateCheckMock.mockImplementation(
+      () =>
+        new Promise(() => {
+          // Keep the check pending so the checking state stays visible.
+        })
+    );
+
+    render(<UpdateNotificationCard />);
+
+    await waitFor(() => {
+      expect(mocks.updateOpenHandler).toBeTruthy();
+    });
+
+    await act(async () => {
+      mocks.updateOpenHandler?.({ source: 'menu' });
+    });
+
+    expect(await screen.findByText('update.checking')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'common.close' })).not.toBeInTheDocument();
+  });
+
   it('restores a cached completed auto-update on mount', async () => {
     mocks.autoUpdateRestoreDownloadedMock.mockResolvedValue({
       success: true,
@@ -312,7 +334,7 @@ describe('UpdateNotificationCard', () => {
     expect(mocks.autoUpdateCheckMock).not.toHaveBeenCalled();
   });
 
-  it('renders the initial available state without a top-right close button or manual install action', async () => {
+  it('renders the initial available state with a top-right close button and no manual install action', async () => {
     render(<UpdateNotificationCard />);
 
     await waitFor(() => {
@@ -331,10 +353,14 @@ describe('UpdateNotificationCard', () => {
     const card = await screen.findByTestId('update-notification-card');
     expect(card).toHaveTextContent('2.1.13');
     expect(card).toHaveTextContent('2.1.14');
-    expect(screen.queryByLabelText('common.close')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'common.close' })).toBeInTheDocument();
     expect(screen.queryByText('update.manualInstall')).not.toBeInTheDocument();
     expect(screen.getByText('update.later')).toBeInTheDocument();
     expect(screen.getByText('update.downloadButton')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'common.close' }));
+
+    expect(screen.queryByTestId('update-notification-card')).not.toBeInTheDocument();
   });
 
   it('keeps the cancel action available while downloading and cancel restores the initial state', async () => {
@@ -527,6 +553,7 @@ describe('UpdateNotificationCard', () => {
     expect(await screen.findByText('update.preparingInstall')).toBeInTheDocument();
     expect(screen.getByText('update.downloadCompleteTitle')).toBeInTheDocument();
     expect(screen.queryByText('update.later')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'common.close' })).not.toBeInTheDocument();
     expect(mocks.autoUpdateQuitAndInstallMock).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByRole('button', { name: 'update.preparingInstall' }));
@@ -537,7 +564,7 @@ describe('UpdateNotificationCard', () => {
     });
   });
 
-  it('does not render a close button in the error state', async () => {
+  it('allows dismissing the error state from the header close button', async () => {
     mocks.autoUpdateCheckMock.mockRejectedValue(new Error('network failed'));
     render(<UpdateNotificationCard />);
 
@@ -550,7 +577,8 @@ describe('UpdateNotificationCard', () => {
     });
 
     expect(await screen.findByText('network failed')).toBeInTheDocument();
-    expect(screen.queryByLabelText('common.close')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'common.close' }));
+    expect(screen.queryByTestId('update-notification-card')).not.toBeInTheDocument();
   });
 
   it('shows consumed silent installer failure marker with retry, log, and feedback actions', async () => {
