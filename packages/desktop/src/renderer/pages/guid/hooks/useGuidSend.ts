@@ -15,6 +15,10 @@ import { type TFunction } from 'i18next';
 import type { NavigateFunction } from 'react-router-dom';
 import { mutate as swrMutate } from 'swr';
 import { getConversationCreateErrorMessage } from '@/renderer/pages/conversation/utils/conversationCreateError';
+import {
+  buildGuidSessionExcludedAutoInjectSkills,
+  filterGuidSessionSkillIds,
+} from '@/renderer/pages/guid/utils/sessionSkills';
 import type { AcpModelInfo } from '../types';
 
 export type GuidSendDeps = {
@@ -118,8 +122,10 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
       });
     };
     const assistantBackend = selectedAssistantBackend;
-    const enabled_skills_to_send = guidEnabledSkills ?? assistantDefaultSkillIds;
-    const excludeBuiltinSkills = guidDisabledBuiltinSkills ?? assistantDefaultDisabledBuiltinSkillIds;
+    const enabled_skills_to_send = filterGuidSessionSkillIds(guidEnabledSkills ?? assistantDefaultSkillIds);
+    const excludeBuiltinSkills = buildGuidSessionExcludedAutoInjectSkills(
+      guidDisabledBuiltinSkills ?? assistantDefaultDisabledBuiltinSkillIds
+    );
     const selectedAllMcpServerIds = selectedMcpServerIds ?? [];
     const selectedMcpServerIdSet = new Set(selectedAllMcpServerIds);
     const selectedUserMcpServerIds = availableMcpServers
@@ -175,6 +181,7 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
             default_files: files,
             workspace: finalWorkspace,
             custom_workspace: isCustomWorkspace,
+            exclude_auto_inject_skills: excludeBuiltinSkills,
             selected_mcp_server_ids: selectedUserMcpServerIdsToSend,
             selected_session_mcp_servers: selectedSessionMcpServersToSend,
           },
@@ -226,6 +233,7 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
           workspace: finalWorkspace,
           custom_workspace: isCustomWorkspace,
           default_files: files,
+          exclude_auto_inject_skills: excludeBuiltinSkills,
           selected_mcp_server_ids: selectedUserMcpServerIdsToSend,
           selected_session_mcp_servers:
             selectedMcpServerIds !== undefined ? selectedSessionMcpServers : selectedSessionMcpServersToSend,

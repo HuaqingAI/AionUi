@@ -18,7 +18,11 @@ import ThoughtDisplay from '@/renderer/components/chat/ThoughtDisplay';
 import FileAttachButton from '@/renderer/components/media/FileAttachButton';
 import FilePreview from '@/renderer/components/media/FilePreview';
 import HorizontalFileList from '@/renderer/components/media/HorizontalFileList';
-import { classifyConfigSetError, useAcpConfigOptions } from '@/renderer/hooks/agent/useAcpConfigOptions';
+import {
+  classifyConfigSetError,
+  getModelScopedThoughtLevelOption,
+  useAcpConfigOptions,
+} from '@/renderer/hooks/agent/useAcpConfigOptions';
 import { useConversationContextSafe } from '@/renderer/hooks/context/ConversationContext';
 import { useLayoutContext } from '@/renderer/hooks/context/LayoutContext';
 import { useAutoTitle } from '@/renderer/hooks/chat/useAutoTitle';
@@ -192,7 +196,10 @@ const AionrsSendBox: React.FC<{
     enabled: Boolean(conversation_id),
   });
   const runtimeMode = runtimeConfig.mode;
-  const runtimeThoughtLevel = runtimeConfig.thoughtLevel;
+  const runtimeThoughtLevel = getModelScopedThoughtLevelOption(
+    runtimeConfig.thoughtLevel,
+    modelSelection.current_model?.use_model
+  );
   const injectHTHProjectConfig = useHTHProjectConfigInjection({
     conversationId: conversation_id,
     workspace: workspacePath,

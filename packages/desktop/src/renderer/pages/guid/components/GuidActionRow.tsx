@@ -9,6 +9,7 @@ import type { IMcpServer, IProvider, TProviderWithModel } from '@/common/config/
 import AgentModeSelector from '@/renderer/components/agent/AgentModeSelector';
 import { DROPDOWN_SEARCH_THRESHOLD } from '@/renderer/components/agent/runtimeSelectorOptions';
 import AionInlineSearchInput from '@/renderer/components/base/AionInlineSearchInput';
+import { getModelScopedThoughtLevelOption } from '@/renderer/hooks/agent/useAcpConfigOptions';
 import MobileActionSheet from '@/renderer/components/chat/MobileActionSheet';
 import type {
   MobileActionSheetEntry,
@@ -198,6 +199,10 @@ const GuidActionRow: React.FC<GuidActionRowProps> = ({
     : mcpServers;
   const showSkillSearch = allSkills.length > DROPDOWN_SEARCH_THRESHOLD;
   const showMcpSearch = mcpServers.length > DROPDOWN_SEARCH_THRESHOLD;
+  const modelScopedThoughtLevelOption = getModelScopedThoughtLevelOption(
+    thoughtLevelOption,
+    selectedAcpModel || currentAcpCachedModelInfo?.current_model_id
+  );
 
   const openHostFilePicker = useCallback(() => {
     ipcBridge.dialog.showOpen
@@ -261,16 +266,16 @@ const GuidActionRow: React.FC<GuidActionRowProps> = ({
     }
 
     // Thought level (ACP agents only).
-    if (thoughtLevelOption && thoughtLevelOption.options.length > 0 && onThoughtLevelSelect) {
-      const currentValue = thoughtLevelOption.currentValue;
+    if (modelScopedThoughtLevelOption && modelScopedThoughtLevelOption.options.length > 0 && onThoughtLevelSelect) {
+      const currentValue = modelScopedThoughtLevelOption.currentValue;
       entries.push({
         key: 'thought-level',
         icon: <Brain theme='outline' size='16' />,
         label: t('agent.thoughtLevel.label'),
-        meta: thoughtLevelOption.options.find((o) => o.value === currentValue)?.label || currentValue || '',
+        meta: modelScopedThoughtLevelOption.options.find((o) => o.value === currentValue)?.label || currentValue || '',
         submenu: {
           title: t('agent.thoughtLevel.label'),
-          options: thoughtLevelOption.options.map((o) => ({
+          options: modelScopedThoughtLevelOption.options.map((o) => ({
             key: o.value,
             label: o.label,
             description: o.description ?? undefined,
@@ -375,7 +380,7 @@ const GuidActionRow: React.FC<GuidActionRowProps> = ({
     currentAcpCachedModelInfo,
     selectedAcpModel,
     setSelectedAcpModel,
-    thoughtLevelOption,
+    modelScopedThoughtLevelOption,
     onThoughtLevelSelect,
     dynamicModes,
     selectedMode,

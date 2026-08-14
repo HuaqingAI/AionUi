@@ -8,6 +8,7 @@ import type { IProvider, TProviderWithModel } from '@/common/config/storage';
 import { iconColors } from '@/renderer/styles/colors';
 import { getModelDisplayLabel } from '@/renderer/utils/model/agentLogo';
 import type { AgentRuntimeDerivedOption } from '@/renderer/utils/model/agentRuntimeCatalog';
+import { getModelScopedThoughtLevelOption } from '@/renderer/hooks/agent/useAcpConfigOptions';
 import type { AcpModelInfo } from '../types';
 import { getAvailableModels } from '../utils/modelUtils';
 import { Button, Dropdown, Menu, Tooltip } from '@arco-design/web-react';
@@ -99,11 +100,16 @@ const GuidModelSelector: React.FC<GuidModelSelectorProps> = ({
       fallbackLabel: defaultModelLabel,
     });
   }, [acpSelectedLabel, currentAcpCachedModelInfo?.current_model_id, defaultModelLabel, selectedAcpModel]);
-  const selectedThoughtLevelValue = thoughtLevelOption?.currentValue || thoughtLevelOption?.options[0]?.value || '';
+  const modelScopedThoughtLevelOption = getModelScopedThoughtLevelOption(
+    thoughtLevelOption,
+    selectedAcpModel || currentAcpCachedModelInfo?.current_model_id
+  );
+  const selectedThoughtLevelValue =
+    modelScopedThoughtLevelOption?.currentValue || modelScopedThoughtLevelOption?.options[0]?.value || '';
   const normalizedThoughtLevelOption =
-    thoughtLevelOption && thoughtLevelOption.options.length > 0
+    modelScopedThoughtLevelOption && modelScopedThoughtLevelOption.options.length > 0
       ? {
-          ...thoughtLevelOption,
+          ...modelScopedThoughtLevelOption,
           currentValue: selectedThoughtLevelValue || null,
         }
       : null;

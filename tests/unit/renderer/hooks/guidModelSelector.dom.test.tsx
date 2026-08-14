@@ -188,6 +188,47 @@ describe('GuidModelSelector', () => {
     expect(onThoughtLevelSelect).toHaveBeenCalledWith('high');
   });
 
+  it('shows only max and none thought levels for a deepseek-v4 model', () => {
+    const deepSeekThoughtLevelOption = {
+      id: 'reasoning_effort',
+      category: 'thought_level',
+      currentValue: 'low',
+      options: [
+        { value: 'low', label: 'Low' },
+        { value: 'medium', label: 'Medium' },
+        { value: 'high', label: 'High' },
+        { value: 'xhigh', label: 'Xhigh' },
+      ],
+    };
+
+    render(
+      <GuidModelSelector
+        isGeminiMode={false}
+        modelList={[]}
+        current_model={undefined}
+        setCurrentModel={vi.fn()}
+        currentAcpCachedModelInfo={{
+          current_model_id: 'deepseek-v4-pro',
+          current_model_label: 'deepseek-v4-pro',
+          available_models: [{ id: 'deepseek-v4-pro', label: 'deepseek-v4-pro' }],
+        }}
+        selectedAcpModel='deepseek-v4-pro'
+        setSelectedAcpModel={vi.fn()}
+        thoughtLevelOption={deepSeekThoughtLevelOption}
+        onThoughtLevelSelect={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('deepseek-v4-pro · Max')).toBeInTheDocument();
+    const thoughtBody = screen.getAllByTestId('submenu-body')[1];
+    expect(within(thoughtBody).queryByText('Low')).not.toBeInTheDocument();
+    expect(within(thoughtBody).queryByText('Medium')).not.toBeInTheDocument();
+    expect(within(thoughtBody).queryByText('High')).not.toBeInTheDocument();
+    expect(within(thoughtBody).queryByText('Xhigh')).not.toBeInTheDocument();
+    expect(within(thoughtBody).getByText('Max')).toBeInTheDocument();
+    expect(within(thoughtBody).getByText('None')).toBeInTheDocument();
+  });
+
   it('does not add thought level options to the Aion CLI provider model menu', () => {
     render(
       <GuidModelSelector

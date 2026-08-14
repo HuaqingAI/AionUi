@@ -145,6 +145,87 @@ describe('useAcpModelInfo', () => {
     expect(ensureRuntimeInvokeMock).toHaveBeenCalledWith({ conversation_id: 'conv-1' });
   });
 
+  it('orders model options by their displayed multiplier', async () => {
+    ensureRuntimeInvokeMock.mockResolvedValue({
+      recovered: true,
+      config_options: [
+        {
+          id: 'model',
+          category: 'model',
+          option_type: 'select',
+          current_value: 'gpt-5.6-terra',
+          options: [
+            { value: 'gpt-5.6-terra', label: 'GPT-5.6-TERRA 39x' },
+            { value: 'deepseek-v4-flash', label: 'DEEPSEEK-V4-FLASH 1x' },
+            { value: 'gpt-5.6-sol', label: 'GPT-5.6-SOL 78x' },
+            { value: 'deepseek-v4-pro', label: 'DEEPSEEK-V4-PRO 3x' },
+            { value: 'gpt-5.5', label: 'GPT-5.6-LUNA 16x' },
+          ],
+        },
+      ],
+      runtime: null,
+    });
+
+    const { result } = renderUseAcpModelInfo({
+      conversation_id: 'conv-1',
+      backend: 'opencode',
+    });
+
+    await waitFor(() => {
+      expect(result.current.model_info?.current_model_id).toBe('gpt-5.6-terra');
+    });
+    expect(result.current.model_info?.available_models.map((model) => model.id)).toEqual([
+      'deepseek-v4-flash',
+      'deepseek-v4-pro',
+      'gpt-5.5',
+      'gpt-5.6-terra',
+      'gpt-5.6-sol',
+    ]);
+  });
+
+  it('filters thought level options for deepseek-v4 models', async () => {
+    ensureRuntimeInvokeMock.mockResolvedValue({
+      recovered: true,
+      config_options: [
+        {
+          id: 'model',
+          category: 'model',
+          option_type: 'select',
+          current_value: 'deepseek-v4-pro',
+          options: [
+            { value: 'gpt-5.6-terra', label: 'GPT-5.6-TERRA' },
+            { value: 'deepseek-v4-pro', label: 'DEEPSEEK-V4-PRO' },
+          ],
+        },
+        {
+          id: 'reasoning_effort',
+          category: 'thought_level',
+          option_type: 'select',
+          current_value: 'low',
+          options: [
+            { value: 'low', label: 'Low' },
+            { value: 'medium', label: 'Medium' },
+            { value: 'high', label: 'High' },
+            { value: 'xhigh', label: 'Xhigh' },
+          ],
+        },
+      ],
+      runtime: null,
+    });
+
+    const { result } = renderUseAcpModelInfo({
+      conversation_id: 'conv-1',
+      backend: 'deepseek',
+      initialModelId: 'deepseek-v4-pro',
+    });
+
+    await waitFor(() => {
+      expect(result.current.model_info?.current_model_id).toBe('deepseek-v4-pro');
+    });
+    expect(result.current.thoughtLevel?.options.map((item) => item.value)).toEqual(['max', 'none']);
+    expect(result.current.thoughtLevel?.currentValue).toBe('max');
+  });
+
   it('uses an injected config option loader without starting standalone runtime', async () => {
     const prepareRuntime = vi.fn().mockResolvedValue(undefined);
     const loadConfigOptions = vi.fn().mockResolvedValue(buildConfigOptions('opus-4'));

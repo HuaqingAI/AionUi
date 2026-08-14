@@ -5,7 +5,11 @@
  */
 
 import type { AionrsModelSelection } from './useAionrsModelSelection';
-import type { AcpConfigSetStatus, AcpDerivedOption } from '@/renderer/hooks/agent/useAcpConfigOptions';
+import {
+  getModelScopedThoughtLevelOption,
+  type AcpConfigSetStatus,
+  type AcpDerivedOption,
+} from '@/renderer/hooks/agent/useAcpConfigOptions';
 import {
   composeRuntimeSelectorLabel,
   getCurrentThoughtLevelLabel,
@@ -44,6 +48,7 @@ const AionrsModelSelector: React.FC<{
   const defaultModelLabel = t('common.defaultModel');
 
   const current_model = selection?.current_model;
+  const modelThoughtLevel = getModelScopedThoughtLevelOption(thoughtLevel, current_model?.use_model);
 
   const renderLogo = () => <Brain theme='outline' size='14' fill={iconColors.secondary} className='shrink-0' />;
 
@@ -77,10 +82,10 @@ const AionrsModelSelector: React.FC<{
     defaultModelLabel,
     fallbackLabel: t('conversation.welcome.selectModel'),
   });
-  const combinedLabel = composeRuntimeSelectorLabel({ modelLabel: label, thoughtLevel });
+  const combinedLabel = composeRuntimeSelectorLabel({ modelLabel: label, thoughtLevel: modelThoughtLevel });
   const handleThoughtLevelSelect = (value: string) => {
-    if (!thoughtLevel || value === thoughtLevel.currentValue || !onSetThoughtLevel) return;
-    void onSetThoughtLevel(thoughtLevel.id, value);
+    if (!modelThoughtLevel || value === modelThoughtLevel.currentValue || !onSetThoughtLevel) return;
+    void onSetThoughtLevel(modelThoughtLevel.id, value);
   };
 
   // aionrs models are grouped by provider. Use a composite id (see compositeId)
@@ -118,7 +123,7 @@ const AionrsModelSelector: React.FC<{
       {...(isMobileHeaderCompact ? { getPopupContainer: () => document.body } : {})}
       droplist={
         <Menu>
-          {thoughtLevel ? (
+          {modelThoughtLevel ? (
             <>
               <Menu.SubMenu
                 key='model'
@@ -135,18 +140,18 @@ const AionrsModelSelector: React.FC<{
                 title={
                   <RuntimeSelectorSubMenuTitle
                     label={t('agent.thoughtLevel.label')}
-                    value={getCurrentThoughtLevelLabel(thoughtLevel)}
+                    value={getCurrentThoughtLevelLabel(modelThoughtLevel)}
                   />
                 }
               >
-                {thoughtLevel.options.map((item) => (
+                {modelThoughtLevel.options.map((item) => (
                   <Menu.Item
                     key={item.value}
-                    className={item.value === thoughtLevel.currentValue ? '!bg-2' : ''}
+                    className={item.value === modelThoughtLevel.currentValue ? '!bg-2' : ''}
                     onClick={() => handleThoughtLevelSelect(item.value)}
                   >
                     <RuntimeSelectorCheckedItem
-                      selected={item.value === thoughtLevel.currentValue}
+                      selected={item.value === modelThoughtLevel.currentValue}
                       description={item.description}
                     >
                       {item.label}

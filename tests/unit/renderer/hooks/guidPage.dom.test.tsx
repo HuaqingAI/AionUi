@@ -18,6 +18,7 @@ const {
   capturedAssistantSelectionAreaProps,
   capturedGuidInputCardProps,
   capturedGuidSendDeps,
+  listAvailableSkillsInvokeMock,
   resolveGuidAssistantDefaultsMock,
   sendMock,
   navigateMock,
@@ -112,6 +113,7 @@ const {
   capturedAssistantSelectionAreaProps: [] as Array<Record<string, unknown>>,
   capturedGuidInputCardProps: [] as Array<Record<string, unknown>>,
   capturedGuidSendDeps: [] as Array<Record<string, unknown>>,
+  listAvailableSkillsInvokeMock: vi.fn(),
   resolveGuidAssistantDefaultsMock: vi.fn(() => ({
     disabledBuiltinSkillIds: [],
     skillIds: [],
@@ -140,7 +142,7 @@ vi.mock('react-router-dom', () => ({
 vi.mock('@/common', () => ({
   ipcBridge: {
     fs: {
-      listAvailableSkills: { invoke: vi.fn().mockResolvedValue([]) },
+      listAvailableSkills: { invoke: listAvailableSkillsInvokeMock },
     },
   },
 }));
@@ -306,6 +308,8 @@ describe('GuidPage', () => {
     locationMock.key = 'guid-location';
     navigateMock.mockReset();
     swrMock.useSWRMock.mockReturnValue({ data: null });
+    listAvailableSkillsInvokeMock.mockReset();
+    listAvailableSkillsInvokeMock.mockResolvedValue([]);
     capturedGuidActionRowProps.length = 0;
     capturedAssistantSelectionAreaProps.length = 0;
     capturedGuidInputCardProps.length = 0;
@@ -552,6 +556,31 @@ describe('GuidPage', () => {
         guidEnabledSkills: undefined,
         guidDisabledBuiltinSkills: undefined,
       });
+    });
+  });
+
+  it('omits aionui-config from the Guid new-conversation skill menu', async () => {
+    listAvailableSkillsInvokeMock.mockResolvedValue([
+      {
+        name: 'aionui-config',
+        description: 'Internal config sync',
+        source: 'builtin',
+        is_auto_inject: true,
+      },
+      {
+        name: 'pdf-reader',
+        description: 'Read PDFs',
+        source: 'builtin',
+        is_auto_inject: false,
+      },
+    ]);
+
+    render(<GuidPage />);
+
+    await waitFor(() => {
+      const latestProps = capturedGuidActionRowProps.at(-1);
+      const skillNames = (latestProps?.allSkills as Array<{ name: string }> | undefined)?.map((skill) => skill.name);
+      expect(skillNames).toEqual(['pdf-reader']);
     });
   });
 

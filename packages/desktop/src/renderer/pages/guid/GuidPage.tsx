@@ -30,6 +30,7 @@ import SpeechInputButton from '@/renderer/components/chat/SpeechInputButton';
 import { useOpenFileSelector } from '@/renderer/hooks/file/useOpenFileSelector';
 import { appendSpeechTranscript } from '@/renderer/hooks/system/useSpeechInput';
 import { useLiveTranscriptInsertion } from '@/renderer/hooks/system/useLiveTranscriptInsertion';
+import { filterGuidSessionSkills } from './utils/sessionSkills';
 import { ArrowRightUp } from '@icon-park/react';
 import { Button, ConfigProvider } from '@arco-design/web-react';
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -66,6 +67,7 @@ const GuidPage: React.FC = () => {
   const [guidEnabledSkills, setGuidEnabledSkills] = useState<string[] | undefined>(undefined);
   const [availableMcpServers, setAvailableMcpServers] = useState<IMcpServer[]>([]);
   const [guidSelectedMcpServerIds, setGuidSelectedMcpServerIds] = useState<string[] | undefined>(undefined);
+  const visibleSkills = useMemo(() => filterGuidSessionSkills(allSkills), [allSkills]);
 
   useEffect(() => {
     ipcBridge.fs.listAvailableSkills
@@ -164,15 +166,15 @@ const GuidPage: React.FC = () => {
     );
     const enabledSkillSet = new Set(guidEnabledSkills ?? resolvedAssistantDefaults.skillIds);
 
-    return allSkills
+    return visibleSkills
       .filter((skill) => (skill.isAuto ? !disabledBuiltinSkillSet.has(skill.name) : enabledSkillSet.has(skill.name)))
       .map((skill) => skill.name);
   }, [
-    allSkills,
     guidDisabledBuiltinSkills,
     guidEnabledSkills,
     resolvedAssistantDefaults.disabledBuiltinSkillIds,
     resolvedAssistantDefaults.skillIds,
+    visibleSkills,
   ]);
   const skillDescriptionByName = useMemo(
     () => new Map(allSkills.map((skill) => [skill.name, skill.description])),
@@ -612,7 +614,7 @@ const GuidPage: React.FC = () => {
       selectedMode={agentSelection.selectedMode}
       dynamicModes={agentSelection.currentAgentModeOptions}
       onModeSelect={setGuidSelectedMode}
-      allSkills={allSkills}
+      allSkills={visibleSkills}
       disabledBuiltinSkills={guidDisabledBuiltinSkills ?? []}
       enabledSkills={guidEnabledSkills ?? []}
       onToggleSkill={handleToggleSkill}

@@ -93,7 +93,7 @@ describe('useGuidSend', () => {
 
   it('passes selected mode into assistant conversation overrides when creating a preset ACP conversation', async () => {
     const deps = createDeps();
-    (deps as any).selectedThoughtLevelValue = 'high';
+    deps.selectedThoughtLevelValue = 'high';
 
     const { result } = renderHook(() => useGuidSend(deps));
 
@@ -143,8 +143,12 @@ describe('useGuidSend', () => {
 
     const payload = createConversationInvokeMock.mock.calls[0][0];
     expect(payload.assistant?.conversation_overrides?.skill_ids).toEqual(['assistant-skill']);
-    expect(payload.assistant?.conversation_overrides?.disabled_builtin_skill_ids).toEqual(['builtin-skill']);
+    expect(payload.assistant?.conversation_overrides?.disabled_builtin_skill_ids).toEqual([
+      'builtin-skill',
+      'aionui-config',
+    ]);
     expect(payload.assistant?.conversation_overrides?.mcp_ids).toEqual(['mcp-user']);
+    expect(payload.extra.exclude_auto_inject_skills).toEqual(['builtin-skill', 'aionui-config']);
     expect(payload.extra.selected_mcp_server_ids).toEqual(['mcp-user']);
   });
 
@@ -196,7 +200,27 @@ describe('useGuidSend', () => {
     const payload = createConversationInvokeMock.mock.calls[0][0];
     expect(payload.assistant?.id).toBe('assistant-1');
     expect(payload.assistant?.conversation_overrides?.skill_ids).toEqual(['pdf-reader']);
-    expect(payload.assistant?.conversation_overrides?.disabled_builtin_skill_ids).toEqual(['todo-tracker']);
+    expect(payload.assistant?.conversation_overrides?.disabled_builtin_skill_ids).toEqual([
+      'todo-tracker',
+      'aionui-config',
+    ]);
+    expect(payload.extra.exclude_auto_inject_skills).toEqual(['todo-tracker', 'aionui-config']);
+  });
+
+  it('excludes the Guid-only aionui-config skill from new preset conversation payloads', async () => {
+    const deps = createDeps();
+    deps.guidEnabledSkills = ['aionui-config', 'pdf-reader'];
+    deps.guidDisabledBuiltinSkills = ['todo-tracker'];
+
+    const { result } = renderHook(() => useGuidSend(deps));
+
+    await act(async () => {
+      await result.current.handleSend();
+    });
+
+    const payload = createConversationInvokeMock.mock.calls[0][0];
+    expect(payload.assistant?.conversation_overrides?.skill_ids).toEqual(['pdf-reader']);
+    expect(payload.extra.exclude_auto_inject_skills).toEqual(['todo-tracker', 'aionui-config']);
   });
 
   it('forwards local skill overrides for generated Aion CLI assistants through assistant conversation overrides', async () => {
@@ -218,7 +242,11 @@ describe('useGuidSend', () => {
     expect(payload.model).toBe(deps.current_model);
     expect(payload.assistant?.id).toBe('bare:aionrs');
     expect(payload.assistant?.conversation_overrides?.skill_ids).toEqual(['pdf-reader']);
-    expect(payload.assistant?.conversation_overrides?.disabled_builtin_skill_ids).toEqual(['todo-tracker']);
+    expect(payload.assistant?.conversation_overrides?.disabled_builtin_skill_ids).toEqual([
+      'todo-tracker',
+      'aionui-config',
+    ]);
+    expect(payload.extra.exclude_auto_inject_skills).toEqual(['todo-tracker', 'aionui-config']);
     expect(payload.extra.session_mode).toBeUndefined();
   });
 

@@ -6,6 +6,7 @@
 
 import { ipcBridge } from '@/common';
 import type { AgentStreamErrorInfo, IMessageText, IMessageTips, TMessage } from '@/common/chat/chatLib';
+import { addEventListener } from '@/renderer/utils/emitter';
 import {
   composeMessage,
   mergeAcpToolCallContent,
@@ -882,6 +883,21 @@ export const useMessageLstCache = (key: string) => {
       });
     });
   }, [key, update]);
+
+  useEffect(() => {
+    if (!key) {
+      return;
+    }
+
+    return addEventListener('conversation.messages.cleared', (conversationId) => {
+      if (conversationId !== key) {
+        return;
+      }
+
+      update([]);
+      setPagination({ ...EMPTY_MESSAGE_PAGINATION_STATE });
+    });
+  }, [key, setPagination, update]);
 };
 
 export const beforeUpdateMessageList = (fn: (list: TMessage[]) => TMessage[]) => {

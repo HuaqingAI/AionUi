@@ -18,6 +18,7 @@ import {
   useMessageList,
   useReplaceWithAnchorWindow,
 } from '@/renderer/pages/conversation/Messages/hooks';
+import { emitter } from '@/renderer/utils/emitter';
 
 vi.mock('@/common', () => ({
   ipcBridge: {
@@ -125,6 +126,13 @@ function useAnchorMessageHarness() {
   return {
     addOrUpdateMessage: useAddOrUpdateMessage(),
     replaceWithAnchorWindow: useReplaceWithAnchorWindow(),
+    messages: useMessageList(),
+  };
+}
+
+function useCacheMessageHarness() {
+  useMessageLstCache(CONVERSATION_ID);
+  return {
     messages: useMessageList(),
   };
 }
@@ -274,5 +282,33 @@ describe('message merging', () => {
       limit: 50,
       content_mode: 'compact',
     });
+  });
+
+  it('clears cached messages when the current conversation is reset', async () => {
+    const invoke = vi.mocked(ipcBridge.database.getConversationMessages.invoke);
+    invoke.mockClear();
+    invoke.mockResolvedValue({
+      items: [createTextMessage('user-1', 'hello')],
+      oldest_cursor: 'cursor-1',
+      newest_cursor: 'cursor-1',
+      has_more_before: false,
+      has_more_after: false,
+    });
+
+    const { result } = renderHook(() => useCacheMessageHarness(), {
+      wrapper: CacheWrapper,
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(result.current.messages).toHaveLength(1);
+
+    act(() => {
+      emitter.emit('conversation.messages.cleared', CONVERSATION_ID);
+    });
+
+    expect(result.current.messages).toEqual([]);
   });
 });

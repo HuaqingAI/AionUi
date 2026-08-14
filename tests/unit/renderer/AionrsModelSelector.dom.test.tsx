@@ -253,4 +253,42 @@ describe('AionrsModelSelector runtime options', () => {
       expect(onSetThoughtLevel).toHaveBeenCalledWith('reasoning_effort', 'low');
     });
   });
+
+  it('shows only max and none thought levels for deepseek-v4 models', () => {
+    const deepSeekThoughtLevel: AcpDerivedOption = {
+      id: 'reasoning_effort',
+      category: 'thought_level',
+      currentValue: 'low',
+      options: [
+        { value: 'low', label: 'Low' },
+        { value: 'medium', label: 'Medium' },
+        { value: 'high', label: 'High' },
+        { value: 'xhigh', label: 'Xhigh' },
+      ],
+    };
+
+    render(
+      <AionrsModelSelector
+        selection={makeSelection({
+          current_model: {
+            ...provider,
+            use_model: 'deepseek-v4-pro',
+          } as TProviderWithModel,
+        })}
+        thoughtLevel={deepSeekThoughtLevel}
+        setStatus={{ state: 'idle' }}
+        onSetThoughtLevel={vi.fn().mockResolvedValue(undefined)}
+      />
+    );
+
+    const titles = screen.getAllByTestId('submenu-title');
+    expect(titles[1]).toHaveTextContent('Max');
+    const thoughtBody = screen.getAllByTestId('submenu-body')[1];
+    expect(within(thoughtBody).queryByText('Low')).not.toBeInTheDocument();
+    expect(within(thoughtBody).queryByText('Medium')).not.toBeInTheDocument();
+    expect(within(thoughtBody).queryByText('High')).not.toBeInTheDocument();
+    expect(within(thoughtBody).queryByText('Xhigh')).not.toBeInTheDocument();
+    expect(within(thoughtBody).getByText('Max')).toBeInTheDocument();
+    expect(within(thoughtBody).getByText('None')).toBeInTheDocument();
+  });
 });

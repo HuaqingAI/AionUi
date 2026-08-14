@@ -111,6 +111,7 @@ const WorkspaceGroupedHistory: React.FC<WorkspaceGroupedHistoryProps> = ({
     handleConversationClick,
     handleDeleteClick,
     handleBatchDelete,
+    handleClearClick,
     handleEditStart,
     handleRenameConfirm,
     handleRenameCancel,
@@ -177,6 +178,7 @@ const WorkspaceGroupedHistory: React.FC<WorkspaceGroupedHistoryProps> = ({
       onMenuVisibleChange: handleMenuVisibleChange,
       onEditStart: handleEditStart,
       onCreateCronTask: handleCreateCronTask,
+      onClear: handleClearClick,
       onDelete: handleDeleteClick,
       // Export UI entry intentionally disabled (kanban #14): omit onExport so
       // ConversationRow's `{onExport && ...}` guard hides the menu item. The
@@ -200,6 +202,7 @@ const WorkspaceGroupedHistory: React.FC<WorkspaceGroupedHistoryProps> = ({
       handleMenuVisibleChange,
       handleEditStart,
       handleCreateCronTask,
+      handleClearClick,
       handleDeleteClick,
       handleTogglePin,
       getJobStatus,

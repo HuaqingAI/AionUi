@@ -156,6 +156,33 @@ export const useConversationActions = ({
     });
   }, [onBatchModeChange, removeConversation, selectedConversationIds, t, setSelectedConversationIds]);
 
+  const handleClearClick = useCallback(
+    (conversation_id: string) => {
+      Modal.confirm({
+        title: t('conversation.history.clearTitle'),
+        content: t('conversation.history.clearConfirm'),
+        okText: t('conversation.history.confirmClear'),
+        cancelText: t('conversation.history.cancelDelete'),
+        okButtonProps: { status: 'warning' },
+        onOk: async () => {
+          try {
+            await ipcBridge.conversation.reset.invoke({ id: conversation_id });
+            emitter.emit('conversation.messages.cleared', conversation_id);
+            emitter.emit('chat.history.refresh');
+            Message.success(t('conversation.history.clearSuccess'));
+          } catch (error) {
+            console.error('Failed to clear conversation:', error);
+            Message.error(t('conversation.history.clearFailed'));
+          }
+        },
+        style: { borderRadius: '12px' },
+        alignCenter: true,
+        getPopupContainer: () => document.body,
+      });
+    },
+    [t]
+  );
+
   const handleEditStart = useCallback((conversation: TChatConversation) => {
     setRenameModalId(conversation.id);
     setRenameModalName(conversation.name);
@@ -312,6 +339,7 @@ export const useConversationActions = ({
     handleConversationClick,
     handleDeleteClick,
     handleBatchDelete,
+    handleClearClick,
     handleEditStart,
     handleRenameConfirm,
     handleRenameCancel,

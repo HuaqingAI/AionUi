@@ -8,12 +8,13 @@ import { ipcBridge } from '@/common';
 import type { IResponseMessage } from '@/common/adapter/ipcBridge';
 import type { AcpConfigOptionDto, AcpModelInfo } from '@/common/types/platform/acpTypes';
 import {
+  getModelScopedThoughtLevelOption,
   type AcpConfigOptionsLoader,
   type AcpConfigSetStatus,
   type AcpDerivedOption,
   useAcpConfigOptions,
 } from './useAcpConfigOptions';
-import { filterOpenCodeZenModels } from '@/renderer/utils/model/agentRuntimeCatalog';
+import { filterOpenCodeZenModels, sortModelOptionsByMultiplier } from '@/renderer/utils/model/agentRuntimeCatalog';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 type UseAcpModelInfoArgs = {
@@ -86,7 +87,7 @@ export const useAcpModelInfo = ({
 
   const configModelInfo = useMemo<AcpModelInfo | null>(() => {
     if (!model) return null;
-    const availableOptions = filterOpenCodeZenModels(model.options);
+    const availableOptions = sortModelOptionsByMultiplier(filterOpenCodeZenModels(model.options));
     const requestedCurrentModelId = model.currentValue || initialModelId || null;
     const currentModelId = availableOptions.some((item) => item.value === requestedCurrentModelId)
       ? requestedCurrentModelId
@@ -125,7 +126,7 @@ export const useAcpModelInfo = ({
         const incoming = normalizeInitialModel(message.data as AcpModelInfo, initialModelId);
         const filteredIncoming = {
           ...incoming,
-          available_models: filterOpenCodeZenModels(incoming.available_models),
+          available_models: sortModelOptionsByMultiplier(filterOpenCodeZenModels(incoming.available_models)),
         };
         setLegacyModelInfo((previous) => (sameModelInfo(previous, filteredIncoming) ? previous : filteredIncoming));
       } else if (message.type === 'codex_model_info' && message.data) {
@@ -143,6 +144,7 @@ export const useAcpModelInfo = ({
   }, [conversation_id, enabled, initialModelId]);
 
   const model_info = configModelInfo ?? legacyModelInfo ?? persistedModelInfo;
+  const scopedThoughtLevel = getModelScopedThoughtLevelOption(thoughtLevel, model_info?.current_model_id);
 
   const selectModel = useCallback(
     (model_id: string) => {
@@ -164,7 +166,7 @@ export const useAcpModelInfo = ({
     isLoading: !model_info && isLoading,
     isSetting: setStatus.state === 'setting' && setStatus.optionId === model?.id,
     selectModel,
-    thoughtLevel,
+    thoughtLevel: scopedThoughtLevel,
     setStatus,
     setConfigOption,
   };

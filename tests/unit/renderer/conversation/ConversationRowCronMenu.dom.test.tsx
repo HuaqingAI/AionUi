@@ -67,6 +67,7 @@ const makeProps = (overrides: Partial<ConversationRowProps> = {}): ConversationR
   onMenuVisibleChange: vi.fn(),
   onEditStart: vi.fn(),
   onCreateCronTask: vi.fn(),
+  onClear: vi.fn(),
   onDelete: vi.fn(),
   onTogglePin: vi.fn(),
   getJobStatus: () => 'none',
@@ -77,18 +78,23 @@ describe('conversation scheduled-task menu item', () => {
   it('renders the Timer action between Rename and Delete and invokes it for the selected row', async () => {
     const onCreateCronTask = vi.fn();
     const onEditStart = vi.fn();
+    const onClear = vi.fn();
     const onDelete = vi.fn();
-    render(<ConversationRow {...makeProps({ onCreateCronTask, onDelete, onEditStart })} />);
+    render(<ConversationRow {...makeProps({ onCreateCronTask, onClear, onDelete, onEditStart })} />);
 
     const rename = await screen.findByText('conversation.history.rename');
     const createCronTask = screen.getByText('conversation.history.createCronTask');
+    const clear = screen.getByText('conversation.history.clearTitle');
     const deleteItem = screen.getByText('conversation.history.deleteTitle');
 
     expect(rename.compareDocumentPosition(createCronTask) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(createCronTask.compareDocumentPosition(deleteItem) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(createCronTask.compareDocumentPosition(clear) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(clear.compareDocumentPosition(deleteItem) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
     fireEvent.click(rename);
     await waitFor(() => expect(onEditStart).toHaveBeenCalledWith(conversation));
+    fireEvent.click(clear);
+    await waitFor(() => expect(onClear).toHaveBeenCalledWith(conversation.id));
     fireEvent.click(deleteItem);
     await waitFor(() => expect(onDelete).toHaveBeenCalledWith(conversation.id));
     fireEvent.click(createCronTask);
