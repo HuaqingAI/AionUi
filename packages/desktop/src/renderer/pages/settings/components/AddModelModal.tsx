@@ -12,11 +12,7 @@ import { PreviewOpen } from '@icon-park/react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import useModeModeList from '@renderer/hooks/agent/useModeModeList';
-import {
-  isHTHPlatform,
-  HTH_PROTOCOL_OPTIONS,
-  detectHTHProtocol,
-} from '@/renderer/utils/model/modelPlatforms';
+import { isHTHPlatform, HTH_PROTOCOL_OPTIONS, detectHTHProtocol } from '@/renderer/utils/model/modelPlatforms';
 
 const AddModelModal = ModalHOC<{ data?: IProvider; model?: string; onSubmit: (model: IProvider) => void }>(
   ({ modalProps, data, model: editingModel, onSubmit, modalCtrl }) => {

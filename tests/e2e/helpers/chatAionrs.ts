@@ -120,7 +120,7 @@ export async function getAionrsTestModels(page: Page): Promise<AionrsTestModels 
       custom: 0, // Prefer user-configured OpenAI-compat endpoints (e.g. official OpenAI) first
       anthropic: 1,
       gemini: 2,
-      'hth': 3, // Often uses relay gateways with rotating tokens — deprioritize
+      hth: 3, // Often uses relay gateways with rotating tokens — deprioritize
       bedrock: 4,
       'gemini-vertex-ai': 5,
     };
