@@ -53,7 +53,7 @@
     "newTask": "Neue Aufgabe",
     "createViaChat": "Per Chat erstellen",
     "createManually": "Manuell erstellen",
-    "description": "Aufgaben nach Zeitplan ausführen. Du kannst AionUi auch in jedem Gespräch bitten, eine zu erstellen.",
+    "description": "Aufgaben nach Zeitplan ausführen.",
     "awakeBanner": "Geplante Aufgaben werden nur ausgeführt, wenn dein Computer aktiv ist.",
     "keepAwake": "Aktiv halten",
     "keepAwakeTooltip": "Wenn aktiviert, verhindert AionUi, dass dein Computer in den Ruhezustand geht",

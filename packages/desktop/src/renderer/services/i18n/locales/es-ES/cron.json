@@ -53,7 +53,7 @@
   },
   "page": {
     "newTask": "Nueva tarea",
-    "description": "Ejecuta tareas según un horario. También puedes pedirle a AionUi en cualquier conversación que cree una.",
+    "description": "Ejecuta tareas según un horario.",
     "awakeBanner": "Las tareas programadas solo se ejecutan mientras tu computadora esté encendida.",
     "keepAwake": "Mantener activa",
     "keepAwakeTooltip": "Cuando está activado, AionUi evitará que tu computadora entre en modo de suspensión",
