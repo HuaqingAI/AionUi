@@ -244,6 +244,10 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
   const { presetAssistants } = useConversationAssistants();
   const managedAgentRuntimeCatalog = useManagedAgentRuntimeCatalog();
   const { providers, getAvailableModels } = useModelProviderList();
+  const customPresetAssistants = useMemo(
+    () => presetAssistants.filter((assistant) => assistant.source === 'user'),
+    [presetAssistants]
+  );
   const [frequency, setFrequency] = useState<FrequencyType>('manual');
   const [time, setTime] = useState('09:00');
   const [weekday, setWeekday] = useState('MON');
@@ -664,7 +668,7 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
                 );
               }}
             >
-              {presetAssistants.map((assistant) => {
+              {customPresetAssistants.map((assistant) => {
                 const name = resolveAssistantName(assistant, localeKey, assistant.name);
                 const avatar = resolveAssistantAvatar(assistant.avatar);
                 const disabled = isAionrsAssistant(assistant) && !hasAionrsProvider;

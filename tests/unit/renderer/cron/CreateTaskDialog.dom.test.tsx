@@ -164,6 +164,26 @@ describe('CreateTaskDialog', () => {
     expect(await screen.findByText('cron.page.freq.custom')).toBeInTheDocument();
   });
 
+  it('only offers user-created assistants when manually creating a task', async () => {
+    const user = userEvent.setup();
+    currentAssistants = [bareAssistant(), builtinAssistant(), ...assistants()];
+
+    render(<CreateTaskDialog visible onClose={() => {}} />);
+
+    await user.click(await screen.findByTestId('cron-assistant-select'));
+
+    const assistantOptions = await waitFor(() => {
+      const options = Array.from(document.querySelectorAll('.arco-select-option'));
+      if (options.length === 0) throw new Error('assistant option not found');
+      return options;
+    });
+    const optionText = assistantOptions.map((option) => option.textContent ?? '').join(' ');
+    expect(assistantOptions).toHaveLength(1);
+    expect(optionText.trim()).not.toBe('');
+    expect(optionText).not.toContain('Codex');
+    expect(optionText).not.toContain('Official helper');
+  });
+
   it('submits the default visual custom schedule as every five minutes', async () => {
     const user = userEvent.setup();
 
@@ -493,6 +513,28 @@ function bareAssistant(): Assistant {
     avatar: 'codex.svg',
     enabled: true,
     sort_order: 1,
+    agent_id: 'agent-codex',
+    agent: { type: 'acp', source: 'builtin', acp_backend: 'codex' },
+    enabled_skills: [],
+    custom_skill_names: [],
+    disabled_builtin_skills: [],
+    context_i18n: {},
+    prompts: [],
+    prompts_i18n: {},
+    models: [],
+  } as Assistant;
+}
+
+function builtinAssistant(): Assistant {
+  return {
+    id: 'official-helper',
+    source: 'builtin',
+    name: 'Official helper',
+    name_i18n: {},
+    description_i18n: {},
+    avatar: 'official.svg',
+    enabled: true,
+    sort_order: 2,
     agent_id: 'agent-codex',
     agent: { type: 'acp', source: 'builtin', acp_backend: 'codex' },
     enabled_skills: [],
