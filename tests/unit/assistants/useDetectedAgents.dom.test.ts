@@ -6,7 +6,10 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { buildAssistantEditorBackends } from '@/renderer/pages/settings/AssistantSettings/assistantUtils';
+import {
+  buildAssistantEditorBackends,
+  filterCreateAssistantBackends,
+} from '@/renderer/pages/settings/AssistantSettings/assistantUtils';
 import type { ManagedAgent } from '@/renderer/utils/model/agentTypes';
 
 describe('buildAssistantEditorBackends', () => {
@@ -96,6 +99,20 @@ describe('buildAssistantEditorBackends', () => {
         runtimeKey: 'goose',
         modelOptions: [],
       },
+    ]);
+  });
+
+  it('limits new assistant choices to Codex and OpenCode', () => {
+    const backends = [
+      { id: 'codex', name: 'Codex CLI', runtimeKey: 'codex', modelOptions: [] },
+      { id: 'opencode', name: 'OpenCode', runtimeKey: 'opencode', modelOptions: [] },
+      { id: 'claude', name: 'Claude Code', runtimeKey: 'claude', modelOptions: [] },
+      { id: 'aionrs', name: 'Aion CLI', runtimeKey: 'aionrs', modelOptions: [] },
+    ];
+
+    expect(filterCreateAssistantBackends(backends).map((backend) => backend.runtimeKey)).toEqual([
+      'codex',
+      'opencode',
     ]);
   });
 });

@@ -22,7 +22,7 @@ import { ipcBridge } from '@/common';
 import { isHTHUnauthorizedSyncResult, type HTHSyncResult } from '@/common/types/hth';
 import { useAssistantEditor, useAssistantList } from '@/renderer/hooks/assistant';
 import { useManagedAgentRuntimeCatalog } from '@/renderer/hooks/agent/useManagedAgents';
-import { buildAssistantEditorBackends, resolveAvatarImageSrc } from './assistantUtils';
+import { buildAssistantEditorBackends, filterCreateAssistantBackends, resolveAvatarImageSrc } from './assistantUtils';
 import AssistantEditorPage from './AssistantEditorPage';
 import AssistantHomeTabs, { type HomeTab } from './home/AssistantHomeTabs';
 import DeleteAssistantModal from './DeleteAssistantModal';
@@ -109,8 +109,11 @@ const AssistantSettings: React.FC = () => {
     message,
   });
   const availableBackends = useMemo(
-    () => buildAssistantEditorBackends(managedAgentRuntimeCatalog, localeKey, editor.editAgent),
-    [editor.editAgent, localeKey, managedAgentRuntimeCatalog]
+    () => {
+      const backends = buildAssistantEditorBackends(managedAgentRuntimeCatalog, localeKey, editor.editAgent);
+      return editor.isCreating ? filterCreateAssistantBackends(backends) : backends;
+    },
+    [editor.editAgent, editor.isCreating, localeKey, managedAgentRuntimeCatalog]
   );
   const handleSyncFromHTH = useCallback(async () => {
     setSyncingFromHTH(true);

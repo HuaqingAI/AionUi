@@ -222,3 +222,9 @@ export const buildAssistantEditorBackends = (
 
   return [...backendMap.values()];
 };
+
+const CREATE_ASSISTANT_AGENT_RUNTIME_KEYS = new Set(['codex', 'opencode']);
+
+/** Restrict the agent choices shown when creating a new assistant. */
+export const filterCreateAssistantBackends = (backends: AvailableBackend[]): AvailableBackend[] =>
+  backends.filter((backend) => CREATE_ASSISTANT_AGENT_RUNTIME_KEYS.has(backend.runtimeKey.toLowerCase()));
