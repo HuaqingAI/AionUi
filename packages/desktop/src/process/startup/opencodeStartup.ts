@@ -810,6 +810,9 @@ async function ensureDwsBinaryInstalled(prefix: string): Promise<void> {
       await fs.copyFile(extractedBinaryPath, stagedBinaryPath);
     }
     await fs.rename(stagedBinaryPath, binaryPath);
+    if (process.platform !== 'win32') {
+      await fs.chmod(binaryPath, 0o755);
+    }
   } finally {
     await fs.rm(stagingDirectory, { force: true, recursive: true });
   }
