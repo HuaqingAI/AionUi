@@ -104,8 +104,8 @@ SilentInstall normal
 !define AIONUI_FALLBACK_LOG "aionui-installer-smoke-fallback.log"
 !define VERSION "rstrtmgr-ui-smoke"
 !define AIONUI_TARGET_ARCH "x64"
-!define AIONUI_APP_EXECUTABLE_FILENAME "华青智能助手.exe"
-!define UNINSTALL_FILENAME "Uninstall 华青智能助手.exe"
+!define AIONUI_APP_EXECUTABLE_FILENAME "HQBuddy.exe"
+!define UNINSTALL_FILENAME "Uninstall HQBuddy.exe"
 !define PROJECT_DIR "${nsisQuote(repoRoot)}"
 !include LogicLib.nsh
 !include "${nsisQuote(messagesPath)}"

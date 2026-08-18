@@ -152,22 +152,27 @@ function resolvePackagedApp(): { executablePath: string; cwd: string } | null {
   if (!fs.existsSync(outDir)) return null;
 
   const platform = process.platform;
+  const packagedExecutableNames = ['HQBuddy', 'HQBuddy-Dev', '华青智能助手', 'AionUi', 'aionui'];
 
   if (platform === 'win32') {
-    // out/win-unpacked/华青智能助手.exe  or  out/win-x64-unpacked/华青智能助手.exe
+    // Prefer the English filesystem names, while retaining legacy names for old local builds.
     for (const dir of ['win-unpacked', 'win-x64-unpacked', 'win-arm64-unpacked']) {
-      const exe = path.join(outDir, dir, '华青智能助手.exe');
-      if (fs.existsSync(exe)) return { executablePath: exe, cwd: path.join(outDir, dir) };
+      for (const name of packagedExecutableNames) {
+        const exe = path.join(outDir, dir, `${name}.exe`);
+        if (fs.existsSync(exe)) return { executablePath: exe, cwd: path.join(outDir, dir) };
+      }
     }
   } else if (platform === 'darwin') {
-    // out/mac-arm64/华青智能助手.app/Contents/MacOS/华青智能助手  or  out/mac/华青智能助手.app/...
+    // The app bundle and embedded executable use the English filesystem name.
     for (const dir of ['mac-arm64', 'mac-x64', 'mac', 'mac-universal']) {
       const macDir = path.join(outDir, dir);
       if (!fs.existsSync(macDir)) continue;
       const appBundle = fs.readdirSync(macDir).find((f) => f.endsWith('.app'));
       if (appBundle) {
-        const exe = path.join(macDir, appBundle, 'Contents', 'MacOS', '华青智能助手');
-        if (fs.existsSync(exe)) return { executablePath: exe, cwd: macDir };
+        for (const name of packagedExecutableNames) {
+          const exe = path.join(macDir, appBundle, 'Contents', 'MacOS', name);
+          if (fs.existsSync(exe)) return { executablePath: exe, cwd: macDir };
+        }
       }
     }
   } else {
@@ -176,7 +181,7 @@ function resolvePackagedApp(): { executablePath: string; cwd: string } | null {
       const dirPath = path.join(outDir, dir);
       if (!fs.existsSync(dirPath)) continue;
       // Try common executable names
-      for (const name of ['aionui', 'AionUi']) {
+      for (const name of packagedExecutableNames) {
         const exe = path.join(dirPath, name);
         if (fs.existsSync(exe)) return { executablePath: exe, cwd: dirPath };
       }

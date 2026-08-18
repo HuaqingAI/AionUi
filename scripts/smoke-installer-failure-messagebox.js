@@ -49,7 +49,7 @@ const INSTALLER_ERROR_SCENARIOS = [
     code: 'E1010',
     message: '华青智能助手 could not extract the application files correctly.',
     action: 'Download a fresh installer and run it again.',
-    diagnostics: 'scenario=extract-failed phase=extract method=zip missing=华青智能助手.exe',
+    diagnostics: 'scenario=extract-failed phase=extract method=zip missing=HQBuddy.exe',
   },
   {
     id: 'disk-insufficient',

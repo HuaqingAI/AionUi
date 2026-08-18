@@ -142,6 +142,7 @@ function getLogFilePath(): string {
   const candidates: string[] = [];
   if (process.platform === 'darwin') {
     candidates.push(
+      path.join(os.homedir(), 'Library', 'Logs', 'HQBuddy-Dev', `${today}.log`),
       path.join(os.homedir(), 'Library', 'Logs', '华青智能助手-Dev', `${today}.log`),
       path.join(os.homedir(), 'Library', 'Logs', 'AionUi', `${today}.log`)
     );

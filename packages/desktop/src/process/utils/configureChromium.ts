@@ -33,7 +33,7 @@ if (e2eUserDataDir && e2eUserDataDir.trim() !== '') {
 // E2E 沙箱已显式设置 userData 时跳过，避免被 dev app 名覆盖。
 if (!app.isPackaged && !e2eUserDataDir) {
   const devAppName = getDevAppName();
-  app.setName(devAppName);
+  app.setName('华青智能助手');
   // In Electron 28+, setName alone no longer updates userData path on macOS.
   // Explicitly override userData to the dev directory.
   const appSupportDir = path.dirname(app.getPath('userData'));

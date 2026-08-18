@@ -25,6 +25,7 @@
     "package": "electron-vite build --config packages/desktop/electron.vite.config.ts",
     "make": "electron-vite build --config packages/desktop/electron.vite.config.ts",
     "dist": "node scripts/build-with-builder.js",
+    "dist:dev": "cross-env AIONUI_BUILD_FLAVOR=dev node scripts/build-with-builder.js",
     "dist:mac": "node scripts/build-with-builder.js auto --mac",
     "dist:win": "node scripts/build-with-builder.js auto --win",
     "dist:linux": "node scripts/build-with-builder.js auto --linux",

@@ -86,10 +86,11 @@ function agentPillByBackend(backend: string) {
 
 function getLogFilePath(): string {
   const today = new Date().toISOString().slice(0, 10);
-  // Dev mode uses "华青智能助手-Dev", production uses "AionUi"
-  const devPath = path.join(os.homedir(), 'Library', 'Logs', '华青智能助手-Dev', `${today}.log`);
+  // Dev mode uses "HQBuddy-Dev", with the old Chinese path kept for older runs.
+  const devPath = path.join(os.homedir(), 'Library', 'Logs', 'HQBuddy-Dev', `${today}.log`);
+  const legacyDevPath = path.join(os.homedir(), 'Library', 'Logs', '华青智能助手-Dev', `${today}.log`);
   const prodPath = path.join(os.homedir(), 'Library', 'Logs', 'AionUi', `${today}.log`);
-  return fs.existsSync(devPath) ? devPath : prodPath;
+  return fs.existsSync(devPath) ? devPath : fs.existsSync(legacyDevPath) ? legacyDevPath : prodPath;
 }
 
 function getLogFileSize(logPath: string): number {

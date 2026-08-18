@@ -9,6 +9,7 @@ const {
   getModulesToRebuild,
 } = require('./rebuildNativeModules');
 const { verifyBundledAioncoreResources } = require('../packages/shared-scripts/src/verify-bundled-aioncore-resources');
+const { resolveExecutableName } = require('./appNaming');
 
 /**
  * afterPack hook for electron-builder
@@ -18,7 +19,7 @@ const { verifyBundledAioncoreResources } = require('../packages/shared-scripts/s
 function resolveResourcesDir(electronPlatformName, appOutDir, packager) {
   if (electronPlatformName !== 'darwin') return path.join(appOutDir, 'resources');
 
-  const appName = packager?.appInfo?.productFilename || 'AionUi';
+  const appName = packager?.appInfo?.productFilename || resolveExecutableName();
   return path.join(appOutDir, `${appName}.app`, 'Contents', 'Resources');
 }
 

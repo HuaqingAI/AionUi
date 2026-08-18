@@ -10,7 +10,7 @@ let _services: IPlatformServices | null = null;
  */
 export function getDevAppName(): string {
   const isMultiInstance = process.env.AIONUI_MULTI_INSTANCE === '1';
-  return isMultiInstance ? '华青智能助手-Dev-2' : '华青智能助手-Dev';
+  return isMultiInstance ? 'HQBuddy-Dev-2' : 'HQBuddy-Dev';
 }
 
 export function registerPlatformServices(services: IPlatformServices): void {
@@ -41,7 +41,7 @@ export function getPlatformServices(): IPlatformServices {
         // must apply the dev name here as a safety net.
         if (!app.isPackaged) {
           const devAppName = getDevAppName();
-          app.setName(devAppName);
+          app.setName('华青智能助手');
           app.setPath('userData', path.join(path.dirname(app.getPath('userData')), devAppName));
         }
         // Typed as IPlatformPaths so tsc enforces completeness: any new method

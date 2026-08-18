@@ -38,13 +38,13 @@ describe('release packaging configuration', () => {
     expect(winBlock).not.toContain('    - zip');
   });
 
-  it('brands Windows and macOS packaged app names as 华青智能助手', () => {
+  it('keeps Chinese display branding while using an English packaged executable name', () => {
     const config = readProjectFile('packages/desktop/electron-builder.yml');
     const packageJson = JSON.parse(readProjectFile('package.json')) as { version?: string };
 
     expect(packageJson.version).toBe('1.0.0');
     expect(config).toContain('productName: 华青智能助手');
-    expect(config).toContain('executableName: 华青智能助手');
+    expect(config).toContain('executableName: HQBuddy');
     expect(config).toContain('copyright: Copyright © 2024 华青智能助手');
     expect(config).not.toContain('productName: AionUi');
     expect(config).not.toContain('executableName: AionUi');

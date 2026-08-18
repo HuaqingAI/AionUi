@@ -14,6 +14,7 @@ const { execSync, spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { resolveExecutableName } = require('./appNaming');
 
 // DMG retry logic for macOS: detects DMG creation failures by checking artifacts
 // (.app exists but .dmg missing) and retries only the DMG step using
@@ -118,9 +119,9 @@ function patchElectronBuilderNsisInstaller() {
     '  !insertmacro copyFile "$uninstallerFileName" "$uninstallerFileNameTemp"',
   ].join('\n');
   const bundledUninstallerOverride = [
-    '  ${if} ${FileExists} "$PLUGINSDIR\\华青智能助手-fixed-uninstaller.exe"',
-    '    DetailPrint `华青智能助手-bundled-uninstaller override source.`',
-    '    StrCpy $uninstallerFileName "$PLUGINSDIR\\华青智能助手-fixed-uninstaller.exe"',
+    '  ${if} ${FileExists} "$PLUGINSDIR\\${APP_FILENAME}-fixed-uninstaller.exe"',
+    '    DetailPrint `${APP_FILENAME}-bundled-uninstaller override source.`',
+    '    StrCpy $uninstallerFileName "$PLUGINSDIR\\${APP_FILENAME}-fixed-uninstaller.exe"',
     '  ${endIf}',
   ].join('\n');
   const legacyBundledUninstallerOverride = [
@@ -535,13 +536,13 @@ function applyDebugAutoUpdateVersionOverride(packageJsonPath) {
 
 // Create macOS distributables using electron-builder --prepackaged with .app path.
 // This preserves DMG styling and still emits the zip required by MacUpdater.
-function createMacArtifactsWithPrepackaged(appDir, targetArch) {
+function createMacArtifactsWithPrepackaged(appDir, targetArch, executableName) {
   const appName = fs.readdirSync(appDir).find((f) => f.endsWith('.app'));
   if (!appName) throw new Error(`No .app found in ${appDir}`);
   const appPath = path.join(appDir, appName);
 
   execSync(
-    `bunx electron-builder --config packages/desktop/electron-builder.yml --mac dmg zip --${targetArch} --prepackaged "${appPath}" --publish=never`,
+    `bunx electron-builder --config packages/desktop/electron-builder.yml --mac dmg zip --${targetArch} --prepackaged "${appPath}" --config.executableName=${executableName} --publish=never`,
     {
       stdio: 'inherit',
       shell: process.platform === 'win32',
@@ -549,7 +550,7 @@ function createMacArtifactsWithPrepackaged(appDir, targetArch) {
   );
 }
 
-function buildWithDmgRetry(cmd, targetArch) {
+function buildWithDmgRetry(cmd, targetArch, executableName) {
   const isMac = process.platform === 'darwin';
   const outDir = path.resolve(__dirname, '../out');
 
@@ -571,7 +572,7 @@ function buildWithDmgRetry(cmd, targetArch) {
 
       try {
         console.log(`\n📀 DMG retry attempt ${attempt}/${DMG_RETRY_MAX}...`);
-        createMacArtifactsWithPrepackaged(appDir, targetArch);
+        createMacArtifactsWithPrepackaged(appDir, targetArch, executableName);
         console.log('✅ macOS distributables created successfully on retry');
         return;
       } catch (retryError) {
@@ -708,6 +709,8 @@ if (packOnly) console.log('⚡ --pack-only: Will skip electron-builder distribut
 if (forceBuild) console.log('⚡ --force: Force full rebuild');
 
 const packageJsonPath = path.resolve(__dirname, '../package.json');
+const executableName = resolveExecutableName();
+const executableFilename = `${executableName}.exe`;
 let restorePackageVersionOverride = () => {};
 let buildFailed = false;
 
@@ -854,14 +857,14 @@ try {
     const winUnpackedDir = path.join(outDir, 'win-unpacked');
     let cleaned = tryRemoveDir(winUnpackedDir);
     if (!cleaned) {
-      const aionRunning = isProcessRunningWindows('华青智能助手.exe');
+      const aionRunning = isProcessRunningWindows(executableFilename);
       const electronRunning = isProcessRunningWindows('electron.exe');
       if (aionRunning || electronRunning) {
-        console.log('⚠️  Detected running 华青智能助手/Electron process. Attempting to close...');
-        killWindowsProcesses(['华青智能助手.exe', 'electron.exe']);
+        console.log('⚠️  Detected running packaged app/Electron process. Attempting to close...');
+        killWindowsProcesses([executableFilename, 'electron.exe']);
         cleaned = tryRemoveDir(winUnpackedDir);
         if (!cleaned) {
-          console.log('⚠️  Directory still locked. Please close any running 华青智能助手/Electron processes and retry.');
+          console.log('⚠️  Directory still locked. Please close the packaged app/Electron process and retry.');
         }
       }
     }
@@ -873,11 +876,11 @@ try {
     cleanupWindowsPackOutput();
   }
 
-  const builderCommand = `bunx electron-builder --config packages/desktop/electron-builder.yml ${builderArgs} ${archFlag} ${nsisInclude} ${publishArg}`;
+  const builderCommand = `bunx electron-builder --config packages/desktop/electron-builder.yml --config.executableName=${executableName} ${builderArgs} ${archFlag} ${nsisInclude} ${publishArg}`;
   try {
-    buildWithDmgRetry(builderCommand, targetArch);
+    buildWithDmgRetry(builderCommand, targetArch, executableName);
   } catch (error) {
-    const winExePath = path.join(outDir, 'win-unpacked', '华青智能助手.exe');
+    const winExePath = path.join(outDir, 'win-unpacked', executableFilename);
     const firstError = formatExecError(error);
     const canRetryWithoutExecutableEdit =
       process.platform === 'win32' && isWindowsBuild && process.env.CI !== 'true' && fs.existsSync(winExePath);
@@ -899,11 +902,11 @@ try {
     }
     console.log('   Retrying local build with win.signAndEditExecutable=false...');
     console.log('   This fallback is intended for transient rcedit / file-lock failures on developer machines.');
-    killWindowsProcesses(['华青智能助手.exe', 'electron.exe']);
+    killWindowsProcesses([executableFilename, 'electron.exe']);
     cleanupWindowsPackOutput();
 
     try {
-      buildWithDmgRetry(`${builderCommand} --config.win.signAndEditExecutable=false`, targetArch);
+      buildWithDmgRetry(`${builderCommand} --config.win.signAndEditExecutable=false`, targetArch, executableName);
     } catch (retryError) {
       const retryFailure = formatExecError(retryError);
       throw new Error(

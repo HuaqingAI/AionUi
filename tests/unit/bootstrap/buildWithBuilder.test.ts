@@ -362,9 +362,9 @@ childProcess.execSync = function mockedExecSync(command) {
 
       if (args.includes('--win')) {
         const installUtil = readFileSync(resolveAppBuilderInstallUtil(), 'utf8');
-        expect(installUtil).toContain('华青智能助手-bundled-uninstaller override source');
-        expect(installUtil).toContain('$PLUGINSDIR\\华青智能助手-fixed-uninstaller.exe');
-        expect(installUtil.match(/华青智能助手-bundled-uninstaller override source/g)).toHaveLength(1);
+        expect(installUtil).toContain('${APP_FILENAME}-bundled-uninstaller override source');
+        expect(installUtil).toContain('$PLUGINSDIR\\${APP_FILENAME}-fixed-uninstaller.exe');
+        expect(installUtil.match(/\$\{APP_FILENAME\}-bundled-uninstaller override source/g)).toHaveLength(1);
       }
 
       const calls = JSON.parse(readFileSync(callsPath, 'utf8')) as Array<{ arch?: string } | null>;
