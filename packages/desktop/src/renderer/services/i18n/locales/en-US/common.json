@@ -163,5 +163,5 @@
   "walletQuota": "Wallet",
   "enterpriseSubscriptionQuota": "Enterprise subscription",
   "personalSubscriptionQuota": "Personal subscription",
-  "totalAvailableQuota": "Total available"
+  "totalAvailableQuota": "Remaining quota"
 }

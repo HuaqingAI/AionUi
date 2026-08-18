@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { render, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import SiderFooter from '@renderer/components/layout/Sider/SiderFooter';
@@ -94,5 +94,24 @@ describe('SiderFooter quota refresh', () => {
       expect(ipcMocks.refreshQuotaSummaryInvoke).toHaveBeenCalledTimes(2);
     });
     expect(ipcMocks.showQuotaPromptIfSummaryExhausted).toHaveBeenCalledWith(expect.any(Object), expect.any(Function));
+  });
+
+  it('shows only the remaining model quota line in the expanded footer', async () => {
+    render(
+      <SiderFooter
+        isMobile={false}
+        isSettings={false}
+        collapsed={false}
+        theme='light'
+        siderTooltipProps={siderTooltipProps}
+        onSettingsClick={vi.fn()}
+        onThemeToggle={vi.fn()}
+      />
+    );
+
+    expect(await screen.findByText('common.totalAvailableQuota')).toBeInTheDocument();
+    expect(screen.queryByText('common.walletQuota')).not.toBeInTheDocument();
+    expect(screen.queryByText('common.enterpriseSubscriptionQuota')).not.toBeInTheDocument();
+    expect(screen.queryByText('common.personalSubscriptionQuota')).not.toBeInTheDocument();
   });
 });

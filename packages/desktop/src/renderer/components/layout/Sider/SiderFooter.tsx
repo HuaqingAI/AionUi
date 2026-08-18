@@ -205,15 +205,8 @@ const QuotaSummaryView: React.FC<QuotaSummaryViewProps> = ({
   }
 
   const totalDisplay = summary.total_available_display || formatQuota(summary.total_available);
-  const walletDisplay = summary.wallet.display || formatQuota(summary.wallet.remain_quota);
-  const enterprise = summary.subscriptions.find((item) => item.group_key === 'enterprise');
-  const personal = summary.subscriptions.find((item) => item.group_key === 'personal');
-  const enterpriseDisplay = enterprise?.amount_available_display || formatQuota(enterprise?.amount_available ?? 0);
-  const personalDisplay = personal?.amount_available_display || formatQuota(personal?.amount_available ?? 0);
   const tooltip = `${t('common.modelQuota')}: ${totalDisplay}
-${t('common.walletQuota')}: ${walletDisplay}
-${t('common.enterpriseSubscriptionQuota')}: ${enterpriseDisplay}
-${t('common.personalSubscriptionQuota')}: ${personalDisplay}`;
+${t('common.totalAvailableQuota')}: ${totalDisplay}`;
 
   if (collapsed) {
     return (
@@ -239,9 +232,6 @@ ${t('common.personalSubscriptionQuota')}: ${personalDisplay}`;
         />
       </div>
       <QuotaLine label={t('common.totalAvailableQuota')} value={totalDisplay} />
-      <QuotaLine label={t('common.walletQuota')} value={walletDisplay} />
-      <QuotaLine label={t('common.enterpriseSubscriptionQuota')} value={enterpriseDisplay} />
-      <QuotaLine label={t('common.personalSubscriptionQuota')} value={personalDisplay} />
     </div>
   );
 };

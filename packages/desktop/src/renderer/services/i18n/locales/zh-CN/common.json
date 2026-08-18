@@ -163,5 +163,5 @@
   "walletQuota": "钱包",
   "enterpriseSubscriptionQuota": "企业订阅",
   "personalSubscriptionQuota": "个人订阅",
-  "totalAvailableQuota": "总可用"
+  "totalAvailableQuota": "剩余额度"
 }
