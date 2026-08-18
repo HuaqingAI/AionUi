@@ -5,6 +5,8 @@
  */
 
 import type { IConversationMcpStatus } from '@/common/config/storage';
+import type { Assistant } from '@/common/types/agent/assistantTypes';
+import AssistantDescriptionPanel from '@/renderer/components/assistant/AssistantDescriptionPanel';
 import { ConversationProvider } from '@/renderer/hooks/context/ConversationContext';
 import { CHAT_SURFACE_CONTAINER_CLASS } from '@/renderer/pages/conversation/utils/chatSurfaceWidth';
 import { useTeamPermission } from '@/renderer/pages/team/hooks/TeamPermissionContext';
@@ -40,6 +42,7 @@ const AcpChat: React.FC<{
   teamSendMessage?: (payload: { input: string; files: string[] }) => Promise<void>;
   teamRuntime?: TeamSendBoxRuntime;
   assistantId?: string;
+  assistant?: Assistant;
 }> = ({
   conversation_id,
   workspace,
@@ -55,6 +58,7 @@ const AcpChat: React.FC<{
   teamSendMessage,
   teamRuntime,
   assistantId,
+  assistant,
 }) => {
   useMessageLstCache(conversation_id);
   usePendingConfirmationsRecovery(conversation_id);
@@ -81,7 +85,13 @@ const AcpChat: React.FC<{
       <ConversationArtifactProvider conversation_id={conversation_id}>
         <div className={`${CHAT_SURFACE_CONTAINER_CLASS} flex-1 flex flex-col px-20px min-h-0`}>
           <FlexFullContainer>
-            <MessageList className='flex-1' emptySlot={emptySlot} />
+            <MessageList
+              className='flex-1'
+              emptySlot={emptySlot}
+              topSlot={
+                assistant ? <AssistantDescriptionPanel assistant={assistant} className='px-4px pt-4px' /> : undefined
+              }
+            />
           </FlexFullContainer>
           <AcpE2EStreamInjector conversationId={conversation_id} />
           {!hideSendBox && (

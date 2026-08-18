@@ -17,6 +17,8 @@ export type HTHAgentConfigItem = {
   version: string;
   name: string;
   description?: string;
+  categories?: string[];
+  recommended_prompts?: string[];
   avatar?: string;
   sha256?: string;
   size?: number;

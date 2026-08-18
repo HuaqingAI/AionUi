@@ -265,13 +265,13 @@ export class HTHAuthService {
           .then(() => {
             this.notifyLoginComplete();
             response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-            response.end(this.renderLoopbackPage('登录成功', 'HTHBuddy 已完成登录授权。', 10));
+            response.end(this.renderLoopbackPage('登录成功', '华青智能助手 已完成登录授权。', 10));
           })
           .catch((error) => {
             console.error('[HTHAuth] Loopback callback failed:', error);
             response.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
             response.end(
-              this.renderLoopbackPage('登录失败', error instanceof Error ? error.message : '请返回 HTHBuddy 后重试。')
+              this.renderLoopbackPage('登录失败', error instanceof Error ? error.message : '请返回 华青智能助手 后重试。')
             );
           });
       });
@@ -338,7 +338,7 @@ const timer = window.setInterval(() => {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>HTHBuddy</title>
+  <title>华青智能助手</title>
   <style>
     :root {
       color-scheme: light;
@@ -414,7 +414,7 @@ const timer = window.setInterval(() => {
     <h1>${escapeHtml(title)}</h1>
     <p class="message">${escapeHtml(message)}</p>
     ${countdownText}
-    <p class="hint">如果页面未自动关闭，可以直接关闭此页并返回 HTHBuddy。</p>
+    <p class="hint">如果页面未自动关闭，可以直接关闭此页并返回 华青智能助手。</p>
   </main>
   ${closeScript}
 </body>

@@ -11,6 +11,7 @@ import type { IMcpServer, TProviderWithModel } from '@/common/config/storage';
 import { resolveLocaleKey } from '@/common/utils';
 import type { AssistantDetail } from '@/common/types/agent/assistantTypes';
 
+import AssistantDescriptionPanel from '@/renderer/components/assistant/AssistantDescriptionPanel';
 import { useInputFocusRing } from '@/renderer/hooks/chat/useInputFocusRing';
 import { appendPromptToDraft } from '@/renderer/hooks/chat/useSendBoxDraft';
 import { getFuzzyMatchIndices, useSlashCommandController } from '@/renderer/hooks/chat/useSlashCommandController';
@@ -666,32 +667,25 @@ const GuidPage: React.FC = () => {
             onSelectAssistant={handleSelectAssistant}
           />
 
-          <GuidInputCard
-            focusRequestKey={navState?.focusPrefill && navState.prefillPrompt ? location.key : undefined}
-            input={guidInput.input}
-            onInputChange={handleInputChange}
-            onKeyDown={handleInputKeyDown}
-            onPaste={guidInput.onPaste}
-            onFocus={guidInput.handleTextareaFocus}
-            onBlur={guidInput.handleTextareaBlur}
-            placeholder={typewriterPlaceholder || t('conversation.welcome.placeholder')}
-            isInputActive={guidInput.isInputFocused}
-            isFileDragging={guidInput.isFileDragging}
-            activeBorderColor={activeBorderColor}
-            inactiveBorderColor={inactiveBorderColor}
-            activeShadow={activeShadow}
-            dragHandlers={guidInput.dragHandlers}
-            files={guidInput.files}
-            onRemoveFile={guidInput.handleRemoveFile}
-            actionRow={actionRowNode}
-            slashCommandMenu={slashCommandMenuNode}
-            workspaceDir={guidInput.dir}
-            onSelectWorkspace={(dir) => guidInput.setDir(dir)}
-            onClearWorkspace={() => guidInput.setDir('')}
-          />
+          {selectedAssistantRecord ? (
+            <AssistantDescriptionPanel
+              assistant={selectedAssistantRecord}
+              localeKey={localeKey}
+              description={
+                selectedAssistantDetail?.profile?.description_i18n?.[localeKey] ||
+                selectedAssistantDetail?.profile?.description_i18n?.['en-US'] ||
+                selectedAssistantDetail?.profile?.description ||
+                selectedAssistantRecord.description_i18n?.[localeKey] ||
+                selectedAssistantRecord.description_i18n?.['en-US'] ||
+                selectedAssistantRecord.description
+              }
+              showPrompts={false}
+              className='mb-16px px-4px'
+            />
+          ) : null}
 
           {selectedAssistantPrompts.length > 0 ? (
-            <div className='mt-18px w-full animate-fade-in pl-20px'>
+            <div className='mt-18px mb-16px w-full animate-fade-in pl-4px'>
               <div className={`${styles.assistantPromptHint} mb-10px text-left`}>
                 {t('guid.promptExamplesHint', { defaultValue: 'Try these example prompts:' })}
               </div>
@@ -717,6 +711,30 @@ const GuidPage: React.FC = () => {
               </div>
             </div>
           ) : null}
+
+          <GuidInputCard
+            focusRequestKey={navState?.focusPrefill && navState.prefillPrompt ? location.key : undefined}
+            input={guidInput.input}
+            onInputChange={handleInputChange}
+            onKeyDown={handleInputKeyDown}
+            onPaste={guidInput.onPaste}
+            onFocus={guidInput.handleTextareaFocus}
+            onBlur={guidInput.handleTextareaBlur}
+            placeholder={typewriterPlaceholder || t('conversation.welcome.placeholder')}
+            isInputActive={guidInput.isInputFocused}
+            isFileDragging={guidInput.isFileDragging}
+            activeBorderColor={activeBorderColor}
+            inactiveBorderColor={inactiveBorderColor}
+            activeShadow={activeShadow}
+            dragHandlers={guidInput.dragHandlers}
+            files={guidInput.files}
+            onRemoveFile={guidInput.handleRemoveFile}
+            actionRow={actionRowNode}
+            slashCommandMenu={slashCommandMenuNode}
+            workspaceDir={guidInput.dir}
+            onSelectWorkspace={(dir) => guidInput.setDir(dir)}
+            onClearWorkspace={() => guidInput.setDir('')}
+          />
         </div>
       </div>
     </ConfigProvider>

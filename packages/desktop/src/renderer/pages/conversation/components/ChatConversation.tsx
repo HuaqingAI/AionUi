@@ -169,7 +169,7 @@ const AionrsConversationPanel: React.FC<{ conversation: AionrsConversation; slid
   });
   const workspaceEnabled = Boolean(conversation.extra?.workspace);
   const cronJobId = resolveCronJobId(conversation.extra);
-  const { info: presetAssistantInfo } = usePresetAssistantInfo(conversation);
+  const { info: presetAssistantInfo, assistant: presetAssistant } = usePresetAssistantInfo(conversation);
   const aionrsAssistantId = presetAssistantInfo?.assistantId;
   const layout = useLayoutContext();
   // Mobile: model selection moved into the sendbox `+` action sheet to free up
@@ -234,6 +234,7 @@ const AionrsConversationPanel: React.FC<{ conversation: AionrsConversation; slid
         }
         agent_name={presetAssistantInfo?.name}
         assistantId={aionrsAssistantId}
+        assistant={presetAssistant}
       />
     </ChatLayout>
   );
@@ -257,7 +258,11 @@ const ChatConversation: React.FC<{
   // 使用统一的 Hook 获取预设助手信息（ACP/Codex 会话）
   // Use unified hook for preset assistant info (ACP/Codex conversations)
   const acpConversation = isAionrsConversation ? undefined : conversation;
-  const { info: presetAssistantInfo, isLoading: isLoadingPreset } = usePresetAssistantInfo(acpConversation);
+  const {
+    info: presetAssistantInfo,
+    assistant: presetAssistant,
+    isLoading: isLoadingPreset,
+  } = usePresetAssistantInfo(acpConversation);
   const acpAssistantId = presetAssistantInfo?.assistantId;
   const resolvedConversationBackend = resolveConversationBackend(conversation, presetAssistantInfo?.backend);
 
@@ -287,6 +292,7 @@ const ChatConversation: React.FC<{
               (conversation.extra as { mcp_statuses?: IConversationMcpStatus[] } | undefined)?.mcp_statuses
             }
             assistantId={acpAssistantId}
+            assistant={presetAssistant}
           ></AcpChat>
         );
       default:

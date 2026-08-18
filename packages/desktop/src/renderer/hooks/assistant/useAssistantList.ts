@@ -2,6 +2,7 @@ import { ipcBridge } from '@/common';
 import { resolveLocaleKey } from '@/common/utils';
 import type { Assistant } from '@/common/types/agent/assistantTypes';
 import { reorderAssistantList } from '@/renderer/pages/settings/AssistantSettings/assistantUtils';
+import { getClientBusinessSetting } from '@/renderer/services/clientBusinessSettings';
 import { selectableAssistants } from '@/renderer/utils/model/assistantSelection';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -22,11 +23,18 @@ export const useAssistantList = () => {
 
   const loadAssistants = useCallback(async () => {
     try {
-      const list = await ipcBridge.assistants.list.invoke();
-      setAssistants(list);
+      const [list, categoryOverrides] = await Promise.all([
+        ipcBridge.assistants.list.invoke(),
+        getClientBusinessSetting('hth.assistantCategories').catch((): undefined => undefined),
+      ]);
+      const mergedList = list.map((assistant) => {
+        const categories = categoryOverrides?.[assistant.id];
+        return categories ? { ...assistant, categories } : assistant;
+      });
+      setAssistants(mergedList);
       setActiveAssistantId((prev) => {
-        if (prev && list.some((a) => a.id === prev)) return prev;
-        return list[0]?.id ?? null;
+        if (prev && mergedList.some((a) => a.id === prev)) return prev;
+        return mergedList[0]?.id ?? null;
       });
     } catch (error) {
       console.error('Failed to load assistants:', error);

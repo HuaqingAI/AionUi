@@ -174,6 +174,15 @@
   "officialAssistantsHintShort": "Assistants officiels intégrés à AionUi, maintenus et mis à jour à chaque version ; dupliquer en tant que « Mon Assistant » pour personnaliser librement.",
   "reorderCoachTitle": "Faites glisser pour réorganiser",
   "reorderCoachBody": "Faites glisser vos assistants préférés vers le haut : cet ordre détermine la façon dont ils apparaissent partout où vous choisissez un assistant (maison, équipes, tâches planifiées).",
+  "assistantCategory": {
+    "general": "General Assistants",
+    "operations": "Operations Assistants",
+    "customer_service": "Customer Service Assistants",
+    "logistics": "Logistics Assistants",
+    "marketing": "Marketing Assistants",
+    "finance": "Finance Assistants",
+    "hr": "HR Assistants"
+  },
   "assistantFilter": {
     "all": "Tous",
     "enabled": "Activé",

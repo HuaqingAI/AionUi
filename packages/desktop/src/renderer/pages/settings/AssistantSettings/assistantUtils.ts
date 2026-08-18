@@ -1,5 +1,6 @@
 import { resolveExtensionAssetUrl } from '@/renderer/utils/platform';
 import { isBackendRelativeAssetPath, isLikelyLocalFilePath } from '@/renderer/utils/model/assistantAvatar';
+import { ASSISTANT_CATEGORY_CODES, type AssistantCategoryCode } from '@/common/types/agent/assistantCategories';
 import type { AssistantListItem, AvailableBackend } from './types';
 import type { ManagedAgent } from '@/renderer/utils/model/agentTypes';
 
@@ -149,6 +150,36 @@ export const groupMyAssistants = (assistants: AssistantListItem[]) => {
     cliAssistants: [] as AssistantListItem[],
     createdAssistants: assistants.filter((a) => a.source === 'user').toSorted(byAssistantSortOrder),
   };
+};
+
+export type AssistantCategoryGroup = {
+  code: AssistantCategoryCode;
+  assistants: AssistantListItem[];
+};
+
+/** Group user assistants by the fixed category order from the Agent Platform. */
+export const groupAssistantsByCategory = (assistants: AssistantListItem[]): AssistantCategoryGroup[] => {
+  const groups = new Map<AssistantCategoryCode, AssistantListItem[]>();
+  for (const code of ASSISTANT_CATEGORY_CODES) {
+    groups.set(code, []);
+  }
+
+  for (const assistant of assistants) {
+    const categories = assistant.categories?.filter((category): category is AssistantCategoryCode =>
+      ASSISTANT_CATEGORY_CODES.includes(category as AssistantCategoryCode)
+    );
+    const effectiveCategories: AssistantCategoryCode[] = categories && categories.length > 0 ? categories : ['general'];
+    for (const category of effectiveCategories) {
+      const group = groups.get(category);
+      if (group && !group.some((item) => item.id === assistant.id)) {
+        group.push(assistant);
+      }
+    }
+  }
+
+  return ASSISTANT_CATEGORY_CODES.map((code) => ({ code, assistants: groups.get(code) ?? [] })).filter(
+    (group) => group.assistants.length > 0
+  );
 };
 
 export const buildAssistantEditorBackends = (

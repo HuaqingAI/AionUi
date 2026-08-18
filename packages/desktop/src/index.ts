@@ -599,6 +599,7 @@ const createWindow = ({ showOnReady = true }: { showOnReady?: boolean } = {}): v
 
   // Create the browser window.
   mainWindow = new BrowserWindow({
+    title: '华青智能助手',
     width: windowWidth,
     height: windowHeight,
     ...(windowX !== undefined && windowY !== undefined ? { x: windowX, y: windowY } : {}),

@@ -32,6 +32,7 @@ export interface Assistant {
   name_i18n: Record<string, string>;
   description?: string;
   description_i18n: Record<string, string>;
+  categories?: string[];
   avatar?: string;
   enabled: boolean;
   sort_order: number;
@@ -132,6 +133,7 @@ export interface AssistantDetail {
   team_block_reason?: string;
   deletable: boolean;
   profile: AssistantProfile;
+  categories?: string[];
   state: AssistantState;
   engine: AssistantEngine;
   rules: AssistantRules;
@@ -145,6 +147,7 @@ export interface CreateAssistantRequest {
   id?: string;
   name: string;
   description?: string;
+  categories?: string[];
   avatar?: string;
   agent_id?: string;
   enabled_skills?: string[];

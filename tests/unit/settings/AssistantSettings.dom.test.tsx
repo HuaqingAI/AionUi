@@ -376,8 +376,22 @@ describe('AssistantSettings', () => {
   it('hides official tab and filters home lists to custom assistants', () => {
     const assistants = [
       { id: 'cli', name: 'Codex CLI', sort_order: 1, source: 'generated', enabled: true },
-      { id: 'custom-enabled', name: 'My Writer', sort_order: 2, source: 'user', enabled: true },
-      { id: 'custom-disabled', name: 'Draft Bot', sort_order: 3, source: 'user', enabled: false },
+      {
+        id: 'custom-enabled',
+        name: 'My Writer',
+        sort_order: 2,
+        source: 'user',
+        enabled: true,
+        categories: ['operations'],
+      },
+      {
+        id: 'custom-disabled',
+        name: 'Draft Bot',
+        sort_order: 3,
+        source: 'user',
+        enabled: false,
+        categories: ['customer_service'],
+      },
       { id: 'official', name: 'Aion Butler', sort_order: 4, source: 'builtin', enabled: true },
     ] as AssistantListItem[];
 
@@ -414,6 +428,8 @@ describe('AssistantSettings', () => {
     expect(screen.queryByText('Codex CLI')).not.toBeInTheDocument();
     expect(screen.queryByText('Aion Butler')).not.toBeInTheDocument();
     expect(screen.queryByText(/local CLIs|Your own assistants/)).not.toBeInTheDocument();
+    expect(screen.getByTestId('assistant-category-operations')).toBeInTheDocument();
+    expect(screen.getByTestId('assistant-category-customer_service')).toBeInTheDocument();
   });
 
   it('disables enabled-assistant dragging while search is active', () => {

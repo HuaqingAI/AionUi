@@ -53,8 +53,8 @@ foreach ($version in $buildVersions) {
       throw "build $version failed with exit code $LASTEXITCODE"
     }
 
-    $source = Join-Path $repoRoot "out\HTHBuddy-$version-win-x64.exe"
-    $target = Join-Path $OutputDir "HTHBuddy-$version-win-x64.exe"
+    $source = Join-Path $repoRoot "out\华青智能助手-$version-win-x64.exe"
+    $target = Join-Path $OutputDir "华青智能助手-$version-win-x64.exe"
     if (-not (Test-Path -LiteralPath $source)) {
       throw "Expected artifact was not produced: $source"
     }

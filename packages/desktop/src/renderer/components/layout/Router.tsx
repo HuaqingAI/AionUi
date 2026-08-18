@@ -16,7 +16,6 @@ const ToolsSettings = React.lazy(() => import('@renderer/pages/settings/ToolsSet
 const AppearanceSettings = React.lazy(() => import('@renderer/pages/settings/AppearanceSettings'));
 const ModeSettings = React.lazy(() => import('@renderer/pages/settings/ModeSettings'));
 const SystemSettings = React.lazy(() => import('@renderer/pages/settings/SystemSettings'));
-const WebuiSettings = React.lazy(() => import('@renderer/pages/settings/WebuiSettings'));
 const ExtensionSettingsPage = React.lazy(() => import('@renderer/pages/settings/ExtensionSettingsPage'));
 const LoginPage = React.lazy(() => import('@renderer/pages/login'));
 const HTHLoginPage = React.lazy(() => import('@renderer/pages/HTHLogin'));
@@ -139,7 +138,7 @@ const PanelRoute: React.FC<{ layout: React.ReactElement }> = ({ layout }) => {
           <Route path='/settings/skills-hub' element={<Navigate to='/settings/skills' replace />} />
           <Route path='/settings/appearance' element={withRouteFallback(AppearanceSettings)} />
           <Route path='/settings/display' element={<Navigate to='/settings/appearance' replace />} />
-          <Route path='/settings/webui' element={withRouteFallback(WebuiSettings)} />
+          <Route path='/settings/webui' element={<Navigate to='/settings/system' replace />} />
           <Route path='/settings/pet' element={<Navigate to='/settings/system' replace />} />
           <Route path='/settings/system' element={withRouteFallback(SystemSettings)} />
           <Route path='/settings/about' element={withRouteFallback(SystemSettings)} />

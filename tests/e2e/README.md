@@ -285,7 +285,7 @@ bunx electron-vite build
 
 ```bash
 # Clean via database
-sqlite3 "~/Library/Application Support/HTHBuddy-Dev/aionui/aionui.db" \
+sqlite3 "~/Library/Application Support/华青智能助手-Dev/aionui/aionui.db" \
   "DELETE FROM teams WHERE name LIKE 'E2E%';"
 ```
 

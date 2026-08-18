@@ -118,9 +118,9 @@ function patchElectronBuilderNsisInstaller() {
     '  !insertmacro copyFile "$uninstallerFileName" "$uninstallerFileNameTemp"',
   ].join('\n');
   const bundledUninstallerOverride = [
-    '  ${if} ${FileExists} "$PLUGINSDIR\\HTHBuddy-fixed-uninstaller.exe"',
-    '    DetailPrint `HTHBuddy-bundled-uninstaller override source.`',
-    '    StrCpy $uninstallerFileName "$PLUGINSDIR\\HTHBuddy-fixed-uninstaller.exe"',
+    '  ${if} ${FileExists} "$PLUGINSDIR\\华青智能助手-fixed-uninstaller.exe"',
+    '    DetailPrint `华青智能助手-bundled-uninstaller override source.`',
+    '    StrCpy $uninstallerFileName "$PLUGINSDIR\\华青智能助手-fixed-uninstaller.exe"',
     '  ${endIf}',
   ].join('\n');
   const legacyBundledUninstallerOverride = [
@@ -854,14 +854,14 @@ try {
     const winUnpackedDir = path.join(outDir, 'win-unpacked');
     let cleaned = tryRemoveDir(winUnpackedDir);
     if (!cleaned) {
-      const aionRunning = isProcessRunningWindows('HTHBuddy.exe');
+      const aionRunning = isProcessRunningWindows('华青智能助手.exe');
       const electronRunning = isProcessRunningWindows('electron.exe');
       if (aionRunning || electronRunning) {
-        console.log('⚠️  Detected running HTHBuddy/Electron process. Attempting to close...');
-        killWindowsProcesses(['HTHBuddy.exe', 'electron.exe']);
+        console.log('⚠️  Detected running 华青智能助手/Electron process. Attempting to close...');
+        killWindowsProcesses(['华青智能助手.exe', 'electron.exe']);
         cleaned = tryRemoveDir(winUnpackedDir);
         if (!cleaned) {
-          console.log('⚠️  Directory still locked. Please close any running HTHBuddy/Electron processes and retry.');
+          console.log('⚠️  Directory still locked. Please close any running 华青智能助手/Electron processes and retry.');
         }
       }
     }
@@ -877,7 +877,7 @@ try {
   try {
     buildWithDmgRetry(builderCommand, targetArch);
   } catch (error) {
-    const winExePath = path.join(outDir, 'win-unpacked', 'HTHBuddy.exe');
+    const winExePath = path.join(outDir, 'win-unpacked', '华青智能助手.exe');
     const firstError = formatExecError(error);
     const canRetryWithoutExecutableEdit =
       process.platform === 'win32' && isWindowsBuild && process.env.CI !== 'true' && fs.existsSync(winExePath);
@@ -886,7 +886,7 @@ try {
       throw error;
     }
 
-    console.log('⚠️  Windows local build failed after HTHBuddy.exe was produced.');
+    console.log('⚠️  Windows local build failed after 华青智能助手.exe was produced.');
     if (firstError) {
       console.log('   First failure summary:');
       console.log(
@@ -899,7 +899,7 @@ try {
     }
     console.log('   Retrying local build with win.signAndEditExecutable=false...');
     console.log('   This fallback is intended for transient rcedit / file-lock failures on developer machines.');
-    killWindowsProcesses(['HTHBuddy.exe', 'electron.exe']);
+    killWindowsProcesses(['华青智能助手.exe', 'electron.exe']);
     cleanupWindowsPackOutput();
 
     try {

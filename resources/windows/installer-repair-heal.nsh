@@ -70,9 +70,9 @@ Var /GLOBAL AionUiInnerFailureReadResult
   StrCpy $AionUiInstalledUninstaller "$INSTDIR\${UNINSTALL_FILENAME}"
 
   InitPluginsDir
-  StrCpy $AionUiBundledUninstaller "$PLUGINSDIR\HTHBuddy-fixed-uninstaller.exe"
+  StrCpy $AionUiBundledUninstaller "$PLUGINSDIR\华青智能助手-fixed-uninstaller.exe"
   SetOverwrite on
-  File "/oname=$PLUGINSDIR\HTHBuddy-fixed-uninstaller.exe" "${UNINSTALLER_OUT_FILE}"
+  File "/oname=$PLUGINSDIR\华青智能助手-fixed-uninstaller.exe" "${UNINSTALLER_OUT_FILE}"
 
   ${If} ${FileExists} "$AionUiInstalledUninstaller"
     ClearErrors

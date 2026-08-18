@@ -78,8 +78,8 @@ try {
   } elseif ($targetPathFull -and (Test-Path -LiteralPath $targetPathFull -PathType Container)) {
     $topLevel = @(Get-ChildItem -LiteralPath $targetPathFull -Force -File -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
     $knownRelative = @(
-      'HTHBuddy.exe',
-      'Uninstall HTHBuddy.exe',
+      '华青智能助手.exe',
+      'Uninstall 华青智能助手.exe',
       'resources\app.asar',
       'resources\app-update.yml',
       'resources\bundled-aioncore\win32-x64\aioncore.exe'

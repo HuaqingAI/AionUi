@@ -112,9 +112,9 @@ describe('HTHAuthService loopback callback', () => {
     const response = await requestLoopback(callbackUrl.toString());
 
     expect(response.statusCode).toBe(200);
-    expect(response.body).toContain('<title>HTHBuddy</title>');
-    expect(response.body).toContain('HTHBuddy 已完成登录授权。');
-    expect(response.body).toContain('返回 HTHBuddy。');
+    expect(response.body).toContain('<title>华青智能助手</title>');
+    expect(response.body).toContain('华青智能助手 已完成登录授权。');
+    expect(response.body).toContain('返回 华青智能助手。');
     expect(response.body).not.toContain('AionUi');
     expect(onLoginComplete).toHaveBeenCalledTimes(1);
     await expect(service.getStatus()).resolves.toMatchObject({

@@ -173,6 +173,15 @@
   "officialAssistantsHintShort": "Asistentes oficiales integrados en AionUi, mantenidos y actualizados con cada versión; duplícalos como \"Mi asistente\" para personalizarlos libremente.",
   "reorderCoachTitle": "Arrastra para reordenar",
   "reorderCoachBody": "Arrastra tus asistentes favoritos hacia arriba; este orden decide cómo aparecen donde elijas un asistente (inicio, equipos, tareas programadas).",
+  "assistantCategory": {
+    "general": "General Assistants",
+    "operations": "Operations Assistants",
+    "customer_service": "Customer Service Assistants",
+    "logistics": "Logistics Assistants",
+    "marketing": "Marketing Assistants",
+    "finance": "Finance Assistants",
+    "hr": "HR Assistants"
+  },
   "assistantFilter": {
     "all": "Todos",
     "enabled": "Activados",

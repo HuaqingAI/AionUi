@@ -5,7 +5,7 @@
  *
  * Two modes:
  *   1. **Packaged mode** (CI default): Launches from electron-builder's unpacked output
- *      (e.g. out/linux-unpacked/aionui, out/mac-arm64/HTHBuddy.app, out/win-unpacked/HTHBuddy.exe).
+ *      (e.g. out/linux-unpacked/aionui, out/mac-arm64/华青智能助手.app, out/win-unpacked/华青智能助手.exe).
  *      This validates that packaged resources are intact.
  *   2. **Dev mode** (local default): Launches via `electron .` from project root with
  *      the Vite dev server (electron-vite dev).
@@ -154,19 +154,19 @@ function resolvePackagedApp(): { executablePath: string; cwd: string } | null {
   const platform = process.platform;
 
   if (platform === 'win32') {
-    // out/win-unpacked/HTHBuddy.exe  or  out/win-x64-unpacked/HTHBuddy.exe
+    // out/win-unpacked/华青智能助手.exe  or  out/win-x64-unpacked/华青智能助手.exe
     for (const dir of ['win-unpacked', 'win-x64-unpacked', 'win-arm64-unpacked']) {
-      const exe = path.join(outDir, dir, 'HTHBuddy.exe');
+      const exe = path.join(outDir, dir, '华青智能助手.exe');
       if (fs.existsSync(exe)) return { executablePath: exe, cwd: path.join(outDir, dir) };
     }
   } else if (platform === 'darwin') {
-    // out/mac-arm64/HTHBuddy.app/Contents/MacOS/HTHBuddy  or  out/mac/HTHBuddy.app/...
+    // out/mac-arm64/华青智能助手.app/Contents/MacOS/华青智能助手  or  out/mac/华青智能助手.app/...
     for (const dir of ['mac-arm64', 'mac-x64', 'mac', 'mac-universal']) {
       const macDir = path.join(outDir, dir);
       if (!fs.existsSync(macDir)) continue;
       const appBundle = fs.readdirSync(macDir).find((f) => f.endsWith('.app'));
       if (appBundle) {
-        const exe = path.join(macDir, appBundle, 'Contents', 'MacOS', 'HTHBuddy');
+        const exe = path.join(macDir, appBundle, 'Contents', 'MacOS', '华青智能助手');
         if (fs.existsSync(exe)) return { executablePath: exe, cwd: macDir };
       }
     }

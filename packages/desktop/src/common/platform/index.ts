@@ -10,7 +10,7 @@ let _services: IPlatformServices | null = null;
  */
 export function getDevAppName(): string {
   const isMultiInstance = process.env.AIONUI_MULTI_INSTANCE === '1';
-  return isMultiInstance ? 'HTHBuddy-Dev-2' : 'HTHBuddy-Dev';
+  return isMultiInstance ? '华青智能助手-Dev-2' : '华青智能助手-Dev';
 }
 
 export function registerPlatformServices(services: IPlatformServices): void {

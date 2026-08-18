@@ -6,7 +6,7 @@
 
 import { ipcBridge } from '@/common';
 import { TEAM_MODE_ENABLED } from '@/common/config/constants';
-import HTHBuddyLogo from '@/renderer/components/layout/HTHBuddyLogo';
+import AppLogo from '@/renderer/components/layout/AppLogo';
 import PwaPullToRefresh from '@/renderer/components/layout/PwaPullToRefresh';
 import Titlebar from '@/renderer/components/layout/Titlebar';
 import { Layout as ArcoLayout, Tooltip } from '@arco-design/web-react';
@@ -375,12 +375,12 @@ const Layout: React.FC<{
                 )}
               >
                 <div
-                  className={classNames('bg-black shrink-0 size-32px relative rd-0.5rem', {
+                  className={classNames('layout-sider-brand-icon shrink-0 size-32px relative rd-0.5rem', {
                     '!size-24px': collapsed,
                   })}
                   onClick={onClick}
                 >
-                  <HTHBuddyLogo className='absolute inset-0 size-full' />
+                  <AppLogo className='absolute inset-0 size-full object-contain' />
                 </div>
                 {isSettingsRoute ? (
                   <Tooltip content={t('common.back', { defaultValue: 'Back to Chat' })} position='bottom'>
@@ -397,11 +397,11 @@ const Layout: React.FC<{
                         }
                       }}
                     >
-                      HTHBuddy
+                      {t('login.brand')}
                     </div>
                   </Tooltip>
                 ) : (
-                  <div className='text-16px text-t-primary collapsed-hidden font-semibold'>HTHBuddy</div>
+                  <div className='text-16px text-t-primary collapsed-hidden font-semibold'>{t('login.brand')}</div>
                 )}
                 {isMobile && !collapsed && (
                   <button

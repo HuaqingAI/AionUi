@@ -5,7 +5,12 @@
  */
 
 import type { AssistantListItem } from '../types';
-import { type AssistantEnabledFilter, filterByEnabled, groupMyAssistants } from '../assistantUtils';
+import {
+  type AssistantEnabledFilter,
+  filterByEnabled,
+  groupAssistantsByCategory,
+  groupMyAssistants,
+} from '../assistantUtils';
 import MyAssistantCard from './MyAssistantCard';
 import { useTalkToButler } from '@/renderer/hooks/assistant/useTalkToButler';
 import { Dropdown, Menu, Button } from '@arco-design/web-react';
@@ -62,6 +67,7 @@ const MyAssistantsList: React.FC<MyAssistantsListProps> = ({
     const filtered = filterByEnabled(assistants, filter);
     return groupMyAssistants(filtered);
   }, [assistants, filter]);
+  const categoryGroups = useMemo(() => groupAssistantsByCategory(createdAssistants), [createdAssistants]);
 
   const filterMenu = (
     <Menu onClickMenuItem={(key) => setFilter(key as AssistantEnabledFilter)}>
@@ -144,17 +150,20 @@ const MyAssistantsList: React.FC<MyAssistantsListProps> = ({
         </div>
       ) : null}
 
-      {/* Created-by-you group on top. */}
-      {createdAssistants.length > 0 || createdEmpty ? (
-        <div data-testid='group-created-section'>
-          {renderGroupHeader(
-            t('settings.assistantGroupCreated', { defaultValue: 'Created by you' }),
-            createdAssistants.length,
-            'bg-primary-5'
-          )}
-          {createdEmpty ? renderCreatedEmpty() : renderCardGrid(createdAssistants)}
-        </div>
-      ) : null}
+      {createdEmpty ? (
+        <div data-testid='group-created-section'>{renderCreatedEmpty()}</div>
+      ) : (
+        categoryGroups.map((group) => (
+          <section key={group.code} data-testid={`assistant-category-${group.code}`} className='mb-22px last:mb-0'>
+            {renderGroupHeader(
+              t(`settings.assistantCategory.${group.code}`, { defaultValue: group.code }),
+              group.assistants.length,
+              'bg-primary-5'
+            )}
+            {renderCardGrid(group.assistants)}
+          </section>
+        ))
+      )}
     </div>
   );
 };

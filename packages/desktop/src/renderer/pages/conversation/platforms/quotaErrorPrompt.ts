@@ -4,9 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { ipcBridge } from '@/common';
 import type { HTHQuotaSummary } from '@/common/types/hth';
-import { openExternalUrl } from '@/renderer/utils/platform';
 import { Modal } from '@arco-design/web-react';
 import type { TFunction } from 'i18next';
 
@@ -20,18 +18,10 @@ export async function showQuotaInsufficientPrompt(t: TFunction): Promise<void> {
   }
   lastQuotaPromptAt = now;
 
-  const quotaApplyUrl = await resolveQuotaApplyUrl();
   Modal.info({
     title: t('conversation.chat.quotaApplyTitle'),
-    content: quotaApplyUrl ? t('conversation.chat.quotaApplyBody') : t('conversation.chat.quotaApplyNoLink'),
-    okText: quotaApplyUrl ? t('conversation.chat.quotaApplyOk') : t('common.close'),
-    onOk: quotaApplyUrl
-      ? (): void => {
-          void openExternalUrl(quotaApplyUrl).catch((openError): void => {
-            console.error('[QuotaPrompt] Failed to open quota apply URL:', openError);
-          });
-        }
-      : undefined,
+    content: t('conversation.chat.quotaApplyNoLink'),
+    okText: t('common.close'),
   });
 }
 
@@ -72,19 +62,4 @@ function getTotalAvailableDisplay(summary: HTHQuotaSummary): string | null {
   }
 
   return null;
-}
-
-async function resolveQuotaApplyUrl(): Promise<string | undefined> {
-  const summaryUrl = await ipcBridge.hth.quotaSummary
-    .invoke()
-    .then((summary): string | undefined => summary?.quota_apply_url?.trim())
-    .catch((): undefined => undefined);
-  if (summaryUrl) {
-    return summaryUrl;
-  }
-
-  return ipcBridge.hth.authStatus
-    .invoke()
-    .then((status): string | undefined => status.quotaApplyUrl?.trim() || undefined)
-    .catch((): undefined => undefined);
 }

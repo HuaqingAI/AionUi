@@ -82,6 +82,7 @@ const MANAGED_AGENT_MATCH: Record<HTHCliType, string> = {
 const HTH_PERSONAL_API_KEY_PLACEHOLDER = '<hth-personal-apikey>';
 const HTH_PERSONAL_API_KEY_PLACEHOLDER_JSON_ESCAPED = '\\u003chth-personal-apikey\\u003e';
 const HTH_LOGIN_REQUIRED_MESSAGE = 'hth login required';
+const HTH_ASSISTANT_CATEGORIES_SETTING = 'hth.assistantCategories';
 const MAX_AGENT_PACKAGE_BYTES = 50 * 1024 * 1024;
 const MAX_ASSISTANT_AVATAR_BYTES = 2 * 1024 * 1024;
 const ASSISTANT_AVATAR_DIR_NAME = 'hth-assistant-avatars';
@@ -189,6 +190,9 @@ export class HTHConfigSyncService {
       assistants.length > 0
         ? await this.updateAssistants(assistants, existingAssistants, unchangedRemoteAvatarIds)
         : this.emptyAssistantWriteResult();
+    if (assistants.some((assistant) => (assistant.categories?.length ?? 0) > 0)) {
+      await this.persistAssistantCategories(assistants);
+    }
     const deleteResult = await this.deleteRevokedAssistants(currentAssistantIds);
     return {
       success:
@@ -545,12 +549,13 @@ export class HTHConfigSyncService {
       id: assistantId,
       name: agent.name,
       description: agent.description,
+      categories: agent.categories ?? [],
       avatar,
       agent_id: agentId,
       enabled_skills: [],
       custom_skill_names: [],
       disabled_builtin_skills: [],
-      prompts: [],
+      recommended_prompts: agent.recommended_prompts ?? [],
       models: [],
     };
   }
@@ -650,7 +655,11 @@ export class HTHConfigSyncService {
       .map((assistant) => this.mapAssistantUpdate(assistant))
       .filter((assistant) => {
         const existing = existingAssistants.get(assistant.id);
-        return existing && this.hasAssistantUpdate(existing, assistant, unchangedRemoteAvatarIds.has(assistant.id));
+        return (
+          (!existing &&
+            ((assistant.categories?.length ?? 0) > 0 || (assistant.recommended_prompts?.length ?? 0) > 0)) ||
+          (existing && this.hasAssistantUpdate(existing, assistant, unchangedRemoteAvatarIds.has(assistant.id)))
+        );
       });
 
     const results = await Promise.allSettled(
@@ -673,6 +682,21 @@ export class HTHConfigSyncService {
     };
   }
 
+  private async persistAssistantCategories(assistants: CreateAssistantRequest[]): Promise<void> {
+    const port = this.requireBackendPort();
+    const categories = Object.fromEntries(
+      assistants.map((assistant) => [assistant.id || '', assistant.categories ?? []]).filter(([id]) => Boolean(id))
+    );
+    const response = await fetch(`http://127.0.0.1:${port}/api/settings/client`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [HTH_ASSISTANT_CATEGORIES_SETTING]: categories }),
+    });
+    if (!response.ok) {
+      throw new Error(await this.extractBackendError(response, `Assistant categories save failed: ${response.status}`));
+    }
+  }
+
   private async updateAssistant(port: number, assistant: UpdateAssistantRequest): Promise<void> {
     const response = await fetch(`http://127.0.0.1:${port}/api/assistants/${encodeURIComponent(assistant.id)}`, {
       method: 'PUT',
@@ -689,8 +713,10 @@ export class HTHConfigSyncService {
       id: assistant.id || '',
       name: assistant.name,
       description: assistant.description,
+      categories: assistant.categories,
       avatar: assistant.avatar,
       agent_id: assistant.agent_id,
+      recommended_prompts: assistant.recommended_prompts,
     };
   }
 
@@ -702,8 +728,18 @@ export class HTHConfigSyncService {
     return (
       existing.name !== assistant.name ||
       (existing.description ?? '') !== (assistant.description ?? '') ||
+      !this.sameStringArray(existing.categories, assistant.categories) ||
+      !this.sameStringArray(existing.prompts, assistant.recommended_prompts) ||
       !this.sameAssistantAvatar(existing, assistant, remoteAvatarUnchanged) ||
       (assistant.agent_id !== undefined && existing.agent_id !== assistant.agent_id)
+    );
+  }
+
+  private sameStringArray(existing: string[] | undefined, next: string[] | undefined): boolean {
+    const existingValues = existing ?? [];
+    const nextValues = next ?? [];
+    return (
+      existingValues.length === nextValues.length && existingValues.every((value, index) => value === nextValues[index])
     );
   }
 

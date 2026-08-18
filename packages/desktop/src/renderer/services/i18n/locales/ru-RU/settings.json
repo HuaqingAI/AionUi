@@ -174,6 +174,15 @@
   "customEmptyBrowseOfficial": "Смотреть официальные",
   "reorderCoachTitle": "Перетащите для сортировки",
   "reorderCoachBody": "Перетащите любимых ассистентов наверх — этот порядок определяет, как они отображаются везде, где вы выбираете ассистента (главная, команды, запланированные задачи).",
+  "assistantCategory": {
+    "general": "General Assistants",
+    "operations": "Operations Assistants",
+    "customer_service": "Customer Service Assistants",
+    "logistics": "Logistics Assistants",
+    "marketing": "Marketing Assistants",
+    "finance": "Finance Assistants",
+    "hr": "HR Assistants"
+  },
   "assistantFilter": {
     "all": "Все",
     "enabled": "Включено",

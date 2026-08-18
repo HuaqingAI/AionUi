@@ -273,6 +273,14 @@ const AionrsSendBox: React.FC<{
     []
   );
 
+  useAddEventListener(
+    'sendbox.replace',
+    (text: string) => {
+      setContentRef.current(text);
+    },
+    []
+  );
+
   // Shared file handling logic
   const { handleFilesAdded, clearFiles } = useSendBoxFiles({
     atPath,

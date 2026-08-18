@@ -253,6 +253,14 @@ const AcpSendBox: React.FC<{
     []
   );
 
+  useAddEventListener(
+    'sendbox.replace',
+    (text: string) => {
+      setContentRef.current(text);
+    },
+    []
+  );
+
   // Check for and send initial message from guid page
   useAcpInitialMessage({
     conversation_id: conversation_id,

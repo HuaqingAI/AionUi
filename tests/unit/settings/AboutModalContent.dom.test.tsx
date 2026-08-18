@@ -19,7 +19,9 @@ const mocks = vi.hoisted(() => ({
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, params?: Record<string, string>) =>
-      key === 'update.preparingInstall'
+      key === 'login.brand'
+        ? '华青智能助手'
+        : key === 'update.preparingInstall'
         ? '准备安装...'
         : key === 'settings.updateReadyInstall'
           ? `${params?.version} 已就绪, 立即安装`
@@ -105,10 +107,10 @@ describe('AboutModalContent update ready state', () => {
     expect(mocks.quitAndInstallMock).toHaveBeenCalledTimes(1);
   });
 
-  it('renders the HTHBuddy about page without prerelease or resource links', () => {
+  it('renders the 华青智能助手 about page without prerelease or resource links', () => {
     render(<AboutModalContent />);
 
-    expect(screen.getByText('HTHBuddy')).toBeInTheDocument();
+    expect(screen.getByText('华青智能助手')).toBeInTheDocument();
     expect(screen.queryByText('AionUi')).not.toBeInTheDocument();
     expect(screen.queryByText('settings.includePrereleaseUpdates')).not.toBeInTheDocument();
     expect(screen.queryByText('settings.helpDocumentation')).not.toBeInTheDocument();

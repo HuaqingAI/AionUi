@@ -95,8 +95,8 @@ SilentInstall silent
 !define VERSION "self-lock-smoke"
 !define AIONUI_TARGET_ARCH "x64"
 !define AIONUI_FALLBACK_LOG "aionui-installer-self-lock-fallback.log"
-!define AIONUI_APP_EXECUTABLE_FILENAME "HTHBuddy.exe"
-!define UNINSTALL_FILENAME "Uninstall HTHBuddy.exe"
+!define AIONUI_APP_EXECUTABLE_FILENAME "华青智能助手.exe"
+!define UNINSTALL_FILENAME "Uninstall 华青智能助手.exe"
 !define PROJECT_DIR "${nsisQuote(repoRoot)}"
 !include LogicLib.nsh
 !include "${nsisQuote(processControlPath)}"

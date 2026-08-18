@@ -7,7 +7,10 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAcpMessage } from '@/renderer/pages/conversation/platforms/acp/useAcpMessage';
-import { isQuotaSummaryInsufficient } from '@/renderer/pages/conversation/platforms/quotaErrorPrompt';
+import {
+  isQuotaSummaryInsufficient,
+  showQuotaInsufficientPrompt,
+} from '@/renderer/pages/conversation/platforms/quotaErrorPrompt';
 import { getConversationOrNull } from '@/renderer/pages/conversation/utils/conversationCache';
 import { resetEnsureConversationRuntimeStateForTests } from '@/renderer/pages/conversation/utils/ensureConversationRuntime';
 import type { IResponseMessage } from '@/common/adapter/ipcBridge';
@@ -475,6 +478,17 @@ describe('useAcpMessage', () => {
       )
     ).toBe(false);
     expect(isQuotaSummaryInsufficient(makeQuotaSummary({ walletAvailable: 0, subscriptionAvailable: 0 }))).toBe(false);
+  });
+
+  it('shows insufficient quota guidance without an application link', async () => {
+    await showQuotaInsufficientPrompt((key: string) => key);
+
+    expect(modalInfoMock).toHaveBeenCalledWith({
+      title: 'conversation.chat.quotaApplyTitle',
+      content: 'conversation.chat.quotaApplyNoLink',
+      okText: 'common.close',
+    });
+    expect(quotaSummaryInvokeMock).not.toHaveBeenCalled();
   });
 
   it('does not refresh quota on stream error because turn completion owns quota checks', async () => {

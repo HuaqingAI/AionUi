@@ -1,6 +1,6 @@
 {
-  "pageTitle": "HTHBuddy - 로그인",
-  "brand": "HTHBuddy",
+  "pageTitle": "华青智能助手 - 로그인",
+  "brand": "华青智能助手",
   "subtitle": "다시 오신 것을 환영합니다. 계정에 로그인하세요",
   "username": "사용자 이름",
   "usernamePlaceholder": "사용자 이름을 입력하세요",
@@ -25,7 +25,7 @@
   },
   "hth": {
     "title": "User Login",
-    "description": "HTHBuddy requires your HTH account before assistants can be used.",
+    "description": "华青智能助手 requires your HTH account before assistants can be used.",
     "baseUrl": "HTH URL",
     "baseUrlPlaceholder": "http://127.0.0.1:3001",
     "loginWithDingTalk": "Sign in with DingTalk",

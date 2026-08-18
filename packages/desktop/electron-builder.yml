@@ -1,10 +1,10 @@
 appId: com.aionui.app
-productName: HTHBuddy
-executableName: HTHBuddy
-copyright: Copyright © 2024 HTHBuddy
+productName: 华青智能助手
+executableName: 华青智能助手
+copyright: Copyright © 2024 华青智能助手
 
 protocols:
-  - name: HTHBuddy Protocol
+  - name: 华青智能助手 Protocol
     schemes:
       - aionui
 
@@ -175,9 +175,9 @@ linux:
   description: ${description}
   desktop:
     entry:
-      Name: HTHBuddy
+      Name: 华青智能助手
       Comment: ${description}
-      Icon: HTHBuddy
+      Icon: 华青智能助手
       Categories: Office;Utility;
       MimeType: x-scheme-handler/aionui;
 

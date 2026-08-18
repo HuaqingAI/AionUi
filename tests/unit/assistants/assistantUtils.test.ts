@@ -15,6 +15,7 @@ import {
   sortAssistants,
   filterAssistants,
   groupAssistantsByEnabled,
+  groupAssistantsByCategory,
 } from '@/renderer/pages/settings/AssistantSettings/assistantUtils';
 import type { AssistantListItem } from '@/renderer/pages/settings/AssistantSettings/types';
 
@@ -213,6 +214,39 @@ describe('assistantUtils', () => {
       const { enabledAssistants, disabledAssistants } = groupAssistantsByEnabled(list);
       expect(enabledAssistants).toHaveLength(1);
       expect(disabledAssistants).toHaveLength(0);
+    });
+  });
+
+  describe('groupAssistantsByCategory', () => {
+    it('keeps the fixed category order and repeats multi-category assistants', () => {
+      const list: AssistantListItem[] = [
+        { id: 'finance', name: 'Finance', sort_order: 2, source: 'user', categories: ['finance'] },
+        {
+          id: 'multi',
+          name: 'Multi',
+          sort_order: 1,
+          source: 'user',
+          categories: ['customer_service', 'operations'],
+        },
+      ];
+
+      const groups = groupAssistantsByCategory(list);
+
+      expect(groups.map((group) => group.code)).toEqual(['operations', 'customer_service', 'finance']);
+      expect(groups.find((group) => group.code === 'operations')?.assistants.map((assistant) => assistant.id)).toEqual([
+        'multi',
+      ]);
+      expect(
+        groups.find((group) => group.code === 'customer_service')?.assistants.map((assistant) => assistant.id)
+      ).toEqual(['multi']);
+    });
+
+    it('falls back to the general category for legacy assistants', () => {
+      const groups = groupAssistantsByCategory([{ id: 'legacy', name: 'Legacy', sort_order: 1, source: 'user' }]);
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].code).toBe('general');
+      expect(groups[0].assistants[0].id).toBe('legacy');
     });
   });
 });

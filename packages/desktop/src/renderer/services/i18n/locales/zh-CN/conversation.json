@@ -465,8 +465,8 @@
       "genericError": "语音输入失败，请重试"
     },
     "quotaApplyTitle": "模型额度不足",
-    "quotaApplyBody": "当前模型额度不足，请先申请额度后继续使用。",
-    "quotaApplyNoLink": "当前模型额度不足，请联系管理员申请额度。",
+    "quotaApplyBody": "当前模型额度不足，请联系部门负责人申请额度。",
+    "quotaApplyNoLink": "当前模型额度不足，请联系部门负责人申请额度。",
     "quotaApplyOk": "申请额度"
   },
   "sideQuestion": {

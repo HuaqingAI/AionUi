@@ -174,6 +174,15 @@
   "customEmptyBrowseOfficial": "逛逛官方助手",
   "reorderCoachTitle": "拖曳調整順序",
   "reorderCoachBody": "把你常用的助理拖到前面——這個順序決定你挑選助理時（首頁、開團、定時任務等）清單裡的顯示先後。",
+  "assistantCategory": {
+    "general": "通用助手",
+    "operations": "營運助手",
+    "customer_service": "客服助手",
+    "logistics": "物流助手",
+    "marketing": "市場助手",
+    "finance": "財務助手",
+    "hr": "人事助手"
+  },
   "assistantFilter": {
     "all": "全部",
     "enabled": "已啟用",

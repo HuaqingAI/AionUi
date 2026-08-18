@@ -1,6 +1,6 @@
 {
-  "pageTitle": "HTHBuddy — Вхід",
-  "brand": "HTHBuddy",
+  "pageTitle": "华青智能助手 — Вхід",
+  "brand": "华青智能助手",
   "subtitle": "З поверненням, будь ласка, увійдіть у свій обліковий запис",
   "username": "Ім'я користувача",
   "usernamePlaceholder": "Введіть ім'я користувача",
@@ -25,7 +25,7 @@
   },
   "hth": {
     "title": "User Login",
-    "description": "HTHBuddy requires your HTH account before assistants can be used.",
+    "description": "华青智能助手 requires your HTH account before assistants can be used.",
     "baseUrl": "HTH URL",
     "baseUrlPlaceholder": "http://127.0.0.1:3001",
     "loginWithDingTalk": "Sign in with DingTalk",

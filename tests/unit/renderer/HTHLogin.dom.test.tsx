@@ -13,8 +13,8 @@ const platform = vi.hoisted(() => ({ isDesktop: true, isMac: false }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => {
-      if (key === 'login.brand') return 'HTHBuddy';
-      if (key === 'login.hth.description') return 'HTHBuddy requires your HTH account before assistants can be used.';
+      if (key === 'login.brand') return '华青智能助手';
+      if (key === 'login.hth.description') return '华青智能助手 requires your HTH account before assistants can be used.';
       return key;
     },
   }),
@@ -52,14 +52,14 @@ describe('HTHLogin', () => {
     platform.isMac = false;
   });
 
-  it('renders the titlebar with the HTHBuddy wordmark and shared HTH logo', async () => {
+  it('renders the titlebar with the 华青智能助手 wordmark and shared HTH logo', async () => {
     render(<HTHLogin />);
 
     const brand = await screen.findByTestId('hth-login-titlebar-brand');
 
-    expect(within(brand).getByText('HTHBuddy')).toBeInTheDocument();
-    expect(within(brand).getByRole('img', { name: 'HTHBuddy' })).toBeInTheDocument();
-    expect(screen.getByText('HTHBuddy requires your HTH account before assistants can be used.')).toBeInTheDocument();
+    expect(within(brand).getByText('华青智能助手')).toBeInTheDocument();
+    expect(within(brand).getByRole('img', { name: '华青智能助手' })).toBeInTheDocument();
+    expect(screen.getByText('华青智能助手 requires your HTH account before assistants can be used.')).toBeInTheDocument();
     expect(screen.queryByText('AionUi')).not.toBeInTheDocument();
 
     await waitFor(() => {

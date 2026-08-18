@@ -39,6 +39,7 @@ interface EventTypes {
   ];
   // 填充输入框事件 / Fill sendbox input event
   'sendbox.fill': [string]; // prompt text to fill
+  'sendbox.replace': [string]; // replace the current sendbox draft
   'sendbox.reply': [ReplyQuote]; // reply/quote a message
   'sendbox.reply.clear': void; // clear reply quote
 }

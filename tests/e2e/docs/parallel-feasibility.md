@@ -62,7 +62,7 @@ return path.join(getDataPath(), 'aionui.db');
 
 **userData directory** (`src/process/utils/configureChromium.ts:18-26`):
 
-- Dev mode: `~/Library/Application Support/HTHBuddy-Dev/` (macOS)
+- Dev mode: `~/Library/Application Support/华青智能助手-Dev/` (macOS)
 - Database: `{userData}/config/aionui.db`
 - Shared by all E2E tests
 

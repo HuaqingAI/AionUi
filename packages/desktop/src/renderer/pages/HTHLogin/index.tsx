@@ -7,7 +7,7 @@
 import { ipcBridge } from '@/common';
 import { isHTHUnauthorizedSyncResult } from '@/common/types/hth';
 import AppLoader from '@renderer/components/layout/AppLoader';
-import HTHBuddyLogo from '@renderer/components/layout/HTHBuddyLogo';
+import AppLogo from '@renderer/components/layout/AppLogo';
 import WindowControls from '@renderer/components/layout/WindowControls';
 import { isElectronDesktop, isMacOS } from '@renderer/utils/platform';
 import { Button, Input, Message, Typography } from '@arco-design/web-react';
@@ -114,7 +114,7 @@ const HTHLogin: React.FC = () => {
     <div className='flex h-full w-full flex-col bg-bg-0'>
       <div className={`${styles.loginTitlebar} ${isMacRuntime ? styles.loginTitlebarMac : ''}`}>
         <div className={styles.loginTitlebarBrand} data-testid='hth-login-titlebar-brand'>
-          <HTHBuddyLogo className={styles.loginTitlebarLogo} title={t('login.brand')} />
+          <AppLogo className={styles.loginTitlebarLogo} title={t('login.brand')} />
           <span>{t('login.brand')}</span>
         </div>
         {showWindowControls && <WindowControls />}
@@ -123,7 +123,7 @@ const HTHLogin: React.FC = () => {
         <section className={styles.loginPanel} aria-label={t('login.hth.title')}>
           <div className={styles.brandPanel}>
             <div className={styles.brandLogoShell}>
-              <HTHBuddyLogo className={styles.brandLogo} title={t('login.brand')} />
+              <AppLogo className={styles.brandLogo} title={t('login.brand')} />
             </div>
             <Typography.Title heading={3} className={styles.brandName}>
               {t('login.brand')}

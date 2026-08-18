@@ -107,7 +107,7 @@ describe('HTHConfigSyncService auth handling', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('updates existing authorized assistants after import skips them', async () => {
+  it('updates newly imported assistants after import so metadata is persisted', async () => {
     await writeStoredAuth(authFile);
     (globalThis as typeof globalThis & { __backendPort?: number }).__backendPort = 18181;
     const agent = {
@@ -119,6 +119,8 @@ describe('HTHConfigSyncService auth handling', () => {
       version: '1.0.0',
       name: 'Updated name',
       description: 'Updated description',
+      categories: ['operations', 'customer_service'],
+      recommended_prompts: ['整理客户跟进记录', '生成回访话术'],
       avatar: 'robot',
       sha256: 'sha-1',
     };
@@ -158,30 +160,25 @@ describe('HTHConfigSyncService auth handling', () => {
         })
       )
       .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify([
-            {
-              id: assistantId,
-              name: 'Old name',
-              description: 'Old description',
-              avatar: 'old',
-              agent_id: '',
-            },
-          ]),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          }
-        )
+        new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
       )
       .mockResolvedValueOnce(
-        new Response(JSON.stringify({ imported: 0, skipped: 1, failed: 0, errors: [] }), {
+        new Response(JSON.stringify({ imported: 1, skipped: 0, failed: 0, errors: [] }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         })
       )
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ id: 'hth-agent-1' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({}), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         })
@@ -198,16 +195,26 @@ describe('HTHConfigSyncService auth handling', () => {
 
     const result = await syncService.syncAgentConfigs({ force: false });
 
-    expect(result).toMatchObject({ success: true, imported: 0, skipped: 0, updated: 1 });
+    expect(result).toMatchObject({ success: true, imported: 1, skipped: 0, updated: 1 });
     const updateRequest = JSON.parse((fetchMock.mock.calls[4][1] as RequestInit).body as string) as {
       name?: string;
       description?: string;
       avatar?: string;
+      categories?: string[];
+      recommended_prompts?: string[];
     };
     expect(updateRequest).toMatchObject({
       name: 'Updated name',
       description: 'Updated description',
       avatar: 'robot',
+      categories: ['operations', 'customer_service'],
+      recommended_prompts: ['整理客户跟进记录', '生成回访话术'],
+    });
+    const categoriesRequest = JSON.parse((fetchMock.mock.calls[5][1] as RequestInit).body as string) as {
+      'hth.assistantCategories'?: Record<string, string[]>;
+    };
+    expect(categoriesRequest['hth.assistantCategories']).toEqual({
+      [assistantId]: ['operations', 'customer_service'],
     });
   });
 

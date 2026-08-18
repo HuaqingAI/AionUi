@@ -299,7 +299,11 @@ const MessageItem: React.FC<{
     prev.showCopyRow === next.showCopyRow
 );
 
-const MessageList: React.FC<{ className?: string; emptySlot?: React.ReactNode }> = ({ emptySlot }) => {
+const MessageList: React.FC<{
+  className?: string;
+  emptySlot?: React.ReactNode;
+  topSlot?: React.ReactNode;
+}> = ({ emptySlot, topSlot }) => {
   const list = useMessageList();
   const isMessageListLoading = useMessageListLoading();
   const pagination = useMessagePaginationState();
@@ -681,7 +685,7 @@ const MessageList: React.FC<{ className?: string; emptySlot?: React.ReactNode }>
     return <MessageListSkeleton rowWidthClass={rowWidthClass} />;
   }
 
-  if (processedList.length === 0 && emptySlot) {
+  if (processedList.length === 0 && emptySlot && !topSlot) {
     return <div className='relative flex-1 h-full flex items-center justify-center'>{emptySlot}</div>;
   }
 
@@ -703,6 +707,7 @@ const MessageList: React.FC<{ className?: string; emptySlot?: React.ReactNode }>
           >
             <div ref={setContentRef} data-testid='message-list-content' style={{ overflowAnchor: 'none' }}>
               <div className='h-10px' />
+              {topSlot ? <div className={`${rowWidthClass} mx-auto pb-12px`}>{topSlot}</div> : null}
               {processedList.map((item, index) => (
                 <React.Fragment key={getProcessedItemAnchorId(item) || index}>{renderItem(index, item)}</React.Fragment>
               ))}

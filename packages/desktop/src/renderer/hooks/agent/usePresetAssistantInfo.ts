@@ -10,7 +10,6 @@ import type { TChatConversation } from '@/common/config/storage';
 import { ipcBridge } from '@/common';
 import { assistantRuntimeKey, type Assistant } from '@/common/types/agent/assistantTypes';
 import { resolveLocaleKey } from '@/common/utils';
-import type { AgentLogoMap } from '@/renderer/utils/model/agentLogo';
 import { resolveAgentLogo, useAgentLogos } from '@/renderer/utils/model/agentLogo';
 import { isLikelyLocalFilePath, resolveAssistantAvatar } from '@/renderer/utils/model/assistantAvatar';
 import useSWR from 'swr';
@@ -276,6 +275,7 @@ function inferLegacyAssistantInfo(
 export function usePresetAssistantInfo(conversation: TChatConversation | undefined): {
   info: PresetAssistantInfo | null;
   isLoading: boolean;
+  assistant?: Assistant;
 } {
   const { i18n } = useTranslation();
   const logos = useAgentLogos();
@@ -298,7 +298,7 @@ export function usePresetAssistantInfo(conversation: TChatConversation | undefin
     () => (remoteAgentId ? ipcBridge.remoteAgent.get.invoke({ id: remoteAgentId }) : null)
   );
 
-  return useMemo(() => {
+  const resolved = useMemo(() => {
     if (!conversation) return { info: null, isLoading: false };
 
     const locale = i18n.language || 'en-US';
@@ -306,16 +306,16 @@ export function usePresetAssistantInfo(conversation: TChatConversation | undefin
     if (conversation.assistant) {
       const snapshotAvatar =
         typeof conversation.assistant.avatar === 'string' ? conversation.assistant.avatar.trim() : '';
+      const snapshotCandidates = [
+        conversation.assistant.id,
+        ...collectExplicitAssistantIdentityCandidates(conversation),
+        ...collectLegacyAssistantIdentityCandidates(conversation),
+      ].filter((value, index, values) => Boolean(value) && values.indexOf(value) === index);
+      const catalogAssistant = findAssistantByIdentityCandidates(assistantsList, snapshotCandidates);
+      if (catalogAssistant) {
+        return { info: buildPresetInfoFromAssistant(catalogAssistant, locale), isLoading: false };
+      }
       if (snapshotAvatar && isLikelyLocalFilePath(snapshotAvatar)) {
-        const snapshotCandidates = [
-          conversation.assistant.id,
-          ...collectExplicitAssistantIdentityCandidates(conversation),
-          ...collectLegacyAssistantIdentityCandidates(conversation),
-        ].filter((value, index, values) => Boolean(value) && values.indexOf(value) === index);
-        const catalogAssistant = findAssistantByIdentityCandidates(assistantsList, snapshotCandidates);
-        if (catalogAssistant) {
-          return { info: buildPresetInfoFromAssistant(catalogAssistant, locale), isLoading: false };
-        }
         if (isLoadingAssistants) return { info: null, isLoading: true };
       }
 
@@ -441,4 +441,9 @@ export function usePresetAssistantInfo(conversation: TChatConversation | undefin
     remoteAgent,
     isLoadingRemoteAgent,
   ]);
+
+  const assistant = resolved.info?.assistantId
+    ? findAssistantByIdentityCandidates(assistantsList, [resolved.info.assistantId])
+    : undefined;
+  return { ...resolved, assistant };
 }
