@@ -7,12 +7,12 @@
 import AionModal from '@/renderer/components/base/AionModal';
 import AionScrollArea from '@/renderer/components/base/AionScrollArea';
 import { iconColors } from '@/renderer/styles/colors';
-import { isElectronDesktop, resolveExtensionAssetUrl } from '@/renderer/utils/platform';
+import { resolveExtensionAssetUrl } from '@/renderer/utils/platform';
 import { type IExtensionSettingsTab } from '@/common/adapter/ipcBridge';
 import { useExtI18n } from '@/renderer/hooks/system/useExtI18n';
 import { useExtensionSettingsTabs } from '@/renderer/hooks/system/useExtensionSettingsTabs';
 import { Tabs } from '@arco-design/web-react';
-import { Computer, Earth, Info, Puzzle, Toolkit } from '@icon-park/react';
+import { Computer, Info, Puzzle, Toolkit } from '@icon-park/react';
 import classNames from 'classnames';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -22,7 +22,6 @@ import ExtensionSettingsTabContent from './contents/ExtensionSettingsTabContent'
 import ModelModalContent from './contents/ModelModalContent';
 import SystemModalContent from './contents/SystemModalContent';
 import ToolsModalContent from './contents/ToolsModalContent';
-import WebuiModalContent from './contents/WebuiModalContent';
 import { SettingsTabNavigateProvider, SettingsViewModeProvider } from './settingsViewContext';
 import { LEGACY_ANCHOR_REMAP } from '@/renderer/pages/settings/components/SettingsSider';
 
@@ -55,7 +54,7 @@ const RESIZE_DEBOUNCE_DELAY = 150;
 /**
  * 内置设置标签页类型 / Built-in settings tab type
  */
-export type BuiltinSettingTab = 'model' | 'agent' | 'tools' | 'webui' | 'system' | 'about';
+export type BuiltinSettingTab = 'model' | 'agent' | 'tools' | 'system' | 'about';
 
 /**
  * 设置标签页类型（内置 + 扩展）/ Settings tab type (built-in + extension)
@@ -169,9 +168,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, defaul
     };
   }, [handleResize]);
 
-  // 检测是否在 Electron 桌面环境 / Check if running in Electron desktop environment
-  const isDesktop = isElectronDesktop();
-
   const { resolveExtTabName } = useExtI18n();
 
   // Extension tab lookup map for renderContent
@@ -196,14 +192,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, defaul
         icon: <Toolkit theme='outline' size='20' fill={iconColors.secondary} />,
       },
     ];
-
-    if (isDesktop) {
-      builtinItems.push({
-        key: 'webui',
-        label: t('settings.webui'),
-        icon: <Earth theme='outline' size='20' fill={iconColors.secondary} />,
-      });
-    }
 
     builtinItems.push(
       {
@@ -269,7 +257,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, defaul
     }
 
     return builtinItems;
-  }, [t, isDesktop, extensionTabs, resolveExtTabName]);
+  }, [t, extensionTabs, resolveExtTabName]);
 
   // Track which extension tabs have been visited (lazy mount + keep-alive)
   const [mountedExtTabs, setMountedExtTabs] = useState<Set<string>>(new Set());
@@ -301,8 +289,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, defaul
         return <AgentModalContent />;
       case 'tools':
         return <ToolsModalContent />;
-      case 'webui':
-        return <WebuiModalContent />;
       case 'system':
         return <SystemModalContent />;
       case 'about':

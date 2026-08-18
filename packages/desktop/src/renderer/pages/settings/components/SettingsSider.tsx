@@ -1,13 +1,11 @@
 import FlexFullContainer from '@/renderer/components/layout/FlexFullContainer';
 import { ipcBridge } from '@/common';
-import { isElectronDesktop, resolveExtensionAssetUrl } from '@/renderer/utils/platform';
+import { resolveExtensionAssetUrl } from '@/renderer/utils/platform';
 import { type IExtensionSettingsTab } from '@/common/adapter/ipcBridge';
 import { useExtI18n } from '@/renderer/hooks/system/useExtI18n';
 import { useExtensionSettingsTabs } from '@/renderer/hooks/system/useExtensionSettingsTabs';
 import {
-  Communication,
   Computer,
-  Earth,
   Info,
   Lightning,
   LinkCloud,
@@ -25,7 +23,7 @@ import { Message, Tooltip } from '@arco-design/web-react';
 import { getSiderTooltipProps } from '@/renderer/utils/ui/siderTooltip';
 
 /** Builtin settings tab IDs in display order (must match router paths). */
-export const BUILTIN_TAB_IDS = ['agent', 'skills', 'tools', 'appearance', 'webui', 'system', 'about'] as const;
+export const BUILTIN_TAB_IDS = ['agent', 'skills', 'tools', 'appearance', 'system', 'about'] as const;
 
 /**
  * Legacy anchor IDs that have been merged into other tabs.
@@ -67,7 +65,6 @@ const SettingsSider: React.FC<{ collapsed?: boolean; tooltipEnabled?: boolean }>
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { pathname } = useLocation();
-  const isDesktop = isElectronDesktop();
   const [message, messageContext] = Message.useMessage({ maxCount: 3 });
   const [loggingOutFromHTH, setLoggingOutFromHTH] = useState(false);
 
@@ -97,12 +94,6 @@ const SettingsSider: React.FC<{ collapsed?: boolean; tooltipEnabled?: boolean }>
         path: 'tools',
       },
       appearance: { id: 'appearance', label: t('settings.appearancePanel'), icon: <Computer />, path: 'appearance' },
-      webui: {
-        id: 'webui',
-        label: t('settings.webui'),
-        icon: isDesktop ? <Earth /> : <Communication />,
-        path: 'webui',
-      },
       system: { id: 'system', label: t('settings.system'), icon: <System />, path: 'system' },
       about: { id: 'about', label: t('settings.about'), icon: <Info />, path: 'about' },
     };
@@ -181,7 +172,7 @@ const SettingsSider: React.FC<{ collapsed?: boolean; tooltipEnabled?: boolean }>
     }
 
     return { menus: result, groupHeaderAt: headerAt };
-  }, [t, isDesktop, extensionTabs, resolveExtTabName]);
+  }, [t, extensionTabs, resolveExtTabName]);
 
   const siderTooltipProps = getSiderTooltipProps(tooltipEnabled);
 

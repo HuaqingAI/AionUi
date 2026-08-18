@@ -78,4 +78,8 @@ describe('SystemSettings', () => {
   it('omits the model tab from builtin settings navigation', () => {
     expect([...BUILTIN_TAB_IDS]).not.toContain('model');
   });
+
+  it('omits the webui tab from builtin settings navigation', () => {
+    expect([...BUILTIN_TAB_IDS]).not.toContain('webui');
+  });
 });
