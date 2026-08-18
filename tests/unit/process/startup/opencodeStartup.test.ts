@@ -240,6 +240,13 @@ describe('opencode startup bootstrap', () => {
     const commandRunner = vi.fn(async () => {
       await mkdir(path.dirname(fixture.dwsCommandPath), { recursive: true });
       await writeFile(fixture.dwsCommandPath, '');
+      await mkdir(path.join(fixture.dwsPrefix, 'node_modules', 'dingtalk-workspace-cli', 'vendor'), {
+        recursive: true,
+      });
+      await writeFile(
+        path.join(fixture.dwsPrefix, 'node_modules', 'dingtalk-workspace-cli', 'vendor', 'dws.exe'),
+        ''
+      );
       return {};
     });
 
@@ -263,6 +270,7 @@ describe('opencode startup bootstrap', () => {
         fixture.dwsPrefix,
         '--registry',
         'https://registry.npmmirror.com',
+        '--ignore-scripts',
       ],
       {
         cwd: fixture.dataPath,

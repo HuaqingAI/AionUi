@@ -19,8 +19,10 @@ import {
   writeFileSync,
 } from 'fs';
 import fs from 'fs/promises';
+import { tmpdir } from 'os';
 import path from 'path';
 import { promisify } from 'util';
+import yauzl from 'yauzl';
 import { getSystemDir } from '../utils/initStorage';
 import { getDataPath } from '../utils/utils';
 
@@ -146,6 +148,14 @@ const OPENCODE_INSTALL_TIMEOUT_MS = 180000;
 const MANAGED_NPM_REGISTRY = 'https://registry.npmmirror.com';
 const MANAGED_NODE_LAUNCHER_MARKER = 'AionUi managed Node launcher';
 const MANAGED_DIRECT_LAUNCHER_MARKER = 'AionUi managed direct launcher';
+const DWS_PLATFORM_ARCHIVES: Record<string, string> = {
+  'darwin-arm64': 'dws-darwin-arm64.tar.gz',
+  'darwin-x64': 'dws-darwin-amd64.tar.gz',
+  'linux-arm64': 'dws-linux-arm64.tar.gz',
+  'linux-x64': 'dws-linux-amd64.tar.gz',
+  'win32-arm64': 'dws-windows-arm64.zip',
+  'win32-x64': 'dws-windows-amd64.zip',
+};
 
 const OPENCODE_TOOL: ManagedAcpTool = {
   commandName: OPENCODE_TOOL_ID,
@@ -682,6 +692,129 @@ async function runCommand(
   };
 }
 
+function getDwsBinaryPath(prefix: string): string {
+  return path.join(
+    prefix,
+    'node_modules',
+    DWS_PACKAGE_NAME,
+    'vendor',
+    process.platform === 'win32' ? 'dws.exe' : 'dws'
+  );
+}
+
+function getDwsArchiveName(): string {
+  const archiveName = DWS_PLATFORM_ARCHIVES[`${process.platform}-${process.arch}`];
+  if (!archiveName) {
+    throw new Error(`DWS is not supported on ${process.platform}-${process.arch}`);
+  }
+  return archiveName;
+}
+
+async function extractDwsBinaryFromWindowsZip(archivePath: string, targetPath: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    yauzl.open(archivePath, { lazyEntries: true }, (openError, zipfile) => {
+      if (openError || !zipfile) {
+        reject(openError ?? new Error(`unable to open DWS archive ${archivePath}`));
+        return;
+      }
+
+      let found = false;
+      const fail = (error: unknown): void => {
+        zipfile.close();
+        reject(error instanceof Error ? error : new Error(String(error)));
+      };
+
+      zipfile.readEntry();
+      zipfile.on('entry', (entry) => {
+        const entryName = entry.fileName.replace(/\\/g, '/');
+        if (found || entryName.toLowerCase().split('/').pop() !== 'dws.exe') {
+          zipfile.readEntry();
+          return;
+        }
+
+        found = true;
+        zipfile.openReadStream(entry, (streamError, readStream) => {
+          if (streamError || !readStream) {
+            fail(streamError ?? new Error('unable to read DWS binary from archive'));
+            return;
+          }
+
+          const chunks: Buffer[] = [];
+          readStream.on('data', (chunk: Buffer) => chunks.push(chunk));
+          readStream.on('error', fail);
+          readStream.on('end', async () => {
+            try {
+              await fs.writeFile(targetPath, Buffer.concat(chunks));
+              zipfile.close();
+              resolve();
+            } catch (error) {
+              fail(error);
+            }
+          });
+        });
+      });
+      zipfile.on('error', fail);
+      zipfile.on('end', () => {
+        if (!found) {
+          reject(new Error(`DWS binary not found in archive ${archivePath}`));
+        }
+      });
+    });
+  });
+}
+
+async function findDwsBinaryInDirectory(root: string): Promise<string | null> {
+  const entries = await fs.readdir(root, { withFileTypes: true });
+  for (const entry of entries) {
+    const entryPath = path.join(root, entry.name);
+    if (entry.isDirectory()) {
+      const nested = await findDwsBinaryInDirectory(entryPath);
+      if (nested) {
+        return nested;
+      }
+      continue;
+    }
+    if (entry.name === 'dws' || entry.name === 'dws.exe') {
+      return entryPath;
+    }
+  }
+  return null;
+}
+
+async function ensureDwsBinaryInstalled(prefix: string): Promise<void> {
+  const binaryPath = getDwsBinaryPath(prefix);
+  if (await pathExists(binaryPath)) {
+    return;
+  }
+
+  const packageRoot = path.dirname(path.dirname(binaryPath));
+  const archivePath = path.join(packageRoot, 'assets', getDwsArchiveName());
+  if (!(await pathExists(archivePath))) {
+    throw new Error(`DWS platform archive was not found: ${archivePath}`);
+  }
+
+  await fs.mkdir(path.dirname(binaryPath), { recursive: true });
+  const stagingDirectory = await fs.mkdtemp(path.join(tmpdir(), 'aionui-dws-bin-'));
+  const stagedBinaryPath = path.join(stagingDirectory, path.basename(binaryPath));
+  try {
+    if (process.platform === 'win32') {
+      await extractDwsBinaryFromWindowsZip(archivePath, stagedBinaryPath);
+    } else {
+      await runCommand('tar', ['-xzf', archivePath, '-C', stagingDirectory], {
+        timeout: OPENCODE_INSTALL_TIMEOUT_MS,
+      });
+      const extractedBinaryPath = await findDwsBinaryInDirectory(stagingDirectory);
+      if (!extractedBinaryPath) {
+        throw new Error(`DWS binary was not found in archive ${archivePath}`);
+      }
+      await fs.copyFile(extractedBinaryPath, stagedBinaryPath);
+    }
+    await fs.rename(stagedBinaryPath, binaryPath);
+  } finally {
+    await fs.rm(stagingDirectory, { force: true, recursive: true });
+  }
+}
+
 async function ensureManagedToolInstalledWithManagedNode(options: {
   commandRunner: CommandRunner;
   dataPath: string;
@@ -695,9 +828,14 @@ async function ensureManagedToolInstalledWithManagedNode(options: {
 
   const nodeBinDir = path.dirname(nodeExecutable);
   prependPathEntry(nodeBinDir);
+  const prefix = getManagedToolNpmPrefix(options.tool, options.dataPath);
   if (await pathExists(commandPath)) {
-    await ensureManagedToolLauncherUsesManagedNode(options.tool, options.dataPath, nodeExecutable);
-    return;
+    const packageIsReady =
+      options.tool.toolId !== DWS_TOOL_ID || (await pathExists(getDwsBinaryPath(prefix)));
+    if (packageIsReady) {
+      await ensureManagedToolLauncherUsesManagedNode(options.tool, options.dataPath, nodeExecutable);
+      return;
+    }
   }
 
   const npmCliPath = getNpmCliPath(nodeExecutable);
@@ -705,7 +843,6 @@ async function ensureManagedToolInstalledWithManagedNode(options: {
     throw new Error('managed npm CLI was not found');
   }
 
-  const prefix = getManagedToolNpmPrefix(options.tool, options.dataPath);
   await fs.mkdir(prefix, { recursive: true });
   const binDir = addManagedToolGlobalBinToPath(options.tool, options.dataPath);
   const commandEnv: NodeJS.ProcessEnv = {
@@ -734,6 +871,7 @@ async function ensureManagedToolInstalledWithManagedNode(options: {
       prefix,
       '--registry',
       MANAGED_NPM_REGISTRY,
+      ...(options.tool.toolId === DWS_TOOL_ID ? ['--ignore-scripts'] : []),
     ],
     {
       cwd: options.dataPath,
@@ -741,6 +879,10 @@ async function ensureManagedToolInstalledWithManagedNode(options: {
       timeout: OPENCODE_INSTALL_TIMEOUT_MS,
     }
   );
+
+  if (options.tool.toolId === DWS_TOOL_ID) {
+    await ensureDwsBinaryInstalled(prefix);
+  }
 
   if (!(await pathExists(commandPath))) {
     throw new Error(`${options.tool.displayName} command was not created after installation`);
