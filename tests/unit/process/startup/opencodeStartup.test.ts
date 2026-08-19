@@ -67,7 +67,10 @@ describe('opencode startup bootstrap', () => {
     const nodeRoot = path.join(dataPath, 'runtime', 'node', 'node-v24.11.0-test');
     const nodeExecutable =
       process.platform === 'win32' ? path.join(nodeRoot, 'node.exe') : path.join(nodeRoot, 'bin', 'node');
-    const npmCliPath = path.join(nodeRoot, 'node_modules', 'npm', 'bin', 'npm-cli.js');
+    const npmCliPath =
+      process.platform === 'win32'
+        ? path.join(nodeRoot, 'node_modules', 'npm', 'bin', 'npm-cli.js')
+        : path.join(nodeRoot, 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js');
     const prefix = path.join(dataPath, 'runtime', 'npm-global', 'opencode');
     const commandPath = path.join(prefix, process.platform === 'win32' ? 'opencode.cmd' : 'bin/opencode');
     const codexPrefix = path.join(dataPath, 'runtime', 'npm-global', 'codex');
@@ -243,10 +246,7 @@ describe('opencode startup bootstrap', () => {
       await mkdir(path.join(fixture.dwsPrefix, 'node_modules', 'dingtalk-workspace-cli', 'vendor'), {
         recursive: true,
       });
-      await writeFile(
-        path.join(fixture.dwsPrefix, 'node_modules', 'dingtalk-workspace-cli', 'vendor', 'dws.exe'),
-        ''
-      );
+      await writeFile(path.join(fixture.dwsPrefix, 'node_modules', 'dingtalk-workspace-cli', 'vendor', 'dws.exe'), '');
       return {};
     });
 
@@ -282,6 +282,49 @@ describe('opencode startup bootstrap', () => {
         }),
         timeout: 180000,
       }
+    );
+  });
+
+  it.each([
+    { arch: 'x64' as const, name: 'Intel' },
+    { arch: 'arm64' as const, name: 'Apple Silicon' },
+  ])('repairs the macOS $name DWS binary in the npm lib package directory', async ({ arch }) => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
+    vi.spyOn(process, 'arch', 'get').mockReturnValue(arch);
+    const fixture = await createManagedNodeFixture();
+    const commandRunner = vi.fn(async () => {
+      await mkdir(path.dirname(fixture.dwsCommandPath), { recursive: true });
+      await writeFile(fixture.dwsCommandPath, '');
+      const packageRoot = path.join(fixture.dwsPrefix, 'lib', 'node_modules', 'dingtalk-workspace-cli');
+      await mkdir(path.join(packageRoot, 'vendor'), { recursive: true });
+      await writeFile(path.join(packageRoot, 'vendor', 'dws'), '');
+      return {};
+    });
+
+    const result = await ensureDwsReady({
+      commandRunner,
+      dataPath: fixture.dataPath,
+      emitStatus: vi.fn(),
+      ensureNodeRuntime: async () => ({ ready: true }),
+      env: {},
+    });
+
+    expect(result).toEqual({ status: 'ready' });
+    expect(commandRunner).toHaveBeenCalledWith(
+      fixture.nodeExecutable,
+      expect.arrayContaining([
+        fixture.npmCliPath,
+        'install',
+        '--global',
+        'dingtalk-workspace-cli',
+        '--prefix',
+        fixture.dwsPrefix,
+        '--ignore-scripts',
+      ]),
+      expect.objectContaining({
+        cwd: fixture.dataPath,
+        timeout: 180000,
+      })
     );
   });
 

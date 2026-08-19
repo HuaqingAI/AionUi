@@ -692,14 +692,14 @@ async function runCommand(
   };
 }
 
+function getDwsPackageRoot(prefix: string): string {
+  return process.platform === 'win32'
+    ? path.join(prefix, 'node_modules', DWS_PACKAGE_NAME)
+    : path.join(prefix, 'lib', 'node_modules', DWS_PACKAGE_NAME);
+}
+
 function getDwsBinaryPath(prefix: string): string {
-  return path.join(
-    prefix,
-    'node_modules',
-    DWS_PACKAGE_NAME,
-    'vendor',
-    process.platform === 'win32' ? 'dws.exe' : 'dws'
-  );
+  return path.join(getDwsPackageRoot(prefix), 'vendor', process.platform === 'win32' ? 'dws.exe' : 'dws');
 }
 
 function getDwsArchiveName(): string {
@@ -787,7 +787,7 @@ async function ensureDwsBinaryInstalled(prefix: string): Promise<void> {
     return;
   }
 
-  const packageRoot = path.dirname(path.dirname(binaryPath));
+  const packageRoot = getDwsPackageRoot(prefix);
   const archivePath = path.join(packageRoot, 'assets', getDwsArchiveName());
   if (!(await pathExists(archivePath))) {
     throw new Error(`DWS platform archive was not found: ${archivePath}`);
@@ -833,8 +833,7 @@ async function ensureManagedToolInstalledWithManagedNode(options: {
   prependPathEntry(nodeBinDir);
   const prefix = getManagedToolNpmPrefix(options.tool, options.dataPath);
   if (await pathExists(commandPath)) {
-    const packageIsReady =
-      options.tool.toolId !== DWS_TOOL_ID || (await pathExists(getDwsBinaryPath(prefix)));
+    const packageIsReady = options.tool.toolId !== DWS_TOOL_ID || (await pathExists(getDwsBinaryPath(prefix)));
     if (packageIsReady) {
       await ensureManagedToolLauncherUsesManagedNode(options.tool, options.dataPath, nodeExecutable);
       return;
