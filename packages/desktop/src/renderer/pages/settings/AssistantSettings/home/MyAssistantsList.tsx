@@ -12,7 +12,6 @@ import {
   groupMyAssistants,
 } from '../assistantUtils';
 import MyAssistantCard from './MyAssistantCard';
-import { useTalkToButler } from '@/renderer/hooks/assistant/useTalkToButler';
 import { Dropdown, Menu, Button } from '@arco-design/web-react';
 import { Down } from '@icon-park/react';
 import React, { useMemo, useState } from 'react';
@@ -50,18 +49,7 @@ const MyAssistantsList: React.FC<MyAssistantsListProps> = ({
   searchActive = false,
 }) => {
   const { t } = useTranslation();
-  const talkToButler = useTalkToButler();
   const [filter, setFilter] = useState<AssistantEnabledFilter>('all');
-
-  // "Create via chat": hand off to the AionUi Butler on the home page with a
-  // ready-made create-an-assistant prompt (same flow as the header action).
-  const handleCreateViaChat = () => {
-    void talkToButler({
-      prompt: t('settings.talkToButler.prompt.createAssistant', {
-        defaultValue: 'Help me create a new assistant and walk me through setting it up.',
-      }),
-    });
-  };
 
   const { createdAssistants } = useMemo(() => {
     const filtered = filterByEnabled(assistants, filter);
@@ -97,9 +85,8 @@ const MyAssistantsList: React.FC<MyAssistantsListProps> = ({
     </div>
   );
 
-  // The "created by me" group shows a guiding empty state when the user has
-  // no custom assistants yet (only in the unfiltered view — a filtered empty
-  // just means "no matches", not "none exist").
+  // The "created by me" group shows an empty state only in the unfiltered
+  // view. A filtered empty just means "no matches", not "none exist".
   const hasVisibleAssistants = createdAssistants.length > 0;
   const createdEmpty = createdAssistants.length === 0 && filter === 'all' && !searchActive;
 
@@ -109,18 +96,7 @@ const MyAssistantsList: React.FC<MyAssistantsListProps> = ({
       data-testid='created-empty'
     >
       <div className='mb-6px text-13px font-600 text-t-primary'>
-        {t('settings.customEmptyTitle', { defaultValue: 'No custom assistants yet' })}
-      </div>
-      <div className='flex items-center gap-10px'>
-        <Button
-          type='primary'
-          size='small'
-          className='!rounded-8px'
-          onClick={handleCreateViaChat}
-          data-testid='created-empty-create'
-        >
-          {t('settings.customEmptyCreate', { defaultValue: 'Create via chat' })}
-        </Button>
+        {t('settings.customEmptyTitle', { defaultValue: "You don't have any assistants yet" })}
       </div>
     </div>
   );

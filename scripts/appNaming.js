@@ -11,7 +11,7 @@ function resolveBuildFlavor(env = process.env) {
   if (explicitFlavor === 'prod' || explicitFlavor === 'production') {
     return 'production';
   }
-  return env.GITHUB_REF_NAME === 'dev' ? 'dev' : 'production';
+  return 'production';
 }
 
 function resolveExecutableName(env = process.env) {

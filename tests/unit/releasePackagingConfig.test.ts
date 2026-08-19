@@ -30,6 +30,12 @@ describe('release packaging configuration', () => {
     expect(macBlock).toContain('    - zip');
   });
 
+  it('marks reusable release builds as production builds', () => {
+    const workflow = readProjectFile('.github/workflows/_build-reusable.yml');
+
+    expect(workflow).toContain('AIONUI_BUILD_FLAVOR: production');
+  });
+
   it('does not build Windows zip artifacts', () => {
     const config = readProjectFile('packages/desktop/electron-builder.yml');
     const winBlock = yamlBlock(config, 'win');
@@ -46,6 +52,8 @@ describe('release packaging configuration', () => {
     expect(config).toContain('productName: 华青智能助手');
     expect(config).toContain('executableName: HQBuddy');
     expect(config).toContain('copyright: Copyright © 2024 华青智能助手');
+    expect(config).toContain('shortcutName: ${productName}');
+    expect(config).toContain('uninstallDisplayName: ${productName}');
     expect(config).not.toContain('productName: AionUi');
     expect(config).not.toContain('executableName: AionUi');
     expect(config).toContain('artifactName: ${productName}-${version}-${os}-${arch}.${ext}');

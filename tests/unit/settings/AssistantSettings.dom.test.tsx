@@ -12,6 +12,7 @@ import { MemoryRouter } from 'react-router-dom';
 import AssistantSettings from '@/renderer/pages/settings/AssistantSettings';
 import EnabledAssistantsList from '@/renderer/pages/settings/AssistantSettings/home/EnabledAssistantsList';
 import AssistantHomeTabs from '@/renderer/pages/settings/AssistantSettings/home/AssistantHomeTabs';
+import MyAssistantsList from '@/renderer/pages/settings/AssistantSettings/home/MyAssistantsList';
 import type { AssistantListItem } from '@/renderer/pages/settings/AssistantSettings/types';
 
 const {
@@ -457,6 +458,43 @@ describe('AssistantSettings', () => {
     expect(screen.getByTestId('enabled-assistant-reorder-handle-custom')).toBeDisabled();
     expect(screen.queryByTestId('enabled-assistant-reorder-handle-cli')).not.toBeInTheDocument();
     expect(screen.queryByTestId('enabled-assistant-reorder-handle-official')).not.toBeInTheDocument();
+  });
+
+  it('shows the concise enabled-assistant empty state', () => {
+    render(
+      <ConfigProvider>
+        <EnabledAssistantsList
+          assistants={[]}
+          assistantOrder={[]}
+          localeKey='en-US'
+          searchActive={false}
+          onOpenDetail={vi.fn()}
+          onToggleEnabled={vi.fn()}
+          onReorder={vi.fn()}
+        />
+      </ConfigProvider>
+    );
+
+    expect(screen.getByText('No assistants here yet.')).toBeInTheDocument();
+    expect(screen.queryByText(/Enable an official assistant/)).not.toBeInTheDocument();
+  });
+
+  it('does not offer chat creation in the empty My Assistants state', () => {
+    render(
+      <ConfigProvider>
+        <MyAssistantsList
+          assistants={[]}
+          localeKey='en-US'
+          onOpenDetail={vi.fn()}
+          onDelete={vi.fn()}
+          onToggleEnabled={vi.fn()}
+          onStartChat={vi.fn()}
+        />
+      </ConfigProvider>
+    );
+
+    expect(screen.getByText("You don't have any assistants yet")).toBeInTheDocument();
+    expect(screen.queryByTestId('created-empty-create')).not.toBeInTheDocument();
   });
 
   it('uses the homepage avatar treatment without cropping runtime logos', () => {

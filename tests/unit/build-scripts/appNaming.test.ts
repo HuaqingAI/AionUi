@@ -18,8 +18,8 @@ describe('packaged filesystem naming', () => {
     expect(resolveExecutableName({ AIONUI_BUILD_FLAVOR: 'dev' })).toBe('HQBuddy-Dev');
   });
 
-  it('treats the dev CI branch as a development build unless overridden', () => {
-    expect(resolveExecutableName({ GITHUB_REF_NAME: 'dev' })).toBe('HQBuddy-Dev');
+  it('keeps builds production by default even on the dev branch', () => {
+    expect(resolveExecutableName({ GITHUB_REF_NAME: 'dev' })).toBe('HQBuddy');
     expect(resolveExecutableName({ AIONUI_BUILD_FLAVOR: 'production', GITHUB_REF_NAME: 'dev' })).toBe('HQBuddy');
   });
 });

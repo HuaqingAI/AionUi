@@ -4,13 +4,28 @@ import { NodePlatformServices } from './NodePlatformServices';
 
 let _services: IPlatformServices | null = null;
 
+export const APP_DISPLAY_NAME = '华青智能助手';
+export const PRODUCTION_APP_NAME = 'HQBuddy';
+export const DEVELOPMENT_APP_NAME = 'HQBuddy-Dev';
+
 /**
  * Resolve the dev-mode app name for environment isolation.
  * Centralised so that every call-site stays in sync.
  */
 export function getDevAppName(): string {
   const isMultiInstance = process.env.AIONUI_MULTI_INSTANCE === '1';
-  return isMultiInstance ? 'HQBuddy-Dev-2' : 'HQBuddy-Dev';
+  return isMultiInstance ? `${DEVELOPMENT_APP_NAME}-2` : DEVELOPMENT_APP_NAME;
+}
+
+/** Resolve the filesystem name used by the current Electron runtime. */
+export function getAppFilesystemName(isPackaged: boolean, executablePath = process.execPath): string {
+  if (!isPackaged) return getDevAppName();
+
+  const executableName = executablePath
+    .split(/[\\/]/)
+    .pop()
+    ?.replace(/\.exe$/i, '');
+  return executableName === DEVELOPMENT_APP_NAME ? DEVELOPMENT_APP_NAME : PRODUCTION_APP_NAME;
 }
 
 export function registerPlatformServices(services: IPlatformServices): void {
@@ -36,13 +51,23 @@ export function getPlatformServices(): IPlatformServices {
       } else {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         const { app, net } = require('electron') as typeof import('electron');
-        // Dev isolation: set app name before any getPath('userData') call.
-        // Rollup may load this chunk before configureChromium.ts runs, so we
-        // must apply the dev name here as a safety net.
-        if (!app.isPackaged) {
-          const devAppName = getDevAppName();
-          app.setName('华青智能助手');
-          app.setPath('userData', path.join(path.dirname(app.getPath('userData')), devAppName));
+        // Rollup may load this chunk before configureChromium.ts runs, so apply
+        // the same display name and storage paths here as a safety net.
+        app.setName(APP_DISPLAY_NAME);
+        const e2eUserDataDir = process.env.AIONUI_E2E_TEST === '1' ? process.env.AIONUI_E2E_USER_DATA_DIR : undefined;
+        if (e2eUserDataDir && e2eUserDataDir.trim() !== '') {
+          app.setPath('userData', e2eUserDataDir);
+          app.setPath('logs', path.join(e2eUserDataDir, 'logs'));
+        } else {
+          const appFilesystemName = getAppFilesystemName(app.isPackaged, process.execPath);
+          const userDataPath = path.join(app.getPath('appData'), appFilesystemName);
+          app.setPath('userData', userDataPath);
+          app.setPath(
+            'logs',
+            process.platform === 'darwin'
+              ? path.join(app.getPath('home'), 'Library', 'Logs', appFilesystemName)
+              : path.join(userDataPath, 'logs')
+          );
         }
         // Typed as IPlatformPaths so tsc enforces completeness: any new method
         // added to the interface will cause a compile error here if omitted below.

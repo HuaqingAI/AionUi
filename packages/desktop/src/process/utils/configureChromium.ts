@@ -9,7 +9,7 @@ import http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
 import os from 'os';
-import { getDevAppName } from '@/common/platform';
+import { APP_DISPLAY_NAME, DEVELOPMENT_APP_NAME, getAppFilesystemName } from '@/common/platform';
 import { applyGpuRecoveryFlags } from './gpuRecovery';
 
 // ============ E2E test isolation ============
@@ -25,19 +25,56 @@ if (e2eUserDataDir && e2eUserDataDir.trim() !== '') {
   app.setPath('userData', e2eUserDataDir);
 }
 
-// ============ Environment Separation ============
-// Set app name before any getPath() call so userData is isolated from production.
-// Note: getPlatformServices() auto-registration also applies this as a safety net
-// in case Rollup loads initStorage's chunk before this module runs.
-// 开发模式下设置独立 app 名称，userData 目录将与正式版隔离，允许同时运行
-// E2E 沙箱已显式设置 userData 时跳过，避免被 dev app 名覆盖。
-if (!app.isPackaged && !e2eUserDataDir) {
-  const devAppName = getDevAppName();
-  app.setName('华青智能助手');
-  // In Electron 28+, setName alone no longer updates userData path on macOS.
-  // Explicitly override userData to the dev directory.
-  const appSupportDir = path.dirname(app.getPath('userData'));
-  app.setPath('userData', path.join(appSupportDir, devAppName));
+// ============ Application naming and storage paths ============
+// Keep the OS-facing display name separate from filesystem names. Electron
+// derives userData from the display name unless it is explicitly overridden.
+app.setName(APP_DISPLAY_NAME);
+
+function migrateLegacyUserDataDirectory(appDataPath: string, userDataPath: string, appFilesystemName: string): void {
+  let replaceEmptyTarget = false;
+  if (fs.existsSync(userDataPath)) {
+    try {
+      replaceEmptyTarget = fs.statSync(userDataPath).isDirectory() && fs.readdirSync(userDataPath).length === 0;
+    } catch {
+      return;
+    }
+    if (!replaceEmptyTarget) return;
+  }
+
+  const legacyNames =
+    appFilesystemName === DEVELOPMENT_APP_NAME
+      ? [`${APP_DISPLAY_NAME}-Dev`, 'AionUi-Dev']
+      : [APP_DISPLAY_NAME, 'AionUi', 'aionui'];
+
+  for (const legacyName of legacyNames) {
+    const legacyPath = path.join(appDataPath, legacyName);
+    if (!fs.existsSync(legacyPath)) continue;
+
+    try {
+      if (replaceEmptyTarget) fs.rmSync(userDataPath, { recursive: true, force: true });
+      fs.renameSync(legacyPath, userDataPath);
+      console.log(`[AionUi] Migrated legacy user data directory to ${userDataPath}`);
+    } catch (error) {
+      console.warn(`[AionUi] Failed to migrate legacy user data directory from ${legacyPath}:`, error);
+    }
+    return;
+  }
+}
+
+if (e2eUserDataDir) {
+  app.setPath('logs', path.join(e2eUserDataDir, 'logs'));
+} else {
+  const appFilesystemName = getAppFilesystemName(app.isPackaged, process.execPath);
+  const appDataPath = app.getPath('appData');
+  const userDataPath = path.join(appDataPath, appFilesystemName);
+  migrateLegacyUserDataDirectory(appDataPath, userDataPath, appFilesystemName);
+  app.setPath('userData', userDataPath);
+  app.setPath(
+    'logs',
+    process.platform === 'darwin'
+      ? path.join(app.getPath('home'), 'Library', 'Logs', appFilesystemName)
+      : path.join(userDataPath, 'logs')
+  );
 }
 
 // app.disableHardwareAcceleration() must run before app is ready.
