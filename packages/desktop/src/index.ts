@@ -6,7 +6,7 @@
 
 // configureChromium sets app name (dev isolation) and Chromium flags — must run before
 // ANY module that calls app.getPath('userData'), because Electron caches the path on first call.
-import './process/utils/configureChromium';
+import { getDevelopmentDesktopIconPath } from './process/utils/configureChromium';
 import { installGpuCrashHandler } from './process/utils/gpuRecovery';
 import { captureBackendStartupFailure, initSentry, scheduleStartupLogReport, setSentryDeviceId } from './sentry';
 
@@ -587,10 +587,8 @@ const createWindow = ({ showOnReady = true }: { showOnReady?: boolean } = {}): v
   let devIcon: Electron.NativeImage | undefined;
   if (!app.isPackaged) {
     try {
-      // Windows: app.ico (no dev version), Linux: app_dev.png (with padding)
-      const iconFile = process.platform === 'win32' ? 'app.ico' : 'app_dev.png';
-      const iconPath = path.join(process.cwd(), 'resources', iconFile);
-      if (fs.existsSync(iconPath)) {
+      const iconPath = getDevelopmentDesktopIconPath();
+      if (iconPath) {
         devIcon = nativeImage.createFromPath(iconPath);
         if (devIcon.isEmpty()) devIcon = undefined;
       }

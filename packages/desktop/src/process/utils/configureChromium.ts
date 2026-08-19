@@ -13,6 +13,16 @@ import { APP_DISPLAY_NAME } from '@/common/config/constants';
 import { getAppFilesystemName, getAppUserModelId, getWindowsDevelopmentShortcutPath } from '@/common/platform';
 import { applyGpuRecoveryFlags } from './gpuRecovery';
 
+/** Resolve the checked-in desktop icon when running directly from the repository. */
+export function getDevelopmentDesktopIconPath(): string | undefined {
+  const iconFile = process.platform === 'win32' ? 'app.ico' : 'app_dev.png';
+  const iconPaths = [
+    path.resolve(process.cwd(), 'resources', iconFile),
+    path.resolve(__dirname, '..', '..', 'resources', iconFile),
+  ];
+  return iconPaths.find((iconPath) => fs.existsSync(iconPath));
+}
+
 // ============ E2E test isolation ============
 // When running under E2E with an explicit sandbox dir, redirect userData there
 // BEFORE any getPath() call so the whole data tree (config, aioncore DB, logs)
@@ -39,8 +49,9 @@ if (process.platform === 'win32') {
   if (!app.isPackaged && process.env.AIONUI_E2E_TEST !== '1') {
     try {
       const shortcutPath = getWindowsDevelopmentShortcutPath(app.getPath('appData'));
+      const iconPath = getDevelopmentDesktopIconPath();
       fs.mkdirSync(path.dirname(shortcutPath), { recursive: true });
-      const wroteShortcut = shell.writeShortcutLink(shortcutPath, 'create', {
+      const wroteShortcut = shell.writeShortcutLink(shortcutPath, 'replace', {
         target: process.execPath,
         cwd: process.cwd(),
         args: process.argv
@@ -49,6 +60,7 @@ if (process.platform === 'win32') {
           .join(' '),
         description: APP_DISPLAY_NAME,
         appUserModelId,
+        ...(iconPath ? { icon: iconPath, iconIndex: 0 } : {}),
       });
       if (!wroteShortcut) {
         console.warn('[HQBuddy] Failed to register the development Windows notification shortcut.');
