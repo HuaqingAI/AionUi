@@ -134,6 +134,10 @@ mac:
     - dmg
     - zip
   icon: resources/app.icns
+  # Keep the bundle/executable path ASCII while exposing the Chinese app name in Finder and Launchpad.
+  extendInfo:
+    CFBundleName: 华青智能助手
+    CFBundleDisplayName: 华青智能助手
   artifactName: ${productName}-${version}-${os}-${arch}.${ext}
   category: public.app-category.productivity
   hardenedRuntime: true

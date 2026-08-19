@@ -51,6 +51,8 @@ describe('release packaging configuration', () => {
     expect(packageJson.version).toBe('1.0.0');
     expect(config).toContain('productName: 华青智能助手');
     expect(config).toContain('executableName: HQBuddy');
+    expect(config).toContain('CFBundleName: 华青智能助手');
+    expect(config).toContain('CFBundleDisplayName: 华青智能助手');
     expect(config).toContain('copyright: Copyright © 2024 华青智能助手');
     expect(config).toContain('shortcutName: ${productName}');
     expect(config).toContain('uninstallDisplayName: ${productName}');
