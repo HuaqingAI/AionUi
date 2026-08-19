@@ -5,6 +5,7 @@
  */
 
 import { AuthType } from '@/common/types/provider/authType';
+import { APP_DISPLAY_NAME } from '@/common/config/constants';
 import type { TProviderWithModel } from '../config/storage';
 import { OpenAIRotatingClient, type OpenAIClientConfig } from './OpenAIRotatingClient';
 import { GeminiRotatingClient, type GeminiClientConfig } from './GeminiRotatingClient';
@@ -77,7 +78,7 @@ export class ClientFactory {
           timeout: options.timeout,
           defaultHeaders: {
             'HTTP-Referer': 'https://aionui.com',
-            'X-Title': 'AionUi',
+            'X-Title': APP_DISPLAY_NAME,
           },
           ...(options.baseConfig as OpenAIClientConfig),
         };
@@ -128,7 +129,7 @@ export class ClientFactory {
           timeout: options.timeout,
           defaultHeaders: {
             'HTTP-Referer': 'https://aionui.com',
-            'X-Title': 'AionUi',
+            'X-Title': APP_DISPLAY_NAME,
           },
           ...(options.baseConfig as OpenAIClientConfig),
         };

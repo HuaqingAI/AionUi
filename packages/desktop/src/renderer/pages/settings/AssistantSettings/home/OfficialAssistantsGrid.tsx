@@ -6,6 +6,7 @@
 
 import type { AssistantListItem } from '../types';
 import { type AssistantEnabledFilter, filterByEnabled } from '../assistantUtils';
+import { APP_DISPLAY_NAME } from '@/common/config/constants';
 import AssistantAvatar from '../AssistantAvatar';
 import RuntimeBadge from './RuntimeBadge';
 import { Button, Dropdown, Menu, Switch } from '@arco-design/web-react';
@@ -72,7 +73,7 @@ const OfficialAssistantsGrid: React.FC<OfficialAssistantsGridProps> = ({
           />
           <span className='truncate'>
             {t('settings.officialAssistantsHintShort', {
-              defaultValue: 'Maintained by AionUi · enable to use, duplicate to customize',
+              defaultValue: `Maintained by ${APP_DISPLAY_NAME} · enable to use, duplicate to customize`,
             })}
           </span>
         </span>

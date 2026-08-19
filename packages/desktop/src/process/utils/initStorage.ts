@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { mkdirSync as _mkdirSync, existsSync, readdirSync, readFileSync } from 'fs';
+import { mkdirSync as _mkdirSync, existsSync, readFileSync } from 'fs';
 import fs from 'fs/promises';
 import path from 'path';
 import { getPlatformServices } from '@/common/platform';
@@ -18,15 +18,7 @@ import type {
   TProviderWithModel,
 } from '@/common/config/storage';
 import { ConfigStorage, EnvStorage } from '@/common/config/storage';
-import {
-  copyDirectoryRecursively,
-  ensureDirectory,
-  getConfigPath,
-  getDataPath,
-  getTempPath,
-  hasElectronAppPath,
-  verifyDirectoryFiles,
-} from './utils';
+import { ensureDirectory, getConfigPath, getDataPath, hasElectronAppPath } from './utils';
 import { runLegacyDatabaseMigrations } from '@process/services/database/runLegacyDatabaseMigrations';
 import { BUILTIN_IMAGE_GEN_ID } from '../resources/builtinMcp/constants';
 // Platform and architecture types (moved from deleted updateConfig)
@@ -58,53 +50,6 @@ const mkdirSync = (path: string) => {
 /**
  * 迁移老版本数据从temp目录到userData/config目录
  */
-const migrateLegacyData = async () => {
-  const oldDir = getTempPath(); // 老的temp目录
-  const newDir = getConfigPath(); // 新的userData/config目录
-
-  try {
-    // 检查新目录是否为空（不存在或者存在但无内容）
-    const isNewDirEmpty =
-      !existsSync(newDir) ||
-      (() => {
-        try {
-          return existsSync(newDir) && readdirSync(newDir).length === 0;
-        } catch (error) {
-          console.warn('[AionUi] Warning: Could not read new directory during migration check:', error);
-          return false; // 假设非空以避免迁移覆盖
-        }
-      })();
-
-    // 检查迁移条件：老目录存在且新目录为空
-    if (existsSync(oldDir) && isNewDirEmpty) {
-      // 创建目标目录
-      mkdirSync(newDir);
-
-      // 复制所有文件和文件夹
-      await copyDirectoryRecursively(oldDir, newDir);
-
-      // 验证迁移是否成功
-      const isVerified = await verifyDirectoryFiles(oldDir, newDir);
-      if (isVerified) {
-        // 确保不会删除相同的目录
-        if (path.resolve(oldDir) !== path.resolve(newDir)) {
-          try {
-            await fs.rm(oldDir, { recursive: true });
-          } catch (cleanupError) {
-            console.warn('[AionUi] 原目录清理失败，请手动删除:', oldDir, cleanupError);
-          }
-        }
-      }
-
-      return true;
-    }
-  } catch (error) {
-    console.error('[AionUi] 数据迁移失败:', error);
-  }
-
-  return false;
-};
-
 const WriteFile = async (file_path: string, data: string) => {
   // Ensure parent directory exists to prevent ENOENT on first write
   const dir = nodePath.dirname(file_path);
@@ -315,7 +260,7 @@ const cleanupLegacyBuiltinSkillsDir = () => {
   const legacyDir = path.join(cacheDir, LEGACY_BUILTIN_SKILLS_DIR);
   if (!existsSync(legacyDir)) return;
   fs.rm(legacyDir, { recursive: true, force: true })
-    .then(() => console.log('[AionUi] Cleaned up legacy builtin-skills cache'))
+    .then(() => console.log('[HQBuddy] Cleaned up legacy builtin-skills cache'))
     .catch(() => {
       /* swallow — cleanup is not critical */
     });
@@ -365,13 +310,10 @@ const getBuiltinMcpScriptPath = (scriptName: string): string => {
 
 const initStorage = async () => {
   const t0 = performance.now();
-  const mark = (label: string) => console.log(`[AionUi:init] ${label} +${Math.round(performance.now() - t0)}ms`);
+  const mark = (label: string) => console.log(`[HQBuddy:init] ${label} +${Math.round(performance.now() - t0)}ms`);
   mark('start');
 
   // 1. 先执行数据迁移（在任何目录创建之前）
-  await migrateLegacyData();
-  mark('1. migrateLegacyData');
-
   // 2. 创建必要的目录（迁移后再创建，确保迁移能正常进行）
   // Use ensureDirectory to handle cases where a regular file blocks the path (#841)
   ensureDirectory(getHomePage());
@@ -393,7 +335,7 @@ const initStorage = async () => {
     await ensureAssistantDirs();
     mark('5. ensureAssistantDirs');
   } catch (error) {
-    console.error('[AionUi] Failed to ensure assistant dirs:', error);
+    console.error('[HQBuddy] Failed to ensure assistant dirs:', error);
   }
 
   // 5b. Best-effort cleanup of the legacy builtin-skills cache left behind

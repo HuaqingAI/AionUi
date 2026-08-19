@@ -5,6 +5,7 @@
  */
 
 import { useTalkToButler } from '@/renderer/hooks/assistant/useTalkToButler';
+import { APP_DISPLAY_NAME } from '@/common/config/constants';
 import { Robot } from '@icon-park/react';
 import classNames from 'classnames';
 import React, { useCallback } from 'react';
@@ -31,8 +32,7 @@ const ButlerDiagnoseButton: React.FC<ButlerDiagnoseButtonProps> = ({ errorText, 
     (event: React.MouseEvent<HTMLElement>) => {
       event.stopPropagation();
       const prompt = t('settings.talkToButler.prompt.diagnoseChatError', {
-        defaultValue:
-          'I ran into an error during a conversation in AionUi, please help me diagnose it.\n\n[Error] {{error}}\n\nPlease diagnose the cause and tell me how to fix it.',
+        defaultValue: `I ran into an error during a conversation in ${APP_DISPLAY_NAME}, please help me diagnose it.\n\n[Error] {{error}}\n\nPlease diagnose the cause and tell me how to fix it.`,
         error: errorText.trim(),
       });
       talkToButler({ prompt }).catch((err) => {

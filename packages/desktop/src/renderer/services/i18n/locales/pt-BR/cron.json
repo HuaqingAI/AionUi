@@ -13,7 +13,7 @@
     "error": "Erro",
     "unread": "Nova execução",
     "unconfigured": "Sem tarefa agendada",
-    "defaultPrompt": "Todos os dias às 10h, pesquise as últimas notícias sobre IA, resuma e gere um relatório de insights. (Use a habilidade /cron para criar uma tarefa agendada no AionUi.)"
+    "defaultPrompt": "Todos os dias às 10h, pesquise as últimas notícias sobre IA, resuma e gere um relatório de insights. (Use a habilidade /cron para criar uma tarefa agendada no 华青智能助手.)"
   },
   "actions": {
     "goTo": "Ver Chat",
@@ -56,7 +56,7 @@
     "description": "Execute tarefas agendadas.",
     "awakeBanner": "As tarefas agendadas são executadas apenas enquanto o computador está ativo.",
     "keepAwake": "Manter ativo",
-    "keepAwakeTooltip": "Quando ativado, o AionUi impedirá que o computador durma",
+    "keepAwakeTooltip": "Quando ativado, o 华青智能助手 impedirá que o computador durma",
     "createTask": "Criar Tarefa Agendada",
     "editTask": "Editar Tarefa Agendada",
     "createSuccess": "Tarefa criada com sucesso",

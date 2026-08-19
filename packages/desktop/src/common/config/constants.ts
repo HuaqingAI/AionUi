@@ -11,6 +11,9 @@
 // ===== 文件处理相关常量 =====
 
 /** 临时文件时间戳分隔符 */
+/** User-facing product name. This module is safe to import from the renderer. */
+export const APP_DISPLAY_NAME = '华青智能助手';
+
 export const AIONUI_TIMESTAMP_SEPARATOR = '_aionui_';
 
 /** 用于匹配和清理时间戳后缀的正则表达式 */

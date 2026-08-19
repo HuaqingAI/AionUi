@@ -65,7 +65,7 @@ for f in latest-win-arm64.yml latest-arm64-mac.yml; do
   fi
 done
 
-for f in 华青智能助手-1.0.0-win-x64.exe 华青智能助手-1.0.0-win-arm64.exe 华青智能助手-1.0.0-mac-x64.dmg 华青智能助手-1.0.0-mac-arm64.dmg 华青智能助手-1.0.0.deb 华青智能助手-1.0.0-arm64.deb; do
+for f in HQBuddy-1.0.0-win-x64.exe HQBuddy-1.0.0-win-arm64.exe HQBuddy-1.0.0-mac-x64.dmg HQBuddy-1.0.0-mac-x64.zip HQBuddy-1.0.0-mac-arm64.dmg HQBuddy-1.0.0-mac-arm64.zip HQBuddy-1.0.0-linux-x64.deb HQBuddy-1.0.0-linux-arm64.deb; do
   if [ ! -f "$OUTPUT_DIR/$f" ]; then
     echo "FAIL: missing distributable: $f"
     ERRORS=$((ERRORS + 1))

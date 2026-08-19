@@ -4,12 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { app } from 'electron';
+import { app, shell } from 'electron';
 import http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
 import os from 'os';
-import { APP_DISPLAY_NAME, DEVELOPMENT_APP_NAME, getAppFilesystemName } from '@/common/platform';
+import { APP_DISPLAY_NAME } from '@/common/config/constants';
+import { getAppFilesystemName, getAppUserModelId, getWindowsDevelopmentShortcutPath } from '@/common/platform';
 import { applyGpuRecoveryFlags } from './gpuRecovery';
 
 // ============ E2E test isolation ============
@@ -29,35 +30,32 @@ if (e2eUserDataDir && e2eUserDataDir.trim() !== '') {
 // Keep the OS-facing display name separate from filesystem names. Electron
 // derives userData from the display name unless it is explicitly overridden.
 app.setName(APP_DISPLAY_NAME);
+if (process.platform === 'win32') {
+  const appUserModelId = getAppUserModelId(app.isPackaged, process.execPath);
+  app.setAppUserModelId(appUserModelId);
 
-function migrateLegacyUserDataDirectory(appDataPath: string, userDataPath: string, appFilesystemName: string): void {
-  let replaceEmptyTarget = false;
-  if (fs.existsSync(userDataPath)) {
+  // Unpackaged Electron apps do not have an installer-created Start Menu
+  // shortcut. Windows then shows the raw AUMID as the toast source.
+  if (!app.isPackaged && process.env.AIONUI_E2E_TEST !== '1') {
     try {
-      replaceEmptyTarget = fs.statSync(userDataPath).isDirectory() && fs.readdirSync(userDataPath).length === 0;
-    } catch {
-      return;
-    }
-    if (!replaceEmptyTarget) return;
-  }
-
-  const legacyNames =
-    appFilesystemName === DEVELOPMENT_APP_NAME
-      ? [`${APP_DISPLAY_NAME}-Dev`, 'AionUi-Dev']
-      : [APP_DISPLAY_NAME, 'AionUi', 'aionui'];
-
-  for (const legacyName of legacyNames) {
-    const legacyPath = path.join(appDataPath, legacyName);
-    if (!fs.existsSync(legacyPath)) continue;
-
-    try {
-      if (replaceEmptyTarget) fs.rmSync(userDataPath, { recursive: true, force: true });
-      fs.renameSync(legacyPath, userDataPath);
-      console.log(`[AionUi] Migrated legacy user data directory to ${userDataPath}`);
+      const shortcutPath = getWindowsDevelopmentShortcutPath(app.getPath('appData'));
+      fs.mkdirSync(path.dirname(shortcutPath), { recursive: true });
+      const wroteShortcut = shell.writeShortcutLink(shortcutPath, 'create', {
+        target: process.execPath,
+        cwd: process.cwd(),
+        args: process.argv
+          .slice(1)
+          .map((arg) => `"${arg.replaceAll('"', '\\"')}"`)
+          .join(' '),
+        description: APP_DISPLAY_NAME,
+        appUserModelId,
+      });
+      if (!wroteShortcut) {
+        console.warn('[HQBuddy] Failed to register the development Windows notification shortcut.');
+      }
     } catch (error) {
-      console.warn(`[AionUi] Failed to migrate legacy user data directory from ${legacyPath}:`, error);
+      console.warn('[HQBuddy] Failed to register the development Windows notification shortcut:', error);
     }
-    return;
   }
 }
 
@@ -65,9 +63,7 @@ if (e2eUserDataDir) {
   app.setPath('logs', path.join(e2eUserDataDir, 'logs'));
 } else {
   const appFilesystemName = getAppFilesystemName(app.isPackaged, process.execPath);
-  const appDataPath = app.getPath('appData');
-  const userDataPath = path.join(appDataPath, appFilesystemName);
-  migrateLegacyUserDataDirectory(appDataPath, userDataPath, appFilesystemName);
+  const userDataPath = path.join(app.getPath('appData'), appFilesystemName);
   app.setPath('userData', userDataPath);
   app.setPath(
     'logs',

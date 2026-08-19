@@ -5,6 +5,7 @@
  */
 
 import { ipcBridge } from '@/common';
+import { APP_DISPLAY_NAME } from '@/common/config/constants';
 import type { Assistant } from '@/common/types/agent/assistantTypes';
 import { globalNavigate } from '@/renderer/utils/navigation';
 import { Message } from '@arco-design/web-react';
@@ -60,7 +61,9 @@ export const useTalkToButler = (): ((args: TalkToButlerArgs) => Promise<void>) =
             await ipcBridge.assistants.setState.invoke({ id: butler.id, enabled: true });
             await swrMutate('assistants.list');
             Message.success(
-              t('settings.talkToButler.enabledToast', { defaultValue: 'Enabled the AionUi Butler for you' })
+              t('settings.talkToButler.enabledToast', {
+                defaultValue: `Enabled the ${APP_DISPLAY_NAME} Butler for you`,
+              })
             );
           }
         }

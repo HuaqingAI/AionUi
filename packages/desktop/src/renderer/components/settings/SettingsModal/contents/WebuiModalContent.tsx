@@ -8,6 +8,7 @@ import { WEBUI_DEFAULT_PORT } from '@/common/config/constants';
 import { shell, webui, type IWebUIStatus } from '@/common/adapter/ipcBridge';
 import { isBackendHttpError } from '@/common/adapter/httpBridge';
 import { configService } from '@/common/config/configService';
+import { APP_DISPLAY_NAME } from '@/common/config/constants';
 import AionModal from '@/renderer/components/base/AionModal';
 import AionScrollArea from '@/renderer/components/base/AionScrollArea';
 import { useTalkToButler } from '@/renderer/hooks/assistant/useTalkToButler';
@@ -667,8 +668,7 @@ const WebuiModalContent: React.FC = () => {
                   onClick={() =>
                     void talkToButler({
                       prompt: t('settings.talkToButler.prompt.setupRemote', {
-                        defaultValue:
-                          'Help me set up remote access so I can open AionUi from my phone or over the internet.',
+                        defaultValue: `Help me set up remote access so I can open ${APP_DISPLAY_NAME} from my phone or over the internet.`,
                       }),
                     })
                   }

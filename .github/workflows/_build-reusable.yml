@@ -659,7 +659,7 @@ jobs:
             out/*.msi
             out/*.dmg
             out/*.deb
-            out/华青智能助手-*-mac-*.zip
+            out/HQBuddy-*-mac-*.zip
             out/*.yml
           if-no-files-found: warn
           retention-days: 7

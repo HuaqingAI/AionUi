@@ -62,6 +62,7 @@ describe('useBrowserNotification', () => {
     renderHook(() => useBrowserNotification());
     emitStream({ type: 'acp_permission', conversation_id: 'c1' });
     expect(FakeNotification.instances).toHaveLength(1);
+    expect(FakeNotification.instances[0].title).toBe('华青智能助手');
     expect(FakeNotification.instances[0].options.body).toBe('settings.browserNotification.bodyConfirmation');
   });
 

@@ -23,7 +23,7 @@ export function setAppConfig(config: { name: string; version: string; protocolVe
  * Gets the application client name from the app config if available
  */
 export const getConfiguredAppClientName = (): string => {
-  return appConfig?.name || 'AionUi';
+  return appConfig?.name || APP_DISPLAY_NAME;
 };
 
 /**
@@ -39,3 +39,4 @@ export const getConfiguredAppClientVersion = (): string => {
 export const getConfiguredCodexMcpProtocolVersion = (): string => {
   return appConfig?.protocolVersion || '1.0.0';
 };
+import { APP_DISPLAY_NAME } from '@/common/config/constants';

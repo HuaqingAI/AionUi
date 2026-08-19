@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 
 const projectRoot = resolve(__dirname, '../..');
 const itWithBash = spawnSync('bash', ['--version'], { encoding: 'utf8' }).status === 0 ? it : it.skip;
+const APP_DISPLAY_NAME = '华青智能助手';
 
 function readProjectFile(path: string): string {
   return readFileSync(resolve(projectRoot, path), 'utf8');
@@ -49,24 +50,26 @@ describe('release packaging configuration', () => {
     const packageJson = JSON.parse(readProjectFile('package.json')) as { version?: string };
 
     expect(packageJson.version).toBe('1.0.0');
-    expect(config).toContain('productName: 华青智能助手');
+    expect(config).toContain(`productName: ${APP_DISPLAY_NAME}`);
     expect(config).toContain('executableName: HQBuddy');
-    expect(config).toContain('CFBundleName: 华青智能助手');
-    expect(config).toContain('CFBundleDisplayName: 华青智能助手');
-    expect(config).toContain('copyright: Copyright © 2024 华青智能助手');
+    expect(config).toContain('appId: com.hqbuddy.app');
+    expect(config).toContain('      - hqbuddy');
+    expect(config).toContain(`CFBundleName: ${APP_DISPLAY_NAME}`);
+    expect(config).toContain(`CFBundleDisplayName: ${APP_DISPLAY_NAME}`);
+    expect(config).toContain(`copyright: Copyright © 2024 ${APP_DISPLAY_NAME}`);
     expect(config).toContain('shortcutName: ${productName}');
     expect(config).toContain('uninstallDisplayName: ${productName}');
     expect(config).not.toContain('productName: AionUi');
     expect(config).not.toContain('executableName: AionUi');
-    expect(config).toContain('artifactName: ${productName}-${version}-${os}-${arch}.${ext}');
+    expect(config).toContain('artifactName: HQBuddy-${version}-${os}-${arch}.${ext}');
   });
 
   it('uploads mac zip artifacts without a stale Windows zip glob', () => {
     const workflow = readProjectFile('.github/workflows/_build-reusable.yml');
 
-    expect(workflow).toContain('out/华青智能助手-*-mac-*.zip');
+    expect(workflow).toContain('out/HQBuddy-*-mac-*.zip');
     expect(workflow).not.toContain('out/AionUi-*-mac-*.zip');
-    expect(workflow).not.toContain('out/华青智能助手-*-win32-*.zip');
+    expect(workflow).not.toContain('out/HQBuddy-*-win32-*.zip');
   });
 
   it('retries mac prepackaged builds with both dmg and zip targets', () => {
@@ -89,7 +92,7 @@ describe('release packaging configuration', () => {
       });
       expect(createResult.status).toBe(0);
 
-      rmSync(resolve(artifactsDir, 'macos-build-arm64', '华青智能助手-1.0.0-mac-arm64.zip'), { force: true });
+      rmSync(resolve(artifactsDir, 'macos-build-arm64', 'HQBuddy-1.0.0-mac-arm64.zip'), { force: true });
 
       const prepareResult = spawnSync('bash', ['scripts/prepare-release-assets.sh', artifactsDir, outputDir], {
         cwd: projectRoot,

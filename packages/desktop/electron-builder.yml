@@ -1,4 +1,4 @@
-appId: com.aionui.app
+appId: com.hqbuddy.app
 productName: 华青智能助手
 executableName: HQBuddy
 copyright: Copyright © 2024 华青智能助手
@@ -6,7 +6,7 @@ copyright: Copyright © 2024 华青智能助手
 protocols:
   - name: 华青智能助手 Protocol
     schemes:
-      - aionui
+      - hqbuddy
 
 asar:
   smartUnpack: true
@@ -117,7 +117,7 @@ win:
     - nsis
     #    - msi
   icon: resources/app.ico # Use the checked-in Windows icon resource for executable metadata/icon patching
-  artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+  artifactName: HQBuddy-${version}-${os}-${arch}.${ext}
 
 nsis:
   oneClick: false
@@ -126,7 +126,7 @@ nsis:
   createStartMenuShortcut: true
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
-  artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+  artifactName: HQBuddy-${version}-${os}-${arch}.${ext}
   differentialPackage: false
 
 mac:
@@ -138,7 +138,7 @@ mac:
   extendInfo:
     CFBundleName: 华青智能助手
     CFBundleDisplayName: 华青智能助手
-  artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+  artifactName: HQBuddy-${version}-${os}-${arch}.${ext}
   category: public.app-category.productivity
   hardenedRuntime: true
   gatekeeperAssess: false
@@ -171,10 +171,10 @@ linux:
   target:
     - deb
   icon: resources/app.png
-  artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+  artifactName: HQBuddy-${version}-${os}-${arch}.${ext}
   category: Utility
-  maintainer: aionui
-  vendor: aionui
+  maintainer: HQBuddy
+  vendor: HQBuddy
   synopsis: ${description}
   description: ${description}
   desktop:
@@ -183,7 +183,7 @@ linux:
       Comment: ${description}
       Icon: 华青智能助手
       Categories: Office;Utility;
-      MimeType: x-scheme-handler/aionui;
+      MimeType: x-scheme-handler/hqbuddy;
 
 npmRebuild: false
 buildDependenciesFromSource: false

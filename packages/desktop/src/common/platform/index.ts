@@ -1,12 +1,15 @@
 import path from 'path';
+import { APP_DISPLAY_NAME } from '../config/constants';
 import type { IPlatformServices } from './IPlatformServices';
 import { NodePlatformServices } from './NodePlatformServices';
 
 let _services: IPlatformServices | null = null;
 
-export const APP_DISPLAY_NAME = '华青智能助手';
+export { APP_DISPLAY_NAME };
 export const PRODUCTION_APP_NAME = 'HQBuddy';
 export const DEVELOPMENT_APP_NAME = 'HQBuddy-Dev';
+export const PRODUCTION_APP_USER_MODEL_ID = 'com.hqbuddy.app';
+export const DEVELOPMENT_APP_USER_MODEL_ID = 'com.hqbuddy.app.dev';
 
 /**
  * Resolve the dev-mode app name for environment isolation.
@@ -26,6 +29,26 @@ export function getAppFilesystemName(isPackaged: boolean, executablePath = proce
     .pop()
     ?.replace(/\.exe$/i, '');
   return executableName === DEVELOPMENT_APP_NAME ? DEVELOPMENT_APP_NAME : PRODUCTION_APP_NAME;
+}
+
+/** Resolve the Windows notification identity for the active build flavor. */
+export function getAppUserModelId(isPackaged: boolean, executablePath = process.execPath): string {
+  return getAppFilesystemName(isPackaged, executablePath) === PRODUCTION_APP_NAME
+    ? PRODUCTION_APP_USER_MODEL_ID
+    : DEVELOPMENT_APP_USER_MODEL_ID;
+}
+
+/** Path of the development Start Menu shortcut that registers its Windows toast identity. */
+export function getWindowsDevelopmentShortcutPath(appDataPath: string): string {
+  return path.join(
+    appDataPath,
+    'Microsoft',
+    'Windows',
+    'Start Menu',
+    'Programs',
+    DEVELOPMENT_APP_NAME,
+    `${APP_DISPLAY_NAME}.lnk`
+  );
 }
 
 export function registerPlatformServices(services: IPlatformServices): void {
@@ -54,6 +77,9 @@ export function getPlatformServices(): IPlatformServices {
         // Rollup may load this chunk before configureChromium.ts runs, so apply
         // the same display name and storage paths here as a safety net.
         app.setName(APP_DISPLAY_NAME);
+        if (process.platform === 'win32') {
+          app.setAppUserModelId(getAppUserModelId(app.isPackaged, process.execPath));
+        }
         const e2eUserDataDir = process.env.AIONUI_E2E_TEST === '1' ? process.env.AIONUI_E2E_USER_DATA_DIR : undefined;
         if (e2eUserDataDir && e2eUserDataDir.trim() !== '') {
           app.setPath('userData', e2eUserDataDir);

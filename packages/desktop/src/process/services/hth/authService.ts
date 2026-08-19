@@ -78,7 +78,7 @@ type ApiEnvelope<T> = {
   msg?: string;
 };
 
-const REDIRECT_URI = 'aionui://auth/hth-callback';
+const REDIRECT_URI = 'hqbuddy://auth/hth-callback';
 const LOOPBACK_CALLBACK_PATH = '/hth/callback';
 const LOGIN_STATE_TTL_MS = 10 * 60 * 1000;
 const DESKTOP_TOKEN_GROUP = 'hthbuddy';
