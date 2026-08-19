@@ -85,7 +85,18 @@ export type HTHInjectProjectConfigRequest = {
 export type HTHInjectProjectConfigResult = {
   injected: boolean;
   files: string[];
-  reason?: 'assistantNotManaged' | 'workspaceMissing' | 'packageMissing' | 'projectConfigMissing';
+  reason?:
+    | 'assistantNotManaged'
+    | 'workspaceMissing'
+    | 'packageMissing'
+    | 'projectConfigMissing'
+    | 'authRequired'
+    | 'personalApiKeyInvalid'
+    | 'modelListUnavailable'
+    | 'modelListInvalid'
+    | 'modelListEmpty'
+    | 'defaultModelUnavailable'
+    | 'openCodeConfigInvalid';
 };
 
 export type HTHQuotaWalletSummary = {

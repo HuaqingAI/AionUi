@@ -17,6 +17,15 @@ type HTHProjectConfigInjectionParams = {
 };
 
 const injectionByKey = new Map<string, Promise<void>>();
+const blockingInjectionReasons = new Set([
+  'authRequired',
+  'personalApiKeyInvalid',
+  'modelListUnavailable',
+  'modelListInvalid',
+  'modelListEmpty',
+  'defaultModelUnavailable',
+  'openCodeConfigInvalid',
+]);
 
 export function useHTHProjectConfigInjection({
   conversationId,
@@ -39,11 +48,14 @@ export function useHTHProjectConfigInjection({
 
     const promise = (async () => {
       await (prepareRuntime?.() ?? ensureConversationRuntime(conversationId));
-      await ipcBridge.hth.injectProjectConfig.invoke({
+      const result = await ipcBridge.hth.injectProjectConfig.invoke({
         conversationId,
         workspace,
         assistantId,
       });
+      if (result.reason && blockingInjectionReasons.has(result.reason)) {
+        throw new Error(`HTH project config injection failed: ${result.reason}`);
+      }
     })().finally(() => {
       if (injectionByKey.get(key) === promise) {
         injectionByKey.delete(key);

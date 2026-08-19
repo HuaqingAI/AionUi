@@ -9,7 +9,6 @@ import type { IMcpServer, IProvider, TProviderWithModel } from '@/common/config/
 import AgentModeSelector from '@/renderer/components/agent/AgentModeSelector';
 import { DROPDOWN_SEARCH_THRESHOLD } from '@/renderer/components/agent/runtimeSelectorOptions';
 import AionInlineSearchInput from '@/renderer/components/base/AionInlineSearchInput';
-import { getModelScopedThoughtLevelOption } from '@/renderer/hooks/agent/useAcpConfigOptions';
 import MobileActionSheet from '@/renderer/components/chat/MobileActionSheet';
 import type {
   MobileActionSheetEntry,
@@ -199,10 +198,7 @@ const GuidActionRow: React.FC<GuidActionRowProps> = ({
     : mcpServers;
   const showSkillSearch = allSkills.length > DROPDOWN_SEARCH_THRESHOLD;
   const showMcpSearch = mcpServers.length > DROPDOWN_SEARCH_THRESHOLD;
-  const modelScopedThoughtLevelOption = getModelScopedThoughtLevelOption(
-    thoughtLevelOption,
-    selectedAcpModel || currentAcpCachedModelInfo?.current_model_id
-  );
+  const modelScopedThoughtLevelOption = thoughtLevelOption;
 
   const openHostFilePicker = useCallback(() => {
     ipcBridge.dialog.showOpen

@@ -21,6 +21,16 @@ import {
 } from '@/renderer/pages/guid/utils/sessionSkills';
 import type { AcpModelInfo } from '../types';
 
+const blockingHTHProjectConfigInjectionReasons = new Set([
+  'authRequired',
+  'personalApiKeyInvalid',
+  'modelListUnavailable',
+  'modelListInvalid',
+  'modelListEmpty',
+  'defaultModelUnavailable',
+  'openCodeConfigInvalid',
+]);
+
 export type GuidSendDeps = {
   // Input state
   input: string;
@@ -115,11 +125,14 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
 
     const assistantConversationId = selectedAssistantId;
     const injectHTHProjectConfig = async (conversationId: string, workspace?: string) => {
-      await ipcBridge.hth.injectProjectConfig.invoke({
+      const result = await ipcBridge.hth.injectProjectConfig.invoke({
         conversationId,
         workspace,
         assistantId: assistantConversationId,
       });
+      if (result.reason && blockingHTHProjectConfigInjectionReasons.has(result.reason)) {
+        throw new Error(`HTH project config injection failed: ${result.reason}`);
+      }
     };
     const assistantBackend = selectedAssistantBackend;
     const enabled_skills_to_send = filterGuidSessionSkillIds(guidEnabledSkills ?? assistantDefaultSkillIds);

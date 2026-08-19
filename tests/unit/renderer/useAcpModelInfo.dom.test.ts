@@ -183,7 +183,7 @@ describe('useAcpModelInfo', () => {
     ]);
   });
 
-  it('filters thought level options for deepseek-v4 models', async () => {
+  it('keeps runtime thought level options for deepseek-v4 models', async () => {
     ensureRuntimeInvokeMock.mockResolvedValue({
       recovered: true,
       config_options: [
@@ -222,8 +222,8 @@ describe('useAcpModelInfo', () => {
     await waitFor(() => {
       expect(result.current.model_info?.current_model_id).toBe('deepseek-v4-pro');
     });
-    expect(result.current.thoughtLevel?.options.map((item) => item.value)).toEqual(['max', 'none']);
-    expect(result.current.thoughtLevel?.currentValue).toBe('max');
+    expect(result.current.thoughtLevel?.options.map((item) => item.value)).toEqual(['low', 'medium', 'high', 'xhigh']);
+    expect(result.current.thoughtLevel?.currentValue).toBe('low');
   });
 
   it('uses an injected config option loader without starting standalone runtime', async () => {

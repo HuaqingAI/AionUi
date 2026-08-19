@@ -5,11 +5,7 @@
  */
 
 import type { AionrsModelSelection } from './useAionrsModelSelection';
-import {
-  getModelScopedThoughtLevelOption,
-  type AcpConfigSetStatus,
-  type AcpDerivedOption,
-} from '@/renderer/hooks/agent/useAcpConfigOptions';
+import { type AcpConfigSetStatus, type AcpDerivedOption } from '@/renderer/hooks/agent/useAcpConfigOptions';
 import {
   composeRuntimeSelectorLabel,
   getCurrentThoughtLevelLabel,
@@ -48,7 +44,7 @@ const AionrsModelSelector: React.FC<{
   const defaultModelLabel = t('common.defaultModel');
 
   const current_model = selection?.current_model;
-  const modelThoughtLevel = getModelScopedThoughtLevelOption(thoughtLevel, current_model?.use_model);
+  const modelThoughtLevel = thoughtLevel;
 
   const renderLogo = () => <Brain theme='outline' size='14' fill={iconColors.secondary} className='shrink-0' />;
 

@@ -820,7 +820,18 @@ describe('HTHConfigSyncService auth handling', () => {
     );
     await fs.writeFile(
       path.join(extractDir, 'project', 'opencode.jsonc'),
-      '{ "provider": { "hth": { "options": { "apiKey": "\\u003chth-personal-apikey\\u003e" } } } }\n',
+      [
+        '{',
+        '  "model": "hth/gpt-5.6-terra",',
+        '  "provider": {',
+        '    "hth": {',
+        '      "options": { "apiKey": "\\u003chth-personal-apikey\\u003e" },',
+        '      "models": { "legacy-model": { "name": "LEGACY" } }',
+        '    }',
+        '  }',
+        '}',
+        '',
+      ].join('\n'),
       'utf8'
     );
     const packageStore = {
@@ -841,6 +852,22 @@ describe('HTHConfigSyncService auth handling', () => {
     const authService = new HTHAuthService(authFile);
     const codexHome = path.join(tempDir, 'aionui', 'runtime', 'codex-home');
     const syncService = new HTHConfigSyncService(authService, packageStore, () => codexHome);
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            object: 'list',
+            data: [
+              { id: 'gpt-5.6-terra' },
+              { id: 'deepseek-v4-flash' },
+              { id: 'custom-text-model' },
+              { id: 'gpt-5.6-terra' },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        )
+    );
+    vi.stubGlobal('fetch', fetchMock);
 
     const result = await syncService.injectProjectConfig({
       conversationId: 'conversation-1',
@@ -855,10 +882,113 @@ describe('HTHConfigSyncService auth handling', () => {
     await expect(fs.readFile(path.join(workspace, 'opencode.jsonc'), 'utf8')).resolves.toContain(
       '"apiKey": "sk-personal-1"'
     );
+    const projectConfig = JSON.parse(await fs.readFile(path.join(workspace, 'opencode.jsonc'), 'utf8'));
+    const models = projectConfig.provider.hth.models;
+    expect(Object.keys(models)).toEqual(['gpt-5.6-terra', 'deepseek-v4-flash', 'custom-text-model']);
+    expect(models['gpt-5.6-terra']).toMatchObject({
+      name: 'GPT-5.6-TERRA',
+      modalities: { input: ['text', 'image'], output: ['text', 'image'] },
+    });
+    expect(models['deepseek-v4-flash']).toMatchObject({
+      name: 'DEEPSEEK-V4-FLASH',
+      modalities: { input: ['text'], output: ['text'] },
+    });
+    expect(models['gpt-5.6-terra']).not.toHaveProperty('variants');
+    expect(models['deepseek-v4-flash']).not.toHaveProperty('variants');
+    expect(models).not.toHaveProperty('legacy-model');
+    expect(fetchMock).toHaveBeenCalledWith(
+      new URL('http://127.0.0.1:3001/v1/models'),
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer sk-personal-1' }),
+      })
+    );
     const syncManifest = JSON.parse(await fs.readFile(path.join(workspace, '.aionui-hth-sync.json'), 'utf8'));
     expect(syncManifest).toMatchObject({ version: '1.0.0' });
     expect(syncManifest.managedBy).toBeUndefined();
     expect(syncManifest.files).toBeUndefined();
+  });
+
+  it('blocks OpenCode injection when the default model is not available to the personal key', async () => {
+    await writeStoredAuth(authFile);
+    const extractDir = path.join(tempDir, 'missing-default-extracted');
+    const workspace = path.join(tempDir, 'missing-default-workspace');
+    await fs.mkdir(path.join(extractDir, 'project'), { recursive: true });
+    await fs.writeFile(
+      path.join(extractDir, 'project', 'opencode.jsonc'),
+      '{"provider":{"hth":{"models":{}}}}\n',
+      'utf8'
+    );
+    const packageStore = {
+      findByAssistantId: vi.fn(async () => ({
+        packageId: 'missing-default-package',
+        assistantId: 'hth-agent',
+        cliType: 'opencode',
+        artifactKey: 'oss://bucket/agent-packages/opencode/demo/1.0.0/opencode.zip',
+        sourceUrl: 'https://oss.test/demo.zip',
+        version: '1.0.0',
+        name: 'Demo',
+        syncedAt: Date.now(),
+        extractDir,
+        globalFiles: [],
+        projectFiles: ['opencode.jsonc'],
+      })),
+    } as unknown as HTHPackageStore;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ data: [{ id: 'deepseek-v4-flash' }] }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+      )
+    );
+
+    const result = await new HTHConfigSyncService(new HTHAuthService(authFile), packageStore).injectProjectConfig({
+      conversationId: 'conversation-1',
+      workspace,
+      assistantId: 'hth-agent',
+    });
+
+    expect(result).toMatchObject({ injected: false, reason: 'defaultModelUnavailable' });
+  });
+
+  it('blocks OpenCode injection when the configured personal API key is not the default HTH key', async () => {
+    await writeStoredAuth(authFile, { personalApiKeyName: 'another-key' });
+    const extractDir = path.join(tempDir, 'wrong-key-extracted');
+    const workspace = path.join(tempDir, 'wrong-key-workspace');
+    await fs.mkdir(path.join(extractDir, 'project'), { recursive: true });
+    await fs.writeFile(
+      path.join(extractDir, 'project', 'opencode.jsonc'),
+      '{"provider":{"hth":{"models":{}}}}\n',
+      'utf8'
+    );
+    const packageStore = {
+      findByAssistantId: vi.fn(async () => ({
+        packageId: 'wrong-key-package',
+        assistantId: 'hth-agent',
+        cliType: 'opencode',
+        artifactKey: 'oss://bucket/agent-packages/opencode/demo/1.0.0/opencode.zip',
+        sourceUrl: 'https://oss.test/demo.zip',
+        version: '1.0.0',
+        name: 'Demo',
+        syncedAt: Date.now(),
+        extractDir,
+        globalFiles: [],
+        projectFiles: ['opencode.jsonc'],
+      })),
+    } as unknown as HTHPackageStore;
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await new HTHConfigSyncService(new HTHAuthService(authFile), packageStore).injectProjectConfig({
+      conversationId: 'conversation-1',
+      workspace,
+      assistantId: 'hth-agent',
+    });
+
+    expect(result).toMatchObject({ injected: false, reason: 'personalApiKeyInvalid' });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('injects codex project config and trusts the workspace in managed CODEX_HOME', async () => {

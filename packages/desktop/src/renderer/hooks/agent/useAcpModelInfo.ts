@@ -8,7 +8,6 @@ import { ipcBridge } from '@/common';
 import type { IResponseMessage } from '@/common/adapter/ipcBridge';
 import type { AcpConfigOptionDto, AcpModelInfo } from '@/common/types/platform/acpTypes';
 import {
-  getModelScopedThoughtLevelOption,
   type AcpConfigOptionsLoader,
   type AcpConfigSetStatus,
   type AcpDerivedOption,
@@ -144,7 +143,6 @@ export const useAcpModelInfo = ({
   }, [conversation_id, enabled, initialModelId]);
 
   const model_info = configModelInfo ?? legacyModelInfo ?? persistedModelInfo;
-  const scopedThoughtLevel = getModelScopedThoughtLevelOption(thoughtLevel, model_info?.current_model_id);
 
   const selectModel = useCallback(
     (model_id: string) => {
@@ -166,7 +164,7 @@ export const useAcpModelInfo = ({
     isLoading: !model_info && isLoading,
     isSetting: setStatus.state === 'setting' && setStatus.optionId === model?.id,
     selectModel,
-    thoughtLevel: scopedThoughtLevel,
+    thoughtLevel,
     setStatus,
     setConfigOption,
   };

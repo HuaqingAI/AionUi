@@ -72,8 +72,24 @@ type HTHAccess = {
   username?: string;
   departments?: string[];
   personalApiKey: string;
+  personalApiKeyName: string;
   quotaApplyUrl?: string;
 };
+
+type OpenCodeModelListItem = {
+  id?: unknown;
+};
+
+type OpenCodeConfigFailureReason = Extract<
+  NonNullable<HTHInjectProjectConfigResult['reason']>,
+  | 'authRequired'
+  | 'personalApiKeyInvalid'
+  | 'modelListUnavailable'
+  | 'modelListInvalid'
+  | 'modelListEmpty'
+  | 'defaultModelUnavailable'
+  | 'openCodeConfigInvalid'
+>;
 
 const MANAGED_AGENT_MATCH: Record<HTHCliType, string> = {
   opencode: 'opencode',
@@ -81,11 +97,16 @@ const MANAGED_AGENT_MATCH: Record<HTHCliType, string> = {
 };
 const HTH_PERSONAL_API_KEY_PLACEHOLDER = '<hth-personal-apikey>';
 const HTH_PERSONAL_API_KEY_PLACEHOLDER_JSON_ESCAPED = '\\u003chth-personal-apikey\\u003e';
+const HTH_DEFAULT_PERSONAL_API_KEY_NAME = 'hth-default-apikey';
+const HTH_DEFAULT_OPENCODE_MODEL = 'gpt-5.6-terra';
 const HTH_LOGIN_REQUIRED_MESSAGE = 'hth login required';
 const HTH_ASSISTANT_CATEGORIES_SETTING = 'hth.assistantCategories';
 const MAX_AGENT_PACKAGE_BYTES = 50 * 1024 * 1024;
 const MAX_ASSISTANT_AVATAR_BYTES = 2 * 1024 * 1024;
 const ASSISTANT_AVATAR_DIR_NAME = 'hth-assistant-avatars';
+const MAX_OPENCODE_MODELS = 500;
+const MAX_OPENCODE_MODEL_ID_LENGTH = 256;
+const OPENCODE_MODEL_REQUEST_TIMEOUT_MS = 10_000;
 
 function defaultCodexHomeDir(): string {
   return path.join(getSystemDir().workDir, 'runtime', 'codex-home');
@@ -234,11 +255,21 @@ export class HTHConfigSyncService {
 
     const copied = await copyManagedSection(manifest.extractDir, 'project', request.workspace, manifest.version);
     const access = await this.getAccessOrLogout();
-    if (access) {
+    if (!access) {
+      if (manifest.cliType === 'opencode') {
+        return { injected: false, files: copied, reason: 'authRequired' };
+      }
+    } else {
       await this.replaceRuntimePlaceholdersInFiles(request.workspace, copied, access);
     }
     if (manifest.cliType === 'codex') {
       await this.ensureCodexTrustedWorkspace(request.workspace);
+    }
+    if (manifest.cliType === 'opencode' && access) {
+      const reason = await this.populateOpenCodeModels(request.workspace, access);
+      if (reason) {
+        return { injected: false, files: copied, reason };
+      }
     }
     return { injected: copied.length > 0, files: copied };
   }
@@ -312,6 +343,121 @@ export class HTHConfigSyncService {
     if (nextContent !== content) {
       await fs.writeFile(filePath, nextContent, 'utf8');
     }
+  }
+
+  private async populateOpenCodeModels(
+    workspace: string,
+    access: HTHAccess
+  ): Promise<OpenCodeConfigFailureReason | undefined> {
+    if (access.personalApiKeyName.trim() !== HTH_DEFAULT_PERSONAL_API_KEY_NAME) {
+      return 'personalApiKeyInvalid';
+    }
+
+    const configPath = path.join(workspace, 'opencode.jsonc');
+    assertPathInside(workspace, configPath);
+    let config: Record<string, unknown>;
+    try {
+      const content = await fs.readFile(configPath, 'utf8');
+      const parsed = JSON.parse(content) as unknown;
+      if (!this.isRecord(parsed) || !this.isRecord(parsed.provider) || !this.isRecord(parsed.provider.hth)) {
+        return 'openCodeConfigInvalid';
+      }
+      config = parsed;
+    } catch {
+      return 'openCodeConfigInvalid';
+    }
+
+    const modelIdsResult = await this.fetchOpenCodeModelIds(access);
+    if (typeof modelIdsResult !== 'object') {
+      return modelIdsResult;
+    }
+    if (modelIdsResult.length === 0) {
+      return 'modelListEmpty';
+    }
+    if (!modelIdsResult.includes(HTH_DEFAULT_OPENCODE_MODEL)) {
+      return 'defaultModelUnavailable';
+    }
+
+    const provider = config.provider as Record<string, unknown>;
+    const hthProvider = provider.hth as Record<string, unknown>;
+    hthProvider.models = this.buildOpenCodeModels(modelIdsResult);
+    await fs.writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
+    return undefined;
+  }
+
+  private async fetchOpenCodeModelIds(
+    access: HTHAccess
+  ): Promise<
+    string[] | Exclude<OpenCodeConfigFailureReason, 'authRequired' | 'personalApiKeyInvalid' | 'openCodeConfigInvalid'>
+  > {
+    let response: Response;
+    try {
+      response = await fetch(new URL('/v1/models', access.baseUrl), {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${access.personalApiKey}`,
+        },
+        redirect: 'error',
+        signal: AbortSignal.timeout(OPENCODE_MODEL_REQUEST_TIMEOUT_MS),
+      });
+    } catch {
+      return 'modelListUnavailable';
+    }
+    if (!response.ok) {
+      return 'modelListUnavailable';
+    }
+
+    let payload: ApiEnvelope<OpenCodeModelListItem[]>;
+    try {
+      payload = JSON.parse(await response.text()) as ApiEnvelope<OpenCodeModelListItem[]>;
+    } catch {
+      return 'modelListInvalid';
+    }
+    if (payload.success === false || !Array.isArray(payload.data) || payload.data.length > MAX_OPENCODE_MODELS) {
+      return 'modelListInvalid';
+    }
+
+    const ids: string[] = [];
+    const seen = new Set<string>();
+    for (const item of payload.data) {
+      const id = typeof item?.id === 'string' ? item.id.trim() : '';
+      if (!id || id.length > MAX_OPENCODE_MODEL_ID_LENGTH || seen.has(id)) {
+        continue;
+      }
+      seen.add(id);
+      ids.push(id);
+    }
+    return ids;
+  }
+
+  private buildOpenCodeModels(modelIds: string[]): Record<string, Record<string, unknown>> {
+    const models: Record<string, Record<string, unknown>> = Object.create(null) as Record<
+      string,
+      Record<string, unknown>
+    >;
+    for (const id of modelIds) {
+      const isGPT = id.toLowerCase().startsWith('gpt-');
+      models[id] = {
+        limit: {
+          context: 200000,
+          input: 200000,
+          output: 32000,
+        },
+        modalities: isGPT
+          ? { input: ['text', 'image'], output: ['text', 'image'] }
+          : { input: ['text'], output: ['text'] },
+        name: id.toUpperCase(),
+        reasoning: true,
+        temperature: false,
+        tool_call: true,
+      };
+    }
+    return models;
+  }
+
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
   }
 
   private replaceUserPlaceholders(content: string, access: HTHAccess): string {

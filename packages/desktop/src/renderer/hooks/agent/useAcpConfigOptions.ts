@@ -40,38 +40,6 @@ export type AcpConfigSetErrorKind =
 
 const optionLabel = (option: AcpConfigSelectOptionDto): string => option.name || option.label || option.value;
 
-type ThoughtLevelOptionLike = {
-  currentValue?: string | null;
-  options: Array<{ value: string; label?: string; name?: string }>;
-};
-
-function isDeepSeekV4Model(modelId: string | null | undefined): boolean {
-  return /(?:^|\/)deepseek-v4-/i.test(modelId ?? '');
-}
-
-export function getModelScopedThoughtLevelOption<T extends ThoughtLevelOptionLike>(
-  thoughtLevel: T | null,
-  modelId: string | null | undefined
-): T | null {
-  if (!thoughtLevel || !isDeepSeekV4Model(modelId)) return thoughtLevel;
-
-  const existingOptions = new Map(thoughtLevel.options.map((option) => [option.value, option]));
-  const deepSeekOptions = [
-    existingOptions.get('max') ?? { value: 'max', label: 'Max' },
-    existingOptions.get('none') ?? { value: 'none', label: 'None' },
-  ];
-
-  const currentValue = deepSeekOptions.some((option) => option.value === thoughtLevel.currentValue)
-    ? thoughtLevel.currentValue
-    : (deepSeekOptions[0]?.value ?? null);
-
-  return {
-    ...thoughtLevel,
-    currentValue,
-    options: deepSeekOptions,
-  } as T;
-}
-
 export function getOptionCurrentValue(option: AcpConfigOptionDto | null | undefined): string | null {
   return option?.current_value ?? null;
 }

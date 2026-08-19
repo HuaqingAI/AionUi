@@ -188,7 +188,7 @@ describe('GuidModelSelector', () => {
     expect(onThoughtLevelSelect).toHaveBeenCalledWith('high');
   });
 
-  it('shows only max and none thought levels for a deepseek-v4 model', () => {
+  it('keeps all runtime thought levels for a deepseek-v4 model', () => {
     const deepSeekThoughtLevelOption = {
       id: 'reasoning_effort',
       category: 'thought_level',
@@ -219,14 +219,11 @@ describe('GuidModelSelector', () => {
       />
     );
 
-    expect(screen.getByText('deepseek-v4-pro · Max')).toBeInTheDocument();
     const thoughtBody = screen.getAllByTestId('submenu-body')[1];
-    expect(within(thoughtBody).queryByText('Low')).not.toBeInTheDocument();
-    expect(within(thoughtBody).queryByText('Medium')).not.toBeInTheDocument();
-    expect(within(thoughtBody).queryByText('High')).not.toBeInTheDocument();
-    expect(within(thoughtBody).queryByText('Xhigh')).not.toBeInTheDocument();
-    expect(within(thoughtBody).getByText('Max')).toBeInTheDocument();
-    expect(within(thoughtBody).getByText('None')).toBeInTheDocument();
+    expect(within(thoughtBody).getByText('Low')).toBeInTheDocument();
+    expect(within(thoughtBody).getByText('Medium')).toBeInTheDocument();
+    expect(within(thoughtBody).getByText('High')).toBeInTheDocument();
+    expect(within(thoughtBody).getByText('Xhigh')).toBeInTheDocument();
   });
 
   it('does not add thought level options to the Aion CLI provider model menu', () => {

@@ -137,6 +137,7 @@ export class HTHAuthService {
     username?: string;
     departments?: string[];
     personalApiKey: string;
+    personalApiKeyName: string;
     quotaApplyUrl?: string;
   }> {
     const auth = await this.readAuth();
@@ -155,6 +156,7 @@ export class HTHAuthService {
       username: auth.username,
       departments: auth.departments,
       personalApiKey,
+      personalApiKeyName: auth.personalApiKeyName || 'hth-default-apikey',
       quotaApplyUrl: auth.quotaApplyUrl,
     };
   }
