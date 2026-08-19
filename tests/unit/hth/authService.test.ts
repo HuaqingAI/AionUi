@@ -58,37 +58,36 @@ const requestLoopback = (url: string): Promise<LoopbackResponse> =>
 
 describe('HTHAuthService loopback callback', () => {
   let tempDir: string;
+  let fetchMock: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'aionui-hth-auth-'));
     electronMocks.getPath.mockReturnValue(tempDir);
     electronMocks.openExternal.mockClear();
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => {
-        return new Response(
-          JSON.stringify({
-            success: true,
-            data: {
-              access_token: 'token-1',
-              email: 'user@example.com',
-              personal_api_key: {
-                name: 'hth-default-apikey',
-                key: 'sk-personal-1',
-                masked_key: 'sk-***-1',
-              },
-              quota_apply_url: 'https://quota.example.com/apply',
-              user: {
-                username: 'alice',
-                display_name: '张三',
-                departments: ['研发部'],
-              },
+    fetchMock = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            access_token: 'token-1',
+            email: 'user@example.com',
+            personal_api_key: {
+              name: 'hth-default-apikey',
+              key: 'sk-personal-1',
+              masked_key: 'sk-***-1',
             },
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
-        );
-      })
-    );
+            quota_apply_url: 'https://quota.example.com/apply',
+            user: {
+              username: 'alice',
+              display_name: '张三',
+              departments: ['研发部'],
+            },
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
   });
 
   afterEach(async () => {
@@ -117,6 +116,11 @@ describe('HTHAuthService loopback callback', () => {
     expect(response.body).toContain('返回 华青智能助手。');
     expect(response.body).not.toContain('AionUi');
     expect(onLoginComplete).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const tokenRequest = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string) as {
+      group?: string;
+    };
+    expect(tokenRequest.group).toBe('hthbuddy');
     await expect(service.getStatus()).resolves.toMatchObject({
       loggedIn: true,
       email: 'user@example.com',

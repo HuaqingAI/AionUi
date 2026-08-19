@@ -81,6 +81,7 @@ type ApiEnvelope<T> = {
 const REDIRECT_URI = 'aionui://auth/hth-callback';
 const LOOPBACK_CALLBACK_PATH = '/hth/callback';
 const LOGIN_STATE_TTL_MS = 10 * 60 * 1000;
+const DESKTOP_TOKEN_GROUP = 'hthbuddy';
 
 function escapeHtml(value: string): string {
   return value
@@ -198,6 +199,7 @@ export class HTHAuthService {
         code: request.code,
         device_id: deviceId,
         app_version: app.getVersion(),
+        group: DESKTOP_TOKEN_GROUP,
       }),
     });
     const token = await this.parseTokenResponse(response);
@@ -271,7 +273,10 @@ export class HTHAuthService {
             console.error('[HTHAuth] Loopback callback failed:', error);
             response.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
             response.end(
-              this.renderLoopbackPage('登录失败', error instanceof Error ? error.message : '请返回 华青智能助手 后重试。')
+              this.renderLoopbackPage(
+                '登录失败',
+                error instanceof Error ? error.message : '请返回 华青智能助手 后重试。'
+              )
             );
           });
       });
