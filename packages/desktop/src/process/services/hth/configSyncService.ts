@@ -12,6 +12,7 @@ import type {
   UpdateAssistantRequest,
 } from '@/common/types/agent/assistantTypes';
 import { assistantRuntimeKey } from '@/common/types/agent/assistantTypes';
+import { BUILTIN_CHROME_DEVTOOLS_NAME } from '@/common/config/storage';
 import type {
   HTHAgentConfigItem,
   HTHAgentConfigs,
@@ -40,6 +41,12 @@ type ManagedAgentRow = {
   agent_type?: string;
   enabled?: boolean;
   status?: string;
+};
+
+type McpServerRow = {
+  id?: string;
+  name?: string;
+  builtin?: boolean;
 };
 
 type AssistantWriteResult = {
@@ -207,15 +214,28 @@ export class HTHConfigSyncService {
       }
     }
 
+    const backendPort = this.requireBackendPort();
     const existingAssistants =
-      assistants.length > 0 ? await this.listAssistants(this.requireBackendPort()) : new Map<string, Assistant>();
-    const importResult = assistants.length > 0 ? await this.importAssistants(assistants) : this.emptyImportResult();
+      assistants.length > 0 ? await this.listAssistants(backendPort) : new Map<string, Assistant>();
+    const chromeDevtoolsMcpId = assistants.length > 0 ? await this.resolveChromeDevtoolsMcpId(backendPort) : undefined;
+    const assistantsWithDefaultMcp = chromeDevtoolsMcpId
+      ? assistants.map((assistant) => ({
+          ...assistant,
+          defaults: {
+            mcps: { mode: 'fixed', value: [chromeDevtoolsMcpId] },
+          },
+        }))
+      : assistants;
+    const importResult =
+      assistantsWithDefaultMcp.length > 0
+        ? await this.importAssistants(assistantsWithDefaultMcp)
+        : this.emptyImportResult();
     const updateResult =
-      assistants.length > 0
-        ? await this.updateAssistants(assistants, existingAssistants, unchangedRemoteAvatarIds)
+      assistantsWithDefaultMcp.length > 0
+        ? await this.updateAssistants(assistantsWithDefaultMcp, existingAssistants, unchangedRemoteAvatarIds)
         : this.emptyAssistantWriteResult();
-    if (assistants.some((assistant) => (assistant.categories?.length ?? 0) > 0)) {
-      await this.persistAssistantCategories(assistants);
+    if (assistantsWithDefaultMcp.some((assistant) => (assistant.categories?.length ?? 0) > 0)) {
+      await this.persistAssistantCategories(assistantsWithDefaultMcp);
     }
     const deleteResult = await this.deleteRevokedAssistants(currentAssistantIds);
     return {
@@ -953,6 +973,7 @@ export class HTHConfigSyncService {
       avatar: assistant.avatar,
       agent_id: assistant.agent_id,
       recommended_prompts: assistant.recommended_prompts,
+      defaults: assistant.defaults,
     };
   }
 
@@ -967,7 +988,8 @@ export class HTHConfigSyncService {
       !this.sameStringArray(existing.categories, assistant.categories) ||
       !this.sameStringArray(existing.prompts, assistant.recommended_prompts) ||
       !this.sameAssistantAvatar(existing, assistant, remoteAvatarUnchanged) ||
-      (assistant.agent_id !== undefined && existing.agent_id !== assistant.agent_id)
+      (assistant.agent_id !== undefined && existing.agent_id !== assistant.agent_id) ||
+      assistant.defaults?.mcps?.mode === 'fixed'
     );
   }
 
@@ -1045,6 +1067,21 @@ export class HTHConfigSyncService {
     }
     const parsed = (await response.json()) as ApiEnvelope<Assistant[]> | Assistant[];
     return Array.isArray(parsed) ? parsed : (parsed.data ?? []);
+  }
+
+  private async resolveChromeDevtoolsMcpId(port: number): Promise<string | undefined> {
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/mcp/servers`);
+      if (!response.ok) {
+        return undefined;
+      }
+      const parsed = (await response.json()) as ApiEnvelope<McpServerRow[]> | McpServerRow[];
+      const servers = Array.isArray(parsed) ? parsed : (parsed.data ?? []);
+      return servers.find((server) => server.builtin === true && server.name === BUILTIN_CHROME_DEVTOOLS_NAME)?.id;
+    } catch (error) {
+      console.warn('[HTH] Failed to resolve chrome-devtools MCP:', error);
+      return undefined;
+    }
   }
 
   private async fetchAssistant(port: number, assistantId: string): Promise<AssistantDetail> {

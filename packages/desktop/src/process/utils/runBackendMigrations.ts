@@ -14,7 +14,12 @@ import {
   resolveImageGenerationMcpEnv,
   type ImageGenerationMcpEnvResolveResult,
 } from '@/common/config/imageGenerationMcpEnv';
-import { BUILTIN_IMAGE_GEN_NAME, type IMcpServer, type IProvider } from '@/common/config/storage';
+import {
+  BUILTIN_CHROME_DEVTOOLS_NAME,
+  BUILTIN_IMAGE_GEN_NAME,
+  type IMcpServer,
+  type IProvider,
+} from '@/common/config/storage';
 import { getBuiltinMcpScriptPath, type ProcessConfig as ProcessConfigType } from './initStorage';
 import { migrateAssistantsToBackend } from './migrateAssistants';
 
@@ -22,8 +27,6 @@ type ConfigFile = typeof ProcessConfigType;
 type MigrationStepResult = boolean;
 type McpImportServer = Partial<IMcpServer> & Pick<IMcpServer, 'name' | 'transport'>;
 type BackendClientPreferences = Record<string, unknown>;
-const BUILTIN_CHROME_DEVTOOLS_NAME = 'chrome-devtools';
-
 const LEGACY_BACKEND_CLIENT_PREFERENCE_KEYS = [
   'assistants',
   'migration.assistantEnabledFixed',

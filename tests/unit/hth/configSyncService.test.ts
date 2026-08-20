@@ -39,6 +39,18 @@ import { HTHAuthService } from '@/process/services/hth/authService';
 import { HTHConfigSyncService } from '@/process/services/hth/configSyncService';
 import { HTHPackageStore, resolveHTHAssistantId, resolveHTHPackageId } from '@/process/services/hth/packageStore';
 
+const emptyMcpCatalogResponse = () =>
+  new Response(JSON.stringify([]), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+const chromeDevtoolsMcpCatalogResponse = () =>
+  new Response(JSON.stringify([{ id: 'builtin-chrome-devtools', name: 'chrome-devtools', builtin: true }]), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+
 describe('HTHConfigSyncService auth handling', () => {
   let tempDir: string;
   let authFile: string;
@@ -165,6 +177,7 @@ describe('HTHConfigSyncService auth handling', () => {
           headers: { 'Content-Type': 'application/json' },
         })
       )
+      .mockResolvedValueOnce(emptyMcpCatalogResponse())
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ imported: 1, skipped: 0, failed: 0, errors: [] }), {
           status: 200,
@@ -196,7 +209,7 @@ describe('HTHConfigSyncService auth handling', () => {
     const result = await syncService.syncAgentConfigs({ force: false });
 
     expect(result).toMatchObject({ success: true, imported: 1, skipped: 0, updated: 1 });
-    const updateRequest = JSON.parse((fetchMock.mock.calls[4][1] as RequestInit).body as string) as {
+    const updateRequest = JSON.parse((fetchMock.mock.calls[5][1] as RequestInit).body as string) as {
       name?: string;
       description?: string;
       avatar?: string;
@@ -210,7 +223,7 @@ describe('HTHConfigSyncService auth handling', () => {
       categories: ['operations', 'customer_service'],
       recommended_prompts: ['整理客户跟进记录', '生成回访话术'],
     });
-    const categoriesRequest = JSON.parse((fetchMock.mock.calls[5][1] as RequestInit).body as string) as {
+    const categoriesRequest = JSON.parse((fetchMock.mock.calls[6][1] as RequestInit).body as string) as {
       'hth.assistantCategories'?: Record<string, string[]>;
     };
     expect(categoriesRequest['hth.assistantCategories']).toEqual({
@@ -290,6 +303,7 @@ describe('HTHConfigSyncService auth handling', () => {
           }
         )
       )
+      .mockResolvedValueOnce(emptyMcpCatalogResponse())
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ imported: 0, skipped: 1, failed: 0, errors: [] }), {
           status: 200,
@@ -315,10 +329,10 @@ describe('HTHConfigSyncService auth handling', () => {
     const result = await syncService.syncAgentConfigs({ force: false });
 
     expect(result).toMatchObject({ success: true, imported: 0, skipped: 0, updated: 1 });
-    const importRequest = JSON.parse((fetchMock.mock.calls[4][1] as RequestInit).body as string) as {
+    const importRequest = JSON.parse((fetchMock.mock.calls[5][1] as RequestInit).body as string) as {
       assistants: Array<{ avatar?: string }>;
     };
-    const updateRequest = JSON.parse((fetchMock.mock.calls[5][1] as RequestInit).body as string) as {
+    const updateRequest = JSON.parse((fetchMock.mock.calls[6][1] as RequestInit).body as string) as {
       avatar?: string;
     };
     expect(importRequest.assistants[0].avatar).toBe(updateRequest.avatar);
@@ -406,6 +420,7 @@ describe('HTHConfigSyncService auth handling', () => {
           }
         )
       )
+      .mockResolvedValueOnce(emptyMcpCatalogResponse())
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ imported: 0, skipped: 1, failed: 0, errors: [] }), {
           status: 200,
@@ -431,7 +446,7 @@ describe('HTHConfigSyncService auth handling', () => {
     ).toBe(false);
   });
 
-  it('reports unchanged existing authorized assistants as skipped without updating them', async () => {
+  it('adds chrome-devtools to existing HTH assistants during sync', async () => {
     await writeStoredAuth(authFile);
     (globalThis as typeof globalThis & { __backendPort?: number }).__backendPort = 18181;
     const agent = {
@@ -495,8 +510,15 @@ describe('HTHConfigSyncService auth handling', () => {
           }
         )
       )
+      .mockResolvedValueOnce(chromeDevtoolsMcpCatalogResponse())
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ imported: 0, skipped: 1, failed: 0, errors: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         })
@@ -513,10 +535,11 @@ describe('HTHConfigSyncService auth handling', () => {
 
     const result = await syncService.syncAgentConfigs({ force: false });
 
-    expect(result).toMatchObject({ success: true, imported: 0, skipped: 1, updated: 0 });
-    expect(
-      fetchMock.mock.calls.some(([url, init]) => String(url).includes('/api/assistants/') && init?.method === 'PUT')
-    ).toBe(false);
+    expect(result).toMatchObject({ success: true, imported: 0, skipped: 0, updated: 1 });
+    const updateRequest = JSON.parse((fetchMock.mock.calls[5][1] as RequestInit).body as string) as {
+      defaults?: { mcps?: { mode?: string; value?: string[] } };
+    };
+    expect(updateRequest.defaults?.mcps).toEqual({ mode: 'fixed', value: ['builtin-chrome-devtools'] });
   });
 
   it('does not count forced package refresh as an assistant update when metadata is unchanged', async () => {
@@ -596,6 +619,7 @@ describe('HTHConfigSyncService auth handling', () => {
           }
         )
       )
+      .mockResolvedValueOnce(emptyMcpCatalogResponse())
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ imported: 0, skipped: 1, failed: 0, errors: [] }), {
           status: 200,
@@ -770,6 +794,7 @@ describe('HTHConfigSyncService auth handling', () => {
           headers: { 'Content-Type': 'application/json' },
         })
       )
+      .mockResolvedValueOnce(emptyMcpCatalogResponse())
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ imported: 1, skipped: 0, failed: 0, errors: [] }), {
           status: 200,

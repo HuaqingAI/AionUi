@@ -48,8 +48,11 @@ vi.mock('swr', () => ({
 vi.mock('@/renderer/hooks/mcp/catalog', () => ({
   ensureBackendMcpCatalog: vi.fn(async () => ({
     userServers: [{ id: 'mcp-a', name: 'Server A', enabled: true }],
-    builtinServers: [],
-    allServers: [{ id: 'mcp-a', name: 'Server A', enabled: true }],
+    builtinServers: [{ id: 'chrome-id', name: 'chrome-devtools', enabled: false, builtin: true }],
+    allServers: [
+      { id: 'mcp-a', name: 'Server A', enabled: true },
+      { id: 'chrome-id', name: 'chrome-devtools', enabled: false, builtin: true },
+    ],
   })),
 }));
 
@@ -309,7 +312,7 @@ describe('useAssistantEditor', () => {
     expect(result.current.editDescription).toBe('中文描述');
   });
 
-  it('calls handleCreate and initializes empty form', async () => {
+  it('defaults a newly created assistant to chrome-devtools', async () => {
     const { result } = renderHook(() => useAssistantEditor(defaultParams));
 
     await act(async () => {
@@ -323,7 +326,8 @@ describe('useAssistantEditor', () => {
     expect(result.current.defaultModelMode).toBe('auto');
     expect(result.current.defaultPermissionMode).toBe('auto');
     expect((result.current as any).defaultThoughtLevelMode).toBe('auto');
-    expect(result.current.defaultMcpMode).toBe('auto');
+    expect(result.current.defaultMcpMode).toBe('fixed');
+    expect(result.current.selectedMcpIds).toEqual(['chrome-id']);
   });
 
   it('calls handleSave for creating new assistant', async () => {

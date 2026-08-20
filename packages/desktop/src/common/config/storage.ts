@@ -582,6 +582,7 @@ export interface IConversationMcpStatus {
 export const BUILTIN_IMAGE_GEN_ID = 'builtin-image-gen';
 export const BUILTIN_IMAGE_GEN_NAME = 'aionui-image-generation';
 export const BUILTIN_IMAGE_GEN_LEGACY_NAMES = ['AionUi Image Generation', BUILTIN_IMAGE_GEN_ID] as const;
+export const BUILTIN_CHROME_DEVTOOLS_NAME = 'chrome-devtools';
 
 export interface IMcpTool {
   name: string;

@@ -1,5 +1,5 @@
 import { ipcBridge } from '@/common';
-import type { IMcpServer } from '@/common/config/storage';
+import { BUILTIN_CHROME_DEVTOOLS_NAME, type IMcpServer } from '@/common/config/storage';
 import type { Assistant, CreateAssistantRequest, UpdateAssistantRequest } from '@/common/types/agent/assistantTypes';
 import type { Message } from '@arco-design/web-react';
 import type {
@@ -306,6 +306,13 @@ export const useAssistantEditor = ({
       setAvailableSkills(visibleSkills);
       setBuiltinAutoSkills(deriveBuiltinAutoSkills(visibleSkills));
       setAvailableMcpServers(mcpServers);
+      const chromeDevtools = mcpServers.find(
+        (server) => server.builtin === true && server.name === BUILTIN_CHROME_DEVTOOLS_NAME
+      );
+      if (chromeDevtools) {
+        setDefaultMcpMode('fixed');
+        setSelectedMcpIds([chromeDevtools.id]);
+      }
     } catch (error) {
       console.error('Failed to load skills:', error);
       setAvailableSkills([]);
