@@ -17,9 +17,14 @@ import { Tooltip } from '@arco-design/web-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 
-/** Remove built-in assistants from the AionCore catalog for skill-usage UI. */
+/**
+ * The skill UI only exposes user assistants. Filter the AionCore catalog after
+ * it is fetched so built-in and generated assistant rows cannot be attached.
+ */
 export const filterVisibleSkillUsageAssistants = (assistants: Assistant[]): Assistant[] =>
-  assistants.filter((assistant) => assistant.source !== 'builtin');
+  assistants.filter((assistant) => assistant.source === 'user');
+
+export const SKILL_VISIBLE_ASSISTANTS_SWR_KEY = 'skills.visible-assistants';
 
 /** The live API may omit skill arrays on some assistants, so guard both. */
 export const getAssistantsUsingSkill = (skillName: string, assistants: Assistant[]): Assistant[] =>

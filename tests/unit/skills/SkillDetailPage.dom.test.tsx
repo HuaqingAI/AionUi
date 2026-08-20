@@ -92,12 +92,13 @@ const makeAssistant = (overrides: Record<string, unknown>) => ({
 });
 
 describe('getAssistantsUsingSkill', () => {
-  it('matches enabled_skills and custom_skill_names while excluding builtin assistants', () => {
+  it('matches enabled_skills and custom_skill_names while keeping only user assistants', () => {
     const assistants = [
       makeAssistant({ id: 'a1', enabled_skills: ['demo-skill'] }),
       makeAssistant({ id: 'a2', custom_skill_names: ['demo-skill'] }),
       makeAssistant({ id: 'a3', enabled_skills: ['other'] }),
       makeAssistant({ id: 'builtin', source: 'builtin', enabled_skills: ['demo-skill'] }),
+      makeAssistant({ id: 'generated', source: 'generated', enabled_skills: ['demo-skill'] }),
     ] as never[];
     expect(getAssistantsUsingSkill('demo-skill', assistants).map((a) => a.id)).toEqual(['a1', 'a2']);
   });
@@ -121,6 +122,7 @@ describe('SkillDetailPage', () => {
       makeAssistant({ id: 'a1', name: 'Writer', enabled_skills: ['demo-skill'] }),
       makeAssistant({ id: 'a2', name: 'Coder', enabled_skills: [] }),
       makeAssistant({ id: 'b1', name: 'Butler', source: 'builtin', enabled_skills: ['demo-skill'] }),
+      makeAssistant({ id: 'g1', name: 'Codex CLI', source: 'generated', enabled_skills: [] }),
     ]);
     mocks.assistantsUpdate.mockResolvedValue({});
   });
@@ -156,6 +158,7 @@ describe('SkillDetailPage', () => {
     await waitFor(() => expect(screen.getByTestId('menu-add-assistant-a2')).toBeInTheDocument());
     expect(screen.queryByTestId('menu-add-assistant-a1')).not.toBeInTheDocument();
     expect(screen.queryByTestId('menu-add-assistant-b1')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('menu-add-assistant-g1')).not.toBeInTheDocument();
   });
 
   it('attaches the skill when an assistant is picked from the add menu', async () => {

@@ -26,7 +26,11 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router-dom';
 import useSWR, { mutate as swrMutate } from 'swr';
 import SettingsPageWrapper from '../components/SettingsPageWrapper';
-import { filterVisibleSkillUsageAssistants, getAssistantsUsingSkill } from './SkillUsedByStack';
+import {
+  filterVisibleSkillUsageAssistants,
+  getAssistantsUsingSkill,
+  SKILL_VISIBLE_ASSISTANTS_SWR_KEY,
+} from './SkillUsedByStack';
 import { filterVisibleSkills } from '@/renderer/utils/internalResources';
 
 interface SkillInfo {
@@ -85,7 +89,7 @@ const SkillDetailPage: React.FC = () => {
     data: assistants,
     isLoading: assistantsLoading,
     mutate: mutateAssistants,
-  } = useSWR<Assistant[]>('assistants.list', () =>
+  } = useSWR<Assistant[]>(SKILL_VISIBLE_ASSISTANTS_SWR_KEY, () =>
     ipcBridge.assistants.list.invoke().then(filterVisibleSkillUsageAssistants)
   );
 
