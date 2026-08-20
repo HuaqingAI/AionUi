@@ -48,11 +48,12 @@ type ManagedAcpTool = {
     | 'AIONUI_DWS_BOOTSTRAP'
     | 'AIONUI_OFFICECLI_BOOTSTRAP'
     | 'AIONUI_OPENCODE_BOOTSTRAP'
+    | 'AIONUI_SHOPIFY_CLI_BOOTSTRAP'
     | 'AIONUI_ZINIAO_OPEN_BOOTSTRAP';
   match: string | readonly string[];
   packageName: string;
   scope: IRuntimeStatusScope;
-  toolId: 'codex' | 'dws' | 'officecli' | 'opencode' | 'ziniao-open';
+  toolId: 'codex' | 'dws' | 'officecli' | 'opencode' | 'shopify-cli' | 'ziniao-open';
 };
 
 type EnsureNodeRuntime = (params: { scope: IRuntimeStatusScope }) => Promise<{ ready: boolean }>;
@@ -74,6 +75,7 @@ type OpenCodeStartupEnv = {
   AIONUI_OFFICECLI_BOOTSTRAP?: string;
   AIONUI_E2E_TEST?: string;
   AIONUI_OPENCODE_BOOTSTRAP?: string;
+  AIONUI_SHOPIFY_CLI_BOOTSTRAP?: string;
   AIONUI_ZINIAO_OPEN_BOOTSTRAP?: string;
 };
 
@@ -136,6 +138,13 @@ const OFFICECLI_STARTUP_SCOPE: IRuntimeStatusScope = {
   kind: 'custom_agent',
   id: 'startup-officecli',
 };
+const SHOPIFY_CLI_TOOL_ID = 'shopify-cli';
+const SHOPIFY_CLI_COMMAND_NAME = 'shopify';
+const SHOPIFY_CLI_PACKAGE_NAME = '@shopify/cli';
+const SHOPIFY_CLI_STARTUP_SCOPE: IRuntimeStatusScope = {
+  kind: 'mcp',
+  id: 'startup-shopify-cli',
+};
 const ZINIAO_OPEN_TOOL_ID = 'ziniao-open';
 const ZINIAO_OPEN_COMMAND_NAME = 'ziniao-cli';
 const ZINIAO_OPEN_PACKAGE_NAME = '@ziniao-open/cli';
@@ -197,6 +206,16 @@ const OFFICECLI_TOOL: ManagedAcpTool = {
   toolId: OFFICECLI_TOOL_ID,
 };
 
+const SHOPIFY_CLI_TOOL: ManagedAcpTool = {
+  commandName: SHOPIFY_CLI_COMMAND_NAME,
+  displayName: 'Shopify CLI',
+  envDisabledKey: 'AIONUI_SHOPIFY_CLI_BOOTSTRAP',
+  match: SHOPIFY_CLI_TOOL_ID,
+  packageName: SHOPIFY_CLI_PACKAGE_NAME,
+  scope: SHOPIFY_CLI_STARTUP_SCOPE,
+  toolId: SHOPIFY_CLI_TOOL_ID,
+};
+
 const ZINIAO_OPEN_TOOL: ManagedAcpTool = {
   commandName: ZINIAO_OPEN_COMMAND_NAME,
   displayName: 'Ziniao Open',
@@ -207,7 +226,14 @@ const ZINIAO_OPEN_TOOL: ManagedAcpTool = {
   toolId: ZINIAO_OPEN_TOOL_ID,
 };
 
-const STARTUP_TOOLS = [OPENCODE_TOOL, CODEX_TOOL, DWS_TOOL, OFFICECLI_TOOL, ZINIAO_OPEN_TOOL] as const;
+const STARTUP_TOOLS = [
+  OPENCODE_TOOL,
+  CODEX_TOOL,
+  DWS_TOOL,
+  OFFICECLI_TOOL,
+  SHOPIFY_CLI_TOOL,
+  ZINIAO_OPEN_TOOL,
+] as const;
 
 const execFileAsync = promisify(execFile);
 
@@ -378,6 +404,10 @@ export function addDwsGlobalBinToPath(dataPath = getDataPath(), env: NodeJS.Proc
 
 export function addOfficeCliGlobalBinToPath(dataPath = getDataPath(), env: NodeJS.ProcessEnv = process.env): string {
   return addManagedToolGlobalBinToPath(OFFICECLI_TOOL, dataPath, env);
+}
+
+export function addShopifyCliGlobalBinToPath(dataPath = getDataPath(), env: NodeJS.ProcessEnv = process.env): string {
+  return addManagedToolGlobalBinToPath(SHOPIFY_CLI_TOOL, dataPath, env);
 }
 
 export function addZiniaoOpenGlobalBinToPath(dataPath = getDataPath(), env: NodeJS.ProcessEnv = process.env): string {
@@ -915,6 +945,10 @@ export function shouldEnsureOfficeCliOnStartup(env: OpenCodeStartupEnv = process
   return shouldEnsureManagedToolOnStartup(OFFICECLI_TOOL, env);
 }
 
+export function shouldEnsureShopifyCliOnStartup(env: OpenCodeStartupEnv = process.env): boolean {
+  return shouldEnsureManagedToolOnStartup(SHOPIFY_CLI_TOOL, env);
+}
+
 export function shouldEnsureZiniaoOpenOnStartup(env: OpenCodeStartupEnv = process.env): boolean {
   return shouldEnsureManagedToolOnStartup(ZINIAO_OPEN_TOOL, env);
 }
@@ -988,6 +1022,10 @@ export function ensureDwsReady(options: EnsureOpenCodeReadyOptions = {}): Promis
 
 export function ensureOfficeCliReady(options: EnsureOpenCodeReadyOptions = {}): Promise<OpenCodeBootstrapResult> {
   return ensureManagedToolReady(OFFICECLI_TOOL, options);
+}
+
+export function ensureShopifyCliReady(options: EnsureOpenCodeReadyOptions = {}): Promise<OpenCodeBootstrapResult> {
+  return ensureManagedToolReady(SHOPIFY_CLI_TOOL, options);
 }
 
 export function ensureZiniaoOpenReady(options: EnsureOpenCodeReadyOptions = {}): Promise<OpenCodeBootstrapResult> {
@@ -1068,6 +1106,24 @@ export async function ensureOfficeCliReadyOnStartup(
       break;
     case 'failed':
       console.warn('[OfficeCLI] managed runtime bootstrap failed:', result.error);
+      break;
+  }
+  return result;
+}
+
+export async function ensureShopifyCliReadyOnStartup(
+  options: EnsureOpenCodeReadyOptions = {}
+): Promise<OpenCodeBootstrapResult> {
+  const result = await ensureShopifyCliReady(options);
+  switch (result.status) {
+    case 'ready':
+      console.info('[Shopify CLI] managed runtime is ready');
+      break;
+    case 'skipped':
+      console.info('[Shopify CLI] startup bootstrap skipped');
+      break;
+    case 'failed':
+      console.warn('[Shopify CLI] managed runtime bootstrap failed:', result.error);
       break;
   }
   return result;

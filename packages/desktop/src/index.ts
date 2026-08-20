@@ -33,6 +33,7 @@ import {
   ensureDwsReadyOnStartup,
   ensureOfficeCliReadyOnStartup,
   ensureOpenCodeReadyOnStartup,
+  ensureShopifyCliReadyOnStartup,
   ensureZiniaoOpenReadyOnStartup,
   type OpenCodeBootstrapResult,
   type OpenCodeManagedAgentHealthResult,
@@ -513,6 +514,9 @@ function scheduleOpenCodeManagedAgentHealthAfterRendererReady(backendPort: numbe
   });
   void ensureZiniaoOpenReadyOnStartup({ dataPath: openCodeRuntimeDataPath ?? undefined }).then((result) => {
     console.log(`[HQBuddy:ready] ziniaoOpen:${result.status}`);
+  });
+  void ensureShopifyCliReadyOnStartup({ dataPath: openCodeRuntimeDataPath ?? undefined }).then((result) => {
+    console.log(`[HQBuddy:ready] shopifyCli:${result.status}`);
   });
 }
 

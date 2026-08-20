@@ -13,6 +13,7 @@ import {
   addDwsGlobalBinToPath,
   addOfficeCliGlobalBinToPath,
   addOpenCodeGlobalBinToPath,
+  addShopifyCliGlobalBinToPath,
   addStartupManagedAcpToolBinsToPath,
   addZiniaoOpenGlobalBinToPath,
   checkOpenCodeManagedAgentHealth,
@@ -23,11 +24,13 @@ import {
   ensureDwsReady,
   ensureOfficeCliReady,
   ensureOpenCodeReady,
+  ensureShopifyCliReady,
   ensureZiniaoOpenReady,
   shouldEnsureCodexOnStartup,
   shouldEnsureDwsOnStartup,
   shouldEnsureOfficeCliOnStartup,
   shouldEnsureOpenCodeOnStartup,
+  shouldEnsureShopifyCliOnStartup,
   shouldEnsureZiniaoOpenOnStartup,
 } from '@process/startup/opencodeStartup';
 import { acpConversation } from '@/common/adapter/ipcBridge';
@@ -62,6 +65,8 @@ describe('opencode startup bootstrap', () => {
     officeCliCommandPath: string;
     officeCliPrefix: string;
     prefix: string;
+    shopifyCliCommandPath: string;
+    shopifyCliPrefix: string;
   }> {
     const dataPath = await mkdtemp(path.join(tmpdir(), 'aionui-opencode-startup-'));
     const nodeRoot = path.join(dataPath, 'runtime', 'node', 'node-v24.11.0-test');
@@ -82,6 +87,11 @@ describe('opencode startup bootstrap', () => {
       officeCliPrefix,
       process.platform === 'win32' ? 'officecli.cmd' : 'bin/officecli'
     );
+    const shopifyCliPrefix = path.join(dataPath, 'runtime', 'npm-global', 'shopify-cli');
+    const shopifyCliCommandPath = path.join(
+      shopifyCliPrefix,
+      process.platform === 'win32' ? 'shopify.cmd' : 'bin/shopify'
+    );
 
     await mkdir(path.dirname(nodeExecutable), { recursive: true });
     await mkdir(path.dirname(npmCliPath), { recursive: true });
@@ -100,6 +110,8 @@ describe('opencode startup bootstrap', () => {
       officeCliCommandPath,
       officeCliPrefix,
       prefix,
+      shopifyCliCommandPath,
+      shopifyCliPrefix,
     };
   }
 
@@ -367,6 +379,42 @@ describe('opencode startup bootstrap', () => {
         }),
         timeout: 180000,
       }
+    );
+  });
+
+  it('uses managed Node npm to install Shopify CLI into npm-global', async () => {
+    const fixture = await createManagedNodeFixture();
+    const commandRunner = vi.fn(async () => {
+      await mkdir(path.dirname(fixture.shopifyCliCommandPath), { recursive: true });
+      await writeFile(fixture.shopifyCliCommandPath, '');
+      return {};
+    });
+
+    const result = await ensureShopifyCliReady({
+      commandRunner,
+      dataPath: fixture.dataPath,
+      emitStatus: vi.fn(),
+      ensureNodeRuntime: async () => ({ ready: true }),
+      env: {},
+    });
+
+    expect(result).toEqual({ status: 'ready' });
+    expect(commandRunner).toHaveBeenCalledWith(
+      fixture.nodeExecutable,
+      [
+        fixture.npmCliPath,
+        'install',
+        '--global',
+        '@shopify/cli',
+        '--prefix',
+        fixture.shopifyCliPrefix,
+        '--registry',
+        'https://registry.npmmirror.com',
+      ],
+      expect.objectContaining({
+        cwd: fixture.dataPath,
+        timeout: 180000,
+      })
     );
   });
 
@@ -653,6 +701,20 @@ describe('opencode startup bootstrap', () => {
     }
   });
 
+  it('prepends the managed Shopify CLI bin directory to PATH', async () => {
+    const dataPath = await mkdtemp(path.join(tmpdir(), 'aionui-shopify-cli-path-'));
+    const env: NodeJS.ProcessEnv = {
+      PATH: ['C:\\existing\\bin'].join(path.delimiter),
+    };
+
+    const binDir = addShopifyCliGlobalBinToPath(dataPath, env);
+
+    expect(env.PATH?.split(path.delimiter)[0]).toBe(binDir);
+    if (process.platform === 'win32') {
+      expect(env.Path).toBe(env.PATH);
+    }
+  });
+
   it('prepends the managed Ziniao Open bin directory to PATH', async () => {
     const dataPath = await mkdtemp(path.join(tmpdir(), 'aionui-ziniao-open-path-'));
     const env: NodeJS.ProcessEnv = {
@@ -744,6 +806,9 @@ describe('opencode startup bootstrap', () => {
     expect(shouldEnsureOfficeCliOnStartup({ AIONUI_E2E_TEST: '1' })).toBe(false);
     expect(shouldEnsureOfficeCliOnStartup({ AIONUI_OFFICECLI_BOOTSTRAP: '0' })).toBe(false);
     expect(shouldEnsureOfficeCliOnStartup({})).toBe(true);
+    expect(shouldEnsureShopifyCliOnStartup({ AIONUI_E2E_TEST: '1' })).toBe(false);
+    expect(shouldEnsureShopifyCliOnStartup({ AIONUI_SHOPIFY_CLI_BOOTSTRAP: '0' })).toBe(false);
+    expect(shouldEnsureShopifyCliOnStartup({})).toBe(true);
     expect(shouldEnsureZiniaoOpenOnStartup({ AIONUI_E2E_TEST: '1' })).toBe(false);
     expect(shouldEnsureZiniaoOpenOnStartup({ AIONUI_ZINIAO_OPEN_BOOTSTRAP: '0' })).toBe(false);
     expect(shouldEnsureZiniaoOpenOnStartup({})).toBe(true);
