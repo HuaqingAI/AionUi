@@ -151,6 +151,7 @@
   "assistantSourceCustom": "Benutzerdefiniert",
   "assistantSourceOfficial": "Offiziell",
   "assistantSourceCli": "CLI",
+  "assistantSourceHth": "HTH-Synchronisierung",
   "assistantSectionEnabled": "Aktiviert",
   "assistantSectionDisabled": "Deaktiviert",
   "assistantTabMine": "Meine Assistenten",
@@ -175,6 +176,7 @@
   "reorderCoachTitle": "Zum Umsortieren ziehen",
   "reorderCoachBody": "Ziehe deine bevorzugten Assistenten nach oben — diese Reihenfolge bestimmt, wie sie überall dort erscheinen, wo du einen Assistenten auswählst (Startseite, Teams, geplante Aufgaben).",
   "assistantCategory": {
+    "custom_assistant": "Benutzerdefinierte Assistenten",
     "general": "General Assistants",
     "operations": "Operations Assistants",
     "customer_service": "Customer Service Assistants",

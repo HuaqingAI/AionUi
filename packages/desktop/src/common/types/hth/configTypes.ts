@@ -96,7 +96,8 @@ export type HTHInjectProjectConfigResult = {
     | 'modelListInvalid'
     | 'modelListEmpty'
     | 'defaultModelUnavailable'
-    | 'openCodeConfigInvalid';
+    | 'openCodeConfigInvalid'
+    | 'assistantRuntimeUnsupported';
 };
 
 export type HTHQuotaWalletSummary = {

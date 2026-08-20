@@ -263,7 +263,7 @@ const AssistantListPanel: React.FC<AssistantListPanelProps> = ({
   const sortingEnabled = true;
 
   const renderSourceTag = (assistant: AssistantListItem) => {
-    const tag = resolveAssistantSourceTag(assistant.source);
+    const tag = resolveAssistantSourceTag(assistant);
     if (tag === null) {
       return null;
     }
@@ -286,6 +286,18 @@ const AssistantListPanel: React.FC<AssistantListPanelProps> = ({
           className='!rounded-10px !bg-fill-1 !px-8px !py-1px !text-10px !font-600 !leading-16px !text-[rgb(var(--arcoblue-6))]'
         >
           {t('settings.assistantSourceCli', { defaultValue: 'CLI' })}
+        </Tag>
+      );
+    }
+
+    if (tag === 'hth') {
+      return (
+        <Tag
+          size='small'
+          bordered={false}
+          className='!rounded-10px !bg-fill-1 !px-8px !py-1px !text-10px !font-600 !leading-16px !text-[rgb(var(--arcoblue-6))]'
+        >
+          {t('settings.assistantSourceHth', { defaultValue: 'HTH Sync' })}
         </Tag>
       );
     }

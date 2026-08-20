@@ -10,6 +10,8 @@ import path from 'node:path';
 
 export const DEV_HTH_BASE_URL = 'http://127.0.0.1:3001';
 export const PROD_HTH_BASE_URL = 'https://hth.huaqing.run';
+export const DEV_OPENCODE_PROVIDER_API = 'http://localhost:3000/v1';
+export const PROD_OPENCODE_PROVIDER_API = 'https://hth.huaqing.run/v1';
 
 const HTH_BASE_URL_ENV = 'AIONUI_HTH_BASE_URL';
 const VITE_HTH_BASE_URL_ENV = 'VITE_HTH_BASE_URL';
@@ -60,4 +62,9 @@ export function readStoredHTHBaseUrl(authFile = getHTHAuthFilePath()): string | 
 
 export function resolveHTHBaseUrl(authFile = getHTHAuthFilePath()): string {
   return resolveConfiguredHTHBaseUrl() || readStoredHTHBaseUrl(authFile) || resolveDefaultHTHBaseUrl();
+}
+
+/** Provider endpoint used by manually-created OpenCode assistants. */
+export function resolveOpenCodeProviderApiBase(): string {
+  return app.isPackaged ? PROD_OPENCODE_PROVIDER_API : DEV_OPENCODE_PROVIDER_API;
 }

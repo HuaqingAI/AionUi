@@ -83,4 +83,31 @@ describe('ensureBackendMcpCatalog', () => {
     expect(result.builtinServers).toEqual([]);
     expect(result.allServers).toEqual([]);
   });
+
+  it('hides AionUi-internal servers returned by the backend catalog', async () => {
+    mcpServiceMock.listServers.invoke.mockResolvedValue([
+      {
+        id: 'internal',
+        name: 'aionui-image-generation',
+        enabled: true,
+        transport: { type: 'stdio', command: 'internal', args: [] },
+        created_at: 1,
+        updated_at: 1,
+        original_json: '{}',
+      },
+      {
+        id: 'visible',
+        name: 'visible-server',
+        enabled: true,
+        transport: { type: 'stdio', command: 'visible', args: [] },
+        created_at: 1,
+        updated_at: 1,
+        original_json: '{}',
+      },
+    ]);
+
+    const result = await ensureBackendMcpCatalog();
+
+    expect(result.allServers.map((server) => server.name)).toEqual(['visible-server']);
+  });
 });

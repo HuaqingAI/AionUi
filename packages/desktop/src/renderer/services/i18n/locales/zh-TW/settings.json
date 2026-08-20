@@ -151,6 +151,7 @@
   "assistantSourceCustom": "自訂",
   "assistantSourceOfficial": "官方",
   "assistantSourceCli": "CLI",
+  "assistantSourceHth": "HTH 同步",
   "assistantSectionEnabled": "已啟用",
   "assistantSectionDisabled": "已停用",
   "assistantTabMine": "我的助手",
@@ -175,6 +176,7 @@
   "reorderCoachTitle": "拖曳調整順序",
   "reorderCoachBody": "把你常用的助理拖到前面——這個順序決定你挑選助理時（首頁、開團、定時任務等）清單裡的顯示先後。",
   "assistantCategory": {
+    "custom_assistant": "自訂助手",
     "general": "通用助手",
     "operations": "營運助手",
     "customer_service": "客服助手",

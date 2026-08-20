@@ -220,9 +220,9 @@ describe('assistantUtils', () => {
   describe('groupAssistantsByCategory', () => {
     it('keeps the fixed category order and repeats multi-category assistants', () => {
       const list: AssistantListItem[] = [
-        { id: 'finance', name: 'Finance', sort_order: 2, source: 'user', categories: ['finance'] },
+        { id: 'hth-finance', name: 'Finance', sort_order: 2, source: 'user', categories: ['finance'] },
         {
-          id: 'multi',
+          id: 'hth-multi',
           name: 'Multi',
           sort_order: 1,
           source: 'user',
@@ -234,19 +234,29 @@ describe('assistantUtils', () => {
 
       expect(groups.map((group) => group.code)).toEqual(['operations', 'customer_service', 'finance']);
       expect(groups.find((group) => group.code === 'operations')?.assistants.map((assistant) => assistant.id)).toEqual([
-        'multi',
+        'hth-multi',
       ]);
       expect(
         groups.find((group) => group.code === 'customer_service')?.assistants.map((assistant) => assistant.id)
-      ).toEqual(['multi']);
+      ).toEqual(['hth-multi']);
     });
 
     it('falls back to the general category for legacy assistants', () => {
-      const groups = groupAssistantsByCategory([{ id: 'legacy', name: 'Legacy', sort_order: 1, source: 'user' }]);
+      const groups = groupAssistantsByCategory([{ id: 'hth-legacy', name: 'Legacy', sort_order: 1, source: 'user' }]);
 
       expect(groups).toHaveLength(1);
       expect(groups[0].code).toBe('general');
-      expect(groups[0].assistants[0].id).toBe('legacy');
+      expect(groups[0].assistants[0].id).toBe('hth-legacy');
+    });
+
+    it('puts manually created assistants in the top custom category only', () => {
+      const groups = groupAssistantsByCategory([
+        { id: 'manual', name: 'Manual', sort_order: 1, source: 'user', categories: ['finance'] },
+        { id: 'hth-finance', name: 'Synced', sort_order: 2, source: 'user', categories: ['finance'] },
+      ]);
+
+      expect(groups.map((group) => group.code)).toEqual(['custom_assistant', 'finance']);
+      expect(groups[0].assistants.map((assistant) => assistant.id)).toEqual(['manual']);
     });
   });
 });

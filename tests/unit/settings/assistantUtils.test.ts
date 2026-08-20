@@ -245,14 +245,18 @@ describe('groupMyAssistants', () => {
 
 describe('resolveAssistantSourceTag', () => {
   it('shows the built-in tag for builtin assistants', () => {
-    expect(resolveAssistantSourceTag('builtin')).toBe('builtin');
+    expect(resolveAssistantSourceTag(mockAssistant({ source: 'builtin' }))).toBe('builtin');
   });
 
   it('shows the custom tag for user assistants', () => {
-    expect(resolveAssistantSourceTag('user')).toBe('custom');
+    expect(resolveAssistantSourceTag(mockAssistant({ source: 'user' }))).toBe('custom');
   });
 
   it('shows the CLI tag for generated assistants', () => {
-    expect(resolveAssistantSourceTag('generated')).toBe('cli');
+    expect(resolveAssistantSourceTag(mockAssistant({ source: 'generated' }))).toBe('cli');
+  });
+
+  it('shows the HTH sync tag for HTH-prefixed user assistants', () => {
+    expect(resolveAssistantSourceTag(mockAssistant({ id: 'hth-abc', source: 'user' }))).toBe('hth');
   });
 });

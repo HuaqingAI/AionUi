@@ -11,6 +11,15 @@ export type AssistantSource = 'builtin' | 'generated' | 'user';
 export type AssistantAgentStatus = 'missing' | 'online' | 'offline' | 'unchecked';
 export type AssistantAgentSource = 'internal' | 'builtin' | 'extension' | 'custom';
 
+/** HTH-synchronised assistants use a stable id prefix; no extra origin field is required. */
+export function isHTHSyncedAssistant(assistant?: Pick<Assistant, 'id'> | null): boolean {
+  return Boolean(assistant?.id?.startsWith('hth-'));
+}
+
+export function isManualAssistant(assistant?: Pick<Assistant, 'id' | 'source'> | null): boolean {
+  return assistant?.source === 'user' && !isHTHSyncedAssistant(assistant);
+}
+
 export type AssistantAgent = {
   type: string;
   source: AssistantAgentSource;

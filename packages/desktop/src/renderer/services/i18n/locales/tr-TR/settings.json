@@ -151,6 +151,7 @@
   "assistantSourceCustom": "Özel",
   "assistantSourceOfficial": "Resmi",
   "assistantSourceCli": "CLI",
+  "assistantSourceHth": "HTH Senkronizasyonu",
   "assistantSectionEnabled": "Etkin",
   "assistantSectionDisabled": "Devre Dışı",
   "assistantTabMine": "Asistanlarım",
@@ -175,6 +176,7 @@
   "reorderCoachTitle": "Sıralamak için sürükleyin",
   "reorderCoachBody": "En sevdiğiniz asistanları en üste sürükleyin — bu sıralama, bir asistan seçtiğiniz her yerde (ana ekran, ekipler, zamanlanmış görevler) nasıl görüneceklerini belirler.",
   "assistantCategory": {
+    "custom_assistant": "Özel Asistanlar",
     "general": "General Assistants",
     "operations": "Operations Assistants",
     "customer_service": "Customer Service Assistants",

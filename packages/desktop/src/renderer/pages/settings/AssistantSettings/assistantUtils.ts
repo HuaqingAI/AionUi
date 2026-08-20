@@ -3,6 +3,7 @@ import { isBackendRelativeAssetPath, isLikelyLocalFilePath } from '@/renderer/ut
 import { ASSISTANT_CATEGORY_CODES, type AssistantCategoryCode } from '@/common/types/agent/assistantCategories';
 import type { AssistantListItem, AvailableBackend } from './types';
 import type { ManagedAgent } from '@/renderer/utils/model/agentTypes';
+import { isHTHSyncedAssistant, isManualAssistant } from '@/common/types/agent/assistantTypes';
 
 export type AssistantListFilter = 'all' | 'enabled' | 'disabled' | 'builtin' | 'user';
 
@@ -10,14 +11,16 @@ export type AssistantListFilter = 'all' | 'enabled' | 'disabled' | 'builtin' | '
  * Source tag shown next to an assistant in the settings list.
  *
  * - `builtin` → "Built-in" tag
- * - `user` → "Custom" tag
+ * - manual `user` → "Custom" tag
+ * - HTH-synced `hth-*` user → "HTH Sync" tag
  * - `generated` (agent-generated) → "CLI" tag, matching the product terminology.
  */
-export type AssistantSourceTag = 'builtin' | 'custom' | 'cli' | null;
+export type AssistantSourceTag = 'builtin' | 'custom' | 'cli' | 'hth' | null;
 
-export const resolveAssistantSourceTag = (source: string): AssistantSourceTag => {
-  if (source === 'builtin') return 'builtin';
-  if (source === 'generated') return 'cli';
+export const resolveAssistantSourceTag = (assistant: Pick<AssistantListItem, 'id' | 'source'>): AssistantSourceTag => {
+  if (assistant.source === 'builtin') return 'builtin';
+  if (assistant.source === 'generated') return 'cli';
+  if (isHTHSyncedAssistant(assistant)) return 'hth';
   return 'custom';
 };
 
@@ -165,8 +168,13 @@ export const groupAssistantsByCategory = (assistants: AssistantListItem[]): Assi
   }
 
   for (const assistant of assistants) {
-    const categories = assistant.categories?.filter((category): category is AssistantCategoryCode =>
-      ASSISTANT_CATEGORY_CODES.includes(category as AssistantCategoryCode)
+    if (isManualAssistant(assistant)) {
+      groups.get('custom_assistant')?.push(assistant);
+      continue;
+    }
+    const categories = assistant.categories?.filter(
+      (category): category is AssistantCategoryCode =>
+        category !== 'custom_assistant' && ASSISTANT_CATEGORY_CODES.includes(category as AssistantCategoryCode)
     );
     const effectiveCategories: AssistantCategoryCode[] = categories && categories.length > 0 ? categories : ['general'];
     for (const category of effectiveCategories) {

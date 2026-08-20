@@ -14,6 +14,7 @@ import { isElectronDesktop } from '@/renderer/utils/platform';
 import { FileService } from '@/renderer/services/FileService';
 import type { FileMetadata } from '@/renderer/services/FileService';
 import { emitter } from '@/renderer/utils/emitter';
+import { filterVisibleSkills, isAionUiInternalResource } from '@/renderer/utils/internalResources';
 import React, { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
@@ -87,13 +88,15 @@ const FileAttachButton: React.FC<FileAttachButtonProps> = ({
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [mcpOpen, setMcpOpen] = useState(false);
 
-  const skillNames = loadedSkills ?? conversationContext?.loadedSkills ?? [];
+  const skillNames = (loadedSkills ?? conversationContext?.loadedSkills ?? []).filter(
+    (name) => !isAionUiInternalResource(name)
+  );
   const mcpStatuses = buildLoadedMcpStatuses(
     loadedMcpStatuses ?? conversationContext?.loadedMcpStatuses,
     conversationContext?.loadedMcpServers
-  );
+  ).filter((status) => !isAionUiInternalResource(status.name));
   const { data: skillIndex } = useSWR(skillNames.length > 0 ? 'skills-index' : null, () =>
-    ipcBridge.fs.listAvailableSkills.invoke()
+    ipcBridge.fs.listAvailableSkills.invoke().then(filterVisibleSkills)
   );
   const descriptionByName = new Map((skillIndex ?? []).map((s) => [s.name, s.description]));
 

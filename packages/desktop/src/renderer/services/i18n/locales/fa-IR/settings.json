@@ -151,6 +151,7 @@
   "assistantSourceCustom": "سفارشی",
   "assistantSourceOfficial": "رسمی",
   "assistantSourceCli": "CLI",
+  "assistantSourceHth": "همگام‌سازی HTH",
   "assistantSectionEnabled": "فعال",
   "assistantSectionDisabled": "غیرفعال",
   "assistantTabMine": "دستیارهای من",
@@ -175,6 +176,7 @@
   "reorderCoachTitle": "برای تغییر ترتیب بکشید",
   "reorderCoachBody": "دستیارهای محبوب خود را به بالا بکشید؛ این ترتیب مشخص می‌کند آن‌ها در محل‌های انتخاب دستیار چگونه نمایش داده شوند (خانه، تیم‌ها، کارهای زمان‌بندی‌شده).",
   "assistantCategory": {
+    "custom_assistant": "دستیارهای سفارشی",
     "general": "General Assistants",
     "operations": "Operations Assistants",
     "customer_service": "Customer Service Assistants",

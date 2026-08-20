@@ -7,6 +7,7 @@
 import { ipcBridge } from '@/common';
 import type { TChatConversation } from '@/common/config/storage';
 import { iconColors } from '@/renderer/styles/colors';
+import { filterVisibleSkills, isAionUiInternalResource } from '@/renderer/utils/internalResources';
 import { Popover } from '@arco-design/web-react';
 import { Lightning } from '@icon-park/react';
 import React from 'react';
@@ -27,10 +28,12 @@ const ConversationSkillsIndicator: React.FC<ConversationSkillsIndicatorProps> = 
   const { t } = useTranslation();
   const navigate = useNavigate();
 
-  const names = (conversation?.extra as { skills?: string[] } | undefined)?.skills ?? [];
+  const names = ((conversation?.extra as { skills?: string[] } | undefined)?.skills ?? []).filter(
+    (name) => !isAionUiInternalResource(name)
+  );
 
   const { data: skillIndex } = useSWR(names.length > 0 ? 'skills-index' : null, () =>
-    ipcBridge.fs.listAvailableSkills.invoke()
+    ipcBridge.fs.listAvailableSkills.invoke().then(filterVisibleSkills)
   );
 
   if (names.length === 0) return null;

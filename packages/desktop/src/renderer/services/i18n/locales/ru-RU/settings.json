@@ -151,6 +151,7 @@
   "assistantSourceCustom": "Пользовательский",
   "assistantSourceOfficial": "Официальный",
   "assistantSourceCli": "CLI",
+  "assistantSourceHth": "Синхронизация HTH",
   "assistantSectionEnabled": "Включено",
   "assistantSectionDisabled": "Отключено",
   "assistantTabMine": "Мои ассистенты",
@@ -175,6 +176,7 @@
   "reorderCoachTitle": "Перетащите для сортировки",
   "reorderCoachBody": "Перетащите любимых ассистентов наверх — этот порядок определяет, как они отображаются везде, где вы выбираете ассистента (главная, команды, запланированные задачи).",
   "assistantCategory": {
+    "custom_assistant": "Пользовательские ассистенты",
     "general": "General Assistants",
     "operations": "Operations Assistants",
     "customer_service": "Customer Service Assistants",

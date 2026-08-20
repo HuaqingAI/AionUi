@@ -151,6 +151,7 @@
   "assistantSourceCustom": "Custom",
   "assistantSourceOfficial": "Official",
   "assistantSourceCli": "CLI",
+  "assistantSourceHth": "HTH Sync",
   "assistantSectionEnabled": "Enabled",
   "assistantSectionDisabled": "Disabled",
   "assistantTabMine": "My Assistants",
@@ -175,6 +176,7 @@
   "reorderCoachTitle": "Drag to reorder",
   "reorderCoachBody": "Drag your favorite assistants to the top — this order decides how they appear wherever you pick an assistant (home, teams, scheduled tasks).",
   "assistantCategory": {
+    "custom_assistant": "Custom Assistants",
     "general": "General Assistants",
     "operations": "Operations Assistants",
     "customer_service": "Customer Service Assistants",

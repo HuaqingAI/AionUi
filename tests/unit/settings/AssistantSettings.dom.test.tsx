@@ -429,8 +429,9 @@ describe('AssistantSettings', () => {
     expect(screen.queryByText('Codex CLI')).not.toBeInTheDocument();
     expect(screen.queryByText('Aion Butler')).not.toBeInTheDocument();
     expect(screen.queryByText(/local CLIs|Your own assistants/)).not.toBeInTheDocument();
-    expect(screen.getByTestId('assistant-category-operations')).toBeInTheDocument();
-    expect(screen.getByTestId('assistant-category-customer_service')).toBeInTheDocument();
+    expect(screen.getByTestId('assistant-category-custom_assistant')).toBeInTheDocument();
+    expect(screen.queryByTestId('assistant-category-operations')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('assistant-category-customer_service')).not.toBeInTheDocument();
   });
 
   it('disables enabled-assistant dragging while search is active', () => {

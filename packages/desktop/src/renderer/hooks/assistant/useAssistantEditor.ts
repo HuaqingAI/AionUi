@@ -11,6 +11,7 @@ import type {
 import { ensureBackendMcpCatalog } from '@/renderer/hooks/mcp/catalog';
 import { getSkillImportErrorMessage } from '@/renderer/pages/settings/SkillsSettings/skillImportMessages';
 import { emitter } from '@/renderer/utils/emitter';
+import { filterVisibleSkills } from '@/renderer/utils/internalResources';
 import { assistantOrderAfterToggle, selectableAssistants } from '@/renderer/utils/model/assistantSelection';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -134,7 +135,8 @@ export const useAssistantEditor = ({
         ipcBridge.fs.listAvailableSkills.invoke(),
         ensureBackendMcpCatalog().then(({ allServers }) => allServers),
       ]);
-      return { detail, skillsList, autoSkills: deriveBuiltinAutoSkills(skillsList), mcpServers };
+      const visibleSkills = filterVisibleSkills(skillsList);
+      return { detail, skillsList: visibleSkills, autoSkills: deriveBuiltinAutoSkills(visibleSkills), mcpServers };
     },
     [loadAssistantDetail]
   );
@@ -300,8 +302,9 @@ export const useAssistantEditor = ({
         ipcBridge.fs.listAvailableSkills.invoke(),
         ensureBackendMcpCatalog().then(({ allServers }) => allServers),
       ]);
-      setAvailableSkills(skillsList);
-      setBuiltinAutoSkills(deriveBuiltinAutoSkills(skillsList));
+      const visibleSkills = filterVisibleSkills(skillsList);
+      setAvailableSkills(visibleSkills);
+      setBuiltinAutoSkills(deriveBuiltinAutoSkills(visibleSkills));
       setAvailableMcpServers(mcpServers);
     } catch (error) {
       console.error('Failed to load skills:', error);
@@ -422,7 +425,7 @@ export const useAssistantEditor = ({
 
         if (skillsToImport.length > 0) {
           const skillsList = await ipcBridge.fs.listAvailableSkills.invoke();
-          setAvailableSkills(skillsList);
+          setAvailableSkills(filterVisibleSkills(skillsList));
         }
       }
 

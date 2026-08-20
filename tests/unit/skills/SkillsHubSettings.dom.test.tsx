@@ -324,7 +324,7 @@ describe('SkillsHubSettings', () => {
     expect(screen.queryByText('Available')).not.toBeInTheDocument();
   });
 
-  it('renders only custom skills and hides the official skills tab', async () => {
+  it('separates custom and built-in skills into two tabs', async () => {
     mocks.listAvailableSkills.mockResolvedValue([
       {
         name: 'cron',
@@ -362,13 +362,21 @@ describe('SkillsHubSettings', () => {
 
     await waitFor(() => expect(screen.getByTestId('my-skill-card-sample-single')).toBeInTheDocument());
     expect(screen.getByTestId('settings-tab-custom')).toBeInTheDocument();
-    expect(screen.queryByTestId('settings-tab-official')).not.toBeInTheDocument();
+    expect(screen.getByTestId('settings-tab-official')).toBeInTheDocument();
     expect(screen.queryByTestId('auto-skills-section')).not.toBeInTheDocument();
     expect(screen.queryByTestId('official-skill-card-officecli')).not.toBeInTheDocument();
     expect(screen.queryByText('cron')).not.toBeInTheDocument();
     expect(screen.queryByText('job-generated')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('settings-tab-official'));
+
+    expect(screen.getByTestId('official-skill-card-officecli')).toBeInTheDocument();
+    expect(screen.getByTestId('auto-skills-section')).toBeInTheDocument();
+    expect(screen.getByText('cron')).toBeInTheDocument();
+    expect(screen.queryByText('job-generated')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('my-skill-card-sample-single')).not.toBeInTheDocument();
   });
-  it('does not render auto-injected skills when official skills are hidden', async () => {
+  it('shows auto-injected built-in skills in the official tab', async () => {
     mocks.listAvailableSkills.mockResolvedValue([
       {
         name: 'officecli',
@@ -382,10 +390,17 @@ describe('SkillsHubSettings', () => {
 
     render(<SkillsHubSettings withWrapper={false} />);
 
-    await waitFor(() => expect(mocks.listAvailableSkills).toHaveBeenCalled());
-    expect(screen.queryByTestId('settings-tab-official')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('auto-skills-section')).not.toBeInTheDocument();
-    expect(screen.queryByText('officecli')).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByTestId('settings-tab-official'));
+
+    const autoSection = screen.getByTestId('auto-skills-section');
+    expect(autoSection).toHaveTextContent('officecli');
+    expect(
+      Array.from(autoSection.querySelectorAll('[title]')).some(
+        (element) =>
+          element.getAttribute('title') ===
+          'Loaded automatically into every conversation - no need to enable them; the agent decides when to use them.'
+      )
+    ).toBe(true);
   });
 
   it('does not expose the local skills directory path on the skills page', async () => {

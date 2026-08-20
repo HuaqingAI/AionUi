@@ -1047,6 +1047,82 @@ describe('HTHConfigSyncService auth handling', () => {
     expect(codexHomeConfig).toContain(`[projects."${workspace.replaceAll('\\', '\\\\')}"]`);
     expect(codexHomeConfig).toContain('trust_level = "trusted"');
   });
+
+  it('creates HTH OpenCode project files for a manually created OpenCode assistant', async () => {
+    await writeStoredAuth(authFile, {
+      displayName: 'Alice',
+      departments: ['Engineering', 'Platform'],
+    });
+    const workspace = path.join(tempDir, 'manual-opencode-workspace');
+    const packageStore = {
+      findByAssistantId: vi.fn(async () => null),
+    } as unknown as HTHPackageStore;
+    (globalThis as typeof globalThis & { __backendPort?: number }).__backendPort = 21345;
+    const fetchMock = vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      if (url === 'http://127.0.0.1:21345/api/assistants/manual-opencode') {
+        return new Response(
+          JSON.stringify({
+            data: {
+              id: 'manual-opencode',
+              source: 'user',
+              engine: { agent: { type: 'opencode', source: 'custom' } },
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (url === 'http://localhost:3000/v1/models') {
+        return new Response(JSON.stringify({ data: [{ id: 'gpt-5.6-terra' }, { id: 'deepseek-v4-flash' }] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response('', { status: 404 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await new HTHConfigSyncService(new HTHAuthService(authFile), packageStore).injectProjectConfig({
+      conversationId: 'conversation-1',
+      workspace,
+      assistantId: 'manual-opencode',
+    });
+
+    expect(result).toEqual({ injected: true, files: ['user-context.md', 'opencode.jsonc'] });
+    const userContext = await fs.readFile(path.join(workspace, 'user-context.md'), 'utf8');
+    expect(userContext).toContain('<user-context>');
+    expect(userContext).toContain('Alice');
+    expect(userContext).toContain('user@example.com');
+    expect(userContext).toContain('Engineering、Platform');
+    expect(userContext).not.toContain('<name>');
+
+    const config = JSON.parse(await fs.readFile(path.join(workspace, 'opencode.jsonc'), 'utf8'));
+    expect(config).toMatchObject({
+      $schema: 'https://opencode.ai/config.json',
+      instructions: ['user-context.md'],
+      mcp: {},
+      model: 'hth/gpt-5.6-terra',
+      permission: { external_directory: 'allow' },
+      provider: {
+        hth: {
+          api: 'http://localhost:3000/v1',
+          name: 'HTH',
+          npm: '@ai-sdk/openai-compatible',
+          options: { apiKey: 'sk-personal-1' },
+        },
+      },
+    });
+    expect(Object.keys(config.provider.hth.models)).toEqual(['gpt-5.6-terra', 'deepseek-v4-flash']);
+
+    await fs.writeFile(path.join(workspace, 'opencode.jsonc'), '{"keep":true}\n', 'utf8');
+    const reinjection = await new HTHConfigSyncService(new HTHAuthService(authFile), packageStore).injectProjectConfig({
+      conversationId: 'conversation-1',
+      workspace,
+      assistantId: 'manual-opencode',
+    });
+    expect(reinjection).toEqual({ injected: false, files: [] });
+    await expect(fs.readFile(path.join(workspace, 'opencode.jsonc'), 'utf8')).resolves.toBe('{"keep":true}\n');
+  });
 });
 
 async function writeStoredAuth(authFile: string, overrides: Record<string, unknown> = {}): Promise<void> {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ipcBridge } from '@/common';
 import type { IMcpServer } from '@/common/config/storage';
 import { ensureBackendMcpCatalog } from './catalog';
+import { filterVisibleMcpServers } from '@/renderer/utils/internalResources';
 
 /**
  * MCP server state hook.
@@ -44,7 +45,7 @@ export const useMcpServers = () => {
           original_json: String(server.original_json || '{}'),
           builtin: false,
         }));
-        setExtensionMcpServers(converted);
+        setExtensionMcpServers(filterVisibleMcpServers(converted));
       })
       .catch((error) => {
         console.error('[useMcpServers] Failed to load extension MCP servers:', error);

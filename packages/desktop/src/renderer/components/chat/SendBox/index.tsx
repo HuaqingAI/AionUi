@@ -22,6 +22,7 @@ import { mergeFileSelectionItems, type FileSelectionItem } from '@/renderer/util
 import type { FileOrFolderItem } from '@/renderer/utils/file/fileTypes';
 import { filterWorkspaceMentionItems } from '@/renderer/utils/file/workspaceMentions';
 import { copyText } from '@/renderer/utils/ui/clipboard';
+import { filterVisibleSkills, isAionUiInternalResource } from '@/renderer/utils/internalResources';
 import { blurActiveElement, shouldBlockMobileInputFocus } from '@/renderer/utils/ui/focus';
 import { Button, Input, Message, Tag } from '@arco-design/web-react';
 import { ArrowUp, CloseSmall, Plus, Quote } from '@icon-park/react';
@@ -467,9 +468,9 @@ const SendBox: React.FC<{
   // Skills loaded into this conversation are also invokable via slash. We reuse
   // the global skills index (shared SWR key `skills-index`) purely to attach a
   // human-readable description; the loadedSkills snapshot decides which appear.
-  const loadedSkills = conversationContext?.loadedSkills;
+  const loadedSkills = conversationContext?.loadedSkills?.filter((name) => !isAionUiInternalResource(name));
   const { data: skillIndex } = useSWR(loadedSkills && loadedSkills.length > 0 ? 'skills-index' : null, () =>
-    ipcBridge.fs.listAvailableSkills.invoke()
+    ipcBridge.fs.listAvailableSkills.invoke().then(filterVisibleSkills)
   );
   const skillSlashCommands = useMemo<SlashCommandItem[]>(() => {
     const descriptionByName = new Map((skillIndex ?? []).map((s) => [s.name, s.description]));

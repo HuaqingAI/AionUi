@@ -7,6 +7,7 @@ import { Check } from '@icon-park/react';
 import { iconColors } from '@/renderer/styles/colors';
 import AionSteps from '@/renderer/components/base/AionSteps';
 import AionModal from '@/renderer/components/base/AionModal';
+import { filterVisibleMcpServers } from '@/renderer/utils/internalResources';
 
 type DetectedMcpServer = IMcpServer & {
   importable: boolean;
@@ -206,7 +207,7 @@ const OneClickImportModal: React.FC<OneClickImportModalProps> = ({
       const mcpConfigs = await mcpService.getAgentMcpConfigs.invoke();
       const selectedConfig = mcpConfigs.find((agentConfig) => agentConfig.source === selectedAgent);
       const allServers = (selectedConfig?.servers ?? []) as DetectedMcpServer[];
-      setFetchedServers(allServers);
+      setFetchedServers(filterVisibleMcpServers(allServers));
     } catch (error) {
       console.error('Failed to import from CLI:', error);
       setFetchedServers([]);

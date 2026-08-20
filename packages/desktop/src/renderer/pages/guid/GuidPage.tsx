@@ -32,6 +32,7 @@ import { useOpenFileSelector } from '@/renderer/hooks/file/useOpenFileSelector';
 import { appendSpeechTranscript } from '@/renderer/hooks/system/useSpeechInput';
 import { useLiveTranscriptInsertion } from '@/renderer/hooks/system/useLiveTranscriptInsertion';
 import { filterGuidSessionSkills } from './utils/sessionSkills';
+import { filterVisibleSkills } from '@/renderer/utils/internalResources';
 import { ArrowRightUp } from '@icon-park/react';
 import { Button, ConfigProvider } from '@arco-design/web-react';
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -74,8 +75,9 @@ const GuidPage: React.FC = () => {
     ipcBridge.fs.listAvailableSkills
       .invoke()
       .then((availableSkills) => {
+        const visibleAvailableSkills = filterVisibleSkills(availableSkills);
         setAllSkills(
-          availableSkills.map((s) => ({
+          visibleAvailableSkills.map((s) => ({
             name: s.name,
             description: s.description,
             isAuto: s.source === 'builtin' && s.is_auto_inject,

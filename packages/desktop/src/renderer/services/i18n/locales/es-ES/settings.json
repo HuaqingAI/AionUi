@@ -150,6 +150,7 @@
   "assistantFilterCustom": "Personalizado",
   "assistantSourceCustom": "Personalizado",
   "assistantSourceOfficial": "Oficial",
+  "assistantSourceHth": "Sincronización HTH",
   "assistantSectionEnabled": "Activados",
   "assistantSectionDisabled": "Desactivados",
   "assistantTabMine": "Mis asistentes",
@@ -174,6 +175,7 @@
   "reorderCoachTitle": "Arrastra para reordenar",
   "reorderCoachBody": "Arrastra tus asistentes favoritos hacia arriba; este orden decide cómo aparecen donde elijas un asistente (inicio, equipos, tareas programadas).",
   "assistantCategory": {
+    "custom_assistant": "Asistentes personalizados",
     "general": "General Assistants",
     "operations": "Operations Assistants",
     "customer_service": "Customer Service Assistants",

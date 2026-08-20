@@ -151,6 +151,7 @@
   "assistantSourceCustom": "カスタム",
   "assistantSourceOfficial": "公式",
   "assistantSourceCli": "CLI",
+  "assistantSourceHth": "HTH 同期",
   "assistantSectionEnabled": "有効",
   "assistantSectionDisabled": "無効",
   "assistantTabMine": "マイアシスタント",
@@ -175,6 +176,7 @@
   "reorderCoachTitle": "ドラッグして並べ替え",
   "reorderCoachBody": "よく使うアシスタントを上にドラッグしてください。この順序が、アシスタントを選ぶ場所（ホーム、チーム、定時タスク）での表示順を決めます。",
   "assistantCategory": {
+    "custom_assistant": "カスタムアシスタント",
     "general": "General Assistants",
     "operations": "Operations Assistants",
     "customer_service": "Customer Service Assistants",

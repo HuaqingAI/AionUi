@@ -2,7 +2,7 @@ import { ipcBridge } from '@/common';
 import type { Assistant } from '@/common/types/agent/assistantTypes';
 import { useLayoutContext } from '@/renderer/hooks/context/LayoutContext';
 import { Button, Checkbox, Message, Modal } from '@arco-design/web-react';
-import { Delete } from '@icon-park/react';
+import { Delete, Help, Lightning, Puzzle } from '@icon-park/react';
 import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
@@ -13,6 +13,7 @@ import SettingsPageHeader from '../components/SettingsPageHeader';
 import TalkToButlerButton from '@/renderer/components/base/TalkToButlerButton';
 import { AionSearchInput } from '@/renderer/components/base';
 import { buildSkillImportNotice, getSkillImportErrorMessage } from './skillImportMessages';
+import { filterVisibleSkills } from '@/renderer/utils/internalResources';
 
 // Skill 淇℃伅绫诲瀷 / Skill info type
 interface SkillInfo {
@@ -29,6 +30,8 @@ interface SkillInfo {
   is_custom: boolean;
   source?: 'builtin' | 'custom' | 'cron' | 'extension';
 }
+
+const isAutoInjectedBuiltinSkill = (skill: SkillInfo) => skill.source === 'builtin' && skill.is_auto_inject;
 
 interface SkillImportRecord {
   id: string;
@@ -143,6 +146,7 @@ const SkillsHubSettings: React.FC<SkillsHubSettingsProps> = ({ withWrapper = tru
   const [search_query, setSearchQuery] = useState('');
   const [importHistory, setImportHistory] = useState<SkillImportRecord[]>([]);
   const [importLimits, setImportLimits] = useState<SkillImportLimits | null>(null);
+  const [activeTab, setActiveTab] = useState<'custom' | 'official'>('custom');
   // Batch management (Custom tab only): multi-select skills for bulk deletion.
   const [batchMode, setBatchMode] = useState(false);
   const [selectedSkillNames, setSelectedSkillNames] = useState<Set<string>>(new Set());
@@ -158,6 +162,12 @@ const SkillsHubSettings: React.FC<SkillsHubSettingsProps> = ({ withWrapper = tru
 
   // "Custom" tab: only user-imported skills.
   const mySkills = useMemo(() => availableSkills.filter((s) => s.source === 'custom'), [availableSkills]);
+  const officialSkills = useMemo(
+    () => availableSkills.filter((s) => s.source === 'builtin' && !s.is_auto_inject),
+    [availableSkills]
+  );
+  const builtinAutoSkills = useMemo(() => availableSkills.filter(isAutoInjectedBuiltinSkill), [availableSkills]);
+  const extensionSkills = useMemo(() => availableSkills.filter((s) => s.source === 'extension'), [availableSkills]);
   const importHistoryGroups = useMemo(() => buildImportHistoryGroups(importHistory), [importHistory]);
 
   const matchesQuery = useCallback(
@@ -174,12 +184,15 @@ const SkillsHubSettings: React.FC<SkillsHubSettingsProps> = ({ withWrapper = tru
   );
 
   const filteredSkills = useMemo(() => matchesQuery(mySkills), [matchesQuery, mySkills]);
+  const filteredOfficialSkills = useMemo(() => matchesQuery(officialSkills), [matchesQuery, officialSkills]);
+  const filteredExtensionSkills = useMemo(() => matchesQuery(extensionSkills), [matchesQuery, extensionSkills]);
+  const filteredAutoSkills = useMemo(() => matchesQuery(builtinAutoSkills), [matchesQuery, builtinAutoSkills]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const skills = await ipcBridge.fs.listAvailableSkills.invoke();
-      setAvailableSkills(skills);
+      setAvailableSkills(filterVisibleSkills(skills));
 
       const history = await ipcBridge.fs.listSkillImportHistory.invoke();
       setImportHistory(history as SkillImportRecord[]);
@@ -197,6 +210,14 @@ const SkillsHubSettings: React.FC<SkillsHubSettingsProps> = ({ withWrapper = tru
   useEffect(() => {
     void fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    if (!highlightName || loading) return;
+    const target = availableSkills.find((skill) => skill.name === highlightName);
+    if (target) {
+      setActiveTab(target.source === 'custom' ? 'custom' : 'official');
+    }
+  }, [availableSkills, highlightName, loading]);
 
   // Scroll to and highlight a skill when navigated with ?highlight=skillName
   useEffect(() => {
@@ -606,6 +627,87 @@ const SkillsHubSettings: React.FC<SkillsHubSettingsProps> = ({ withWrapper = tru
     />
   );
 
+  const renderReadonlySkillCard = (skill: SkillInfo, variant: 'official' | 'extension' | 'auto', testId?: string) => {
+    const isAuto = variant === 'auto';
+    const isExtension = variant === 'extension';
+    const accent = isAuto ? 'success' : 'primary';
+    return (
+      <div
+        key={skill.name}
+        data-testid={testId}
+        ref={(el) => {
+          skillRefs.current[skill.name] = el;
+        }}
+        onClick={() => openSkillDetail(skill.name)}
+        className={`flex flex-col sm:flex-row gap-16px p-16px bg-base border hover:border-border-1 hover:bg-fill-1 rd-12px transition-all duration-200 cursor-pointer ${highlightedSkill === skill.name ? 'border-primary-5 bg-primary-1' : 'border-transparent'}`}
+      >
+        <div className='shrink-0 flex items-start sm:mt-2px'>
+          {isExtension || isAuto ? (
+            <div
+              className={`w-40px h-40px rd-10px bg-[rgba(var(--${accent}-6),0.08)] flex items-center justify-center shadow-sm`}
+            >
+              {isExtension ? (
+                <Puzzle theme='filled' size={20} fill='rgb(var(--primary-6))' />
+              ) : (
+                <Lightning theme='filled' size={20} fill='rgb(var(--success-6))' />
+              )}
+            </div>
+          ) : (
+            <div
+              className={`w-40px h-40px rd-10px flex items-center justify-center font-bold text-16px shadow-sm text-transform-uppercase ${getAvatarColorClass(skill.name)}`}
+            >
+              {skill.name.charAt(0).toUpperCase()}
+            </div>
+          )}
+        </div>
+        <div className='flex-1 min-w-0 flex flex-col justify-center gap-4px'>
+          <h3 className='text-14px font-semibold text-t-primary/90 truncate m-0'>{skill.name}</h3>
+          {skill.description && (
+            <p className='text-13px text-t-secondary leading-relaxed line-clamp-2 m-0' title={skill.description}>
+              {skill.description}
+            </p>
+          )}
+        </div>
+        <div className='shrink-0 sm:self-center flex items-center justify-end pl-4px'>
+          <SkillUsedByStack assistants={getAssistantsUsingSkill(skill.name, assistantCatalog ?? [])} />
+        </div>
+      </div>
+    );
+  };
+
+  const readonlySection = (
+    testId: string,
+    icon: React.ReactNode,
+    title: React.ReactNode,
+    count: number,
+    countClass: string,
+    skills: SkillInfo[],
+    variant: 'extension' | 'auto',
+    hint?: React.ReactNode
+  ) => (
+    <div data-testid={testId}>
+      <div className='flex items-center gap-10px mb-12px'>
+        {icon}
+        <span className='text-14px font-bold text-t-primary'>{title}</span>
+        {hint ? (
+          <span className='inline-flex shrink-0' title={typeof hint === 'string' ? hint : undefined}>
+            <Help theme='outline' size={14} className='text-t-tertiary hover:text-t-secondary cursor-help shrink-0' />
+          </span>
+        ) : null}
+        <span className={`text-12px px-10px py-2px rd-[100px] font-medium ${countClass}`}>{count}</span>
+      </div>
+      <div className='flex flex-col gap-8px rounded-12px border border-border-2 bg-2 p-8px md:rounded-16px md:p-10px'>
+        {skills.length > 0 ? (
+          skills.map((skill) => renderReadonlySkillCard(skill, variant))
+        ) : (
+          <div className='text-center text-t-secondary text-13px py-32px bg-fill-1 rd-12px border border-border-2 border-dashed'>
+            {t('settings.skillsHub.noSearchResults', { defaultValue: 'No matching skills.' })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   // Batch selection helpers scoped to the visible (filtered) custom skills.
   const allVisibleSelected = filteredSkills.length > 0 && filteredSkills.every((s) => selectedSkillNames.has(s.name));
   const toggleSelectAllVisible = () => {
@@ -781,7 +883,61 @@ const SkillsHubSettings: React.FC<SkillsHubSettingsProps> = ({ withWrapper = tru
     </div>
   );
 
-  // ======== Official tab (official builtin list + extension + auto-injected sections) ========
+  const officialPane = (
+    <div className='flex flex-col gap-24px'>
+      <div data-testid='official-skills-section'>
+        <p className='m-0 mb-12px text-12px leading-relaxed text-t-tertiary'>
+          {t('settings.skillsHub.officialHint', {
+            defaultValue: 'Built-in skills are read-only and updated with each release.',
+          })}
+        </p>
+        {officialSkills.length > 0 ? (
+          <div className='flex flex-col gap-8px rounded-12px border border-border-2 bg-2 p-8px md:rounded-16px md:p-10px'>
+            {filteredOfficialSkills.length === 0 && (
+              <div className='text-center text-t-secondary text-13px py-32px bg-fill-1 rd-12px border border-border-2 border-dashed'>
+                {t('settings.skillsHub.noSearchResults', { defaultValue: 'No matching skills.' })}
+              </div>
+            )}
+            {filteredOfficialSkills.map((skill) =>
+              renderReadonlySkillCard(skill, 'official', `official-skill-card-${normalizeTestId(skill.name)}`)
+            )}
+          </div>
+        ) : (
+          <div className='text-center text-t-secondary text-13px py-40px bg-fill-1 rd-12px border border-border-2 border-dashed'>
+            {loading
+              ? t('common.loading', { defaultValue: 'Please wait...' })
+              : t('settings.skillsHub.officialSkillsEmpty', { defaultValue: 'No official skills available.' })}
+          </div>
+        )}
+      </div>
+
+      {extensionSkills.length > 0 &&
+        readonlySection(
+          'extension-skills-section',
+          <Puzzle theme='filled' size={18} fill='var(--color-primary-6)' />,
+          t('settings.extensionSkills', { defaultValue: 'Extension Skills' }),
+          extensionSkills.length,
+          'bg-[rgba(var(--primary-6),0.08)] text-primary-6',
+          filteredExtensionSkills,
+          'extension'
+        )}
+
+      {builtinAutoSkills.length > 0 &&
+        readonlySection(
+          'auto-skills-section',
+          <Lightning theme='filled' size={18} fill='var(--color-success-6)' />,
+          t('settings.autoInjectedSkills'),
+          builtinAutoSkills.length,
+          'bg-[rgba(var(--success-6),0.08)] text-[rgb(var(--success-6))]',
+          filteredAutoSkills,
+          'auto',
+          t('settings.autoInjectedSkillsHint', {
+            defaultValue:
+              'Loaded automatically into every conversation - no need to enable them; the agent decides when to use them.',
+          })
+        )}
+    </div>
+  );
 
   const mainContent = isImportHistoryView ? (
     importHistoryContent
@@ -824,11 +980,19 @@ const SkillsHubSettings: React.FC<SkillsHubSettingsProps> = ({ withWrapper = tru
             label: t('settings.skillsHub.tabCustom', { defaultValue: 'Custom' }),
             count: mySkills.length,
           },
+          {
+            key: 'official',
+            label: t('settings.skillsHub.tabOfficial', { defaultValue: 'Official' }),
+            count: officialSkills.length + extensionSkills.length + builtinAutoSkills.length,
+          },
         ]}
-        activeTab='custom'
-        onTabChange={exitBatchMode}
+        activeTab={activeTab}
+        onTabChange={(key) => {
+          setActiveTab(key as 'custom' | 'official');
+          exitBatchMode();
+        }}
       />
-      {customPane}
+      {activeTab === 'custom' ? customPane : officialPane}
     </div>
   );
 

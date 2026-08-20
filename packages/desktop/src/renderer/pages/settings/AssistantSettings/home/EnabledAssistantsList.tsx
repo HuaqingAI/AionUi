@@ -61,13 +61,15 @@ const EnabledAssistantRow: React.FC<EnabledAssistantRowProps> = ({
     disabled: !draggable,
   });
   const name = assistant.name_i18n?.[localeKey] || assistant.name;
-  const sourceTag = resolveAssistantSourceTag(assistant.source);
+  const sourceTag = resolveAssistantSourceTag(assistant);
   const sourceLabel =
     sourceTag === 'builtin'
       ? t('settings.assistantSourceOfficial', { defaultValue: 'Official' })
       : sourceTag === 'cli'
         ? t('settings.assistantSourceCli', { defaultValue: 'CLI' })
-        : t('settings.assistantSourceCustom', { defaultValue: 'Custom' });
+        : sourceTag === 'hth'
+          ? t('settings.assistantSourceHth', { defaultValue: 'HTH Sync' })
+          : t('settings.assistantSourceCustom', { defaultValue: 'Custom' });
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,

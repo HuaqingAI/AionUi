@@ -27,6 +27,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import useSWR, { mutate as swrMutate } from 'swr';
 import SettingsPageWrapper from '../components/SettingsPageWrapper';
 import { getAssistantsUsingSkill } from './SkillUsedByStack';
+import { filterVisibleSkills } from '@/renderer/utils/internalResources';
 
 interface SkillInfo {
   name: string;
@@ -78,7 +79,7 @@ const SkillDetailPage: React.FC = () => {
   const [saving, setSaving] = useState(false);
 
   const { data: skills, isLoading: skillsLoading } = useSWR<SkillInfo[]>('skills.list', () =>
-    ipcBridge.fs.listAvailableSkills.invoke()
+    ipcBridge.fs.listAvailableSkills.invoke().then(filterVisibleSkills)
   );
   const {
     data: assistants,
