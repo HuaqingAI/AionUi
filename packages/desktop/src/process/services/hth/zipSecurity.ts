@@ -21,7 +21,7 @@ export type ExtractZipOptions = {
   maxTotalBytes?: number;
 };
 
-const DEFAULT_MAX_FILES = 500;
+const DEFAULT_MAX_FILES = 15_000;
 const DEFAULT_MAX_TOTAL_BYTES = 50 * 1024 * 1024;
 const ALLOWED_SECTIONS = new Set<ZipSection>(['global', 'project']);
 
