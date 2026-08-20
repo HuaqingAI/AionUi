@@ -108,13 +108,10 @@ const AssistantSettings: React.FC = () => {
     setAssistantOrder,
     message,
   });
-  const availableBackends = useMemo(
-    () => {
-      const backends = buildAssistantEditorBackends(managedAgentRuntimeCatalog, localeKey, editor.editAgent);
-      return editor.isCreating ? filterCreateAssistantBackends(backends) : backends;
-    },
-    [editor.editAgent, editor.isCreating, localeKey, managedAgentRuntimeCatalog]
-  );
+  const availableBackends = useMemo(() => {
+    const backends = buildAssistantEditorBackends(managedAgentRuntimeCatalog, localeKey, editor.editAgent);
+    return filterCreateAssistantBackends(backends);
+  }, [editor.editAgent, localeKey, managedAgentRuntimeCatalog]);
   const handleSyncFromHTH = useCallback(async () => {
     setSyncingFromHTH(true);
     try {

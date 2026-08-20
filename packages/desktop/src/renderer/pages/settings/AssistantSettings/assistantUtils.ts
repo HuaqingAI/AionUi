@@ -233,6 +233,6 @@ export const buildAssistantEditorBackends = (
 
 const CREATE_ASSISTANT_AGENT_RUNTIME_KEYS = new Set(['codex', 'opencode']);
 
-/** Restrict the agent choices shown when creating a new assistant. */
+/** Restrict the agent choices shown in the assistant editor after loading the AionCore catalog. */
 export const filterCreateAssistantBackends = (backends: AvailableBackend[]): AvailableBackend[] =>
   backends.filter((backend) => CREATE_ASSISTANT_AGENT_RUNTIME_KEYS.has(backend.runtimeKey.toLowerCase()));

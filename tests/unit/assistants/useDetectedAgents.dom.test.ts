@@ -102,7 +102,7 @@ describe('buildAssistantEditorBackends', () => {
     ]);
   });
 
-  it('limits new assistant choices to Codex and OpenCode', () => {
+  it('limits assistant editor choices to Codex and OpenCode', () => {
     const backends = [
       { id: 'codex', name: 'Codex CLI', runtimeKey: 'codex', modelOptions: [] },
       { id: 'opencode', name: 'OpenCode', runtimeKey: 'opencode', modelOptions: [] },
@@ -110,10 +110,7 @@ describe('buildAssistantEditorBackends', () => {
       { id: 'aionrs', name: 'Aion CLI', runtimeKey: 'aionrs', modelOptions: [] },
     ];
 
-    expect(filterCreateAssistantBackends(backends).map((backend) => backend.runtimeKey)).toEqual([
-      'codex',
-      'opencode',
-    ]);
+    expect(filterCreateAssistantBackends(backends).map((backend) => backend.runtimeKey)).toEqual(['codex', 'opencode']);
   });
 });
 
