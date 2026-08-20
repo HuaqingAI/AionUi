@@ -26,7 +26,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router-dom';
 import useSWR, { mutate as swrMutate } from 'swr';
 import SettingsPageWrapper from '../components/SettingsPageWrapper';
-import { getAssistantsUsingSkill } from './SkillUsedByStack';
+import { filterVisibleSkillUsageAssistants, getAssistantsUsingSkill } from './SkillUsedByStack';
 import { filterVisibleSkills } from '@/renderer/utils/internalResources';
 
 interface SkillInfo {
@@ -85,17 +85,16 @@ const SkillDetailPage: React.FC = () => {
     data: assistants,
     isLoading: assistantsLoading,
     mutate: mutateAssistants,
-  } = useSWR<Assistant[]>('assistants.list', () => ipcBridge.assistants.list.invoke());
+  } = useSWR<Assistant[]>('assistants.list', () =>
+    ipcBridge.assistants.list.invoke().then(filterVisibleSkillUsageAssistants)
+  );
 
   const skill = useMemo(() => (skills ?? []).find((s) => s.name === decodedName), [skills, decodedName]);
   const usingAssistants = useMemo(
     () => getAssistantsUsingSkill(decodedName, assistants ?? []),
     [assistants, decodedName]
   );
-  // Attachment editing covers user + generated assistants; builtin assistants'
-  // update endpoint only accepts agent_id/defaults (see useAssistantEditor).
-  const editableAssistants = useMemo(() => (assistants ?? []).filter((a) => a.source !== 'builtin'), [assistants]);
-  const readonlyUsers = useMemo(() => usingAssistants.filter((a) => a.source === 'builtin'), [usingAssistants]);
+  const editableAssistants = assistants ?? [];
 
   const assistantLabel = useCallback(
     (assistant: Assistant): string => assistant.name_i18n?.[localeKey] || assistant.name,
@@ -261,45 +260,36 @@ const SkillDetailPage: React.FC = () => {
                 </div>
               ) : (
                 <div className='flex flex-col gap-4px'>
-                  {usingAssistants.map((assistant) => {
-                    const isReadonly = readonlyUsers.some((a) => a.id === assistant.id);
-                    return (
-                      <div
-                        key={assistant.id}
-                        className='group flex cursor-pointer items-center gap-10px rounded-8px px-12px py-10px transition-colors hover:bg-fill-1'
-                        data-testid={`skill-used-by-row-${assistant.id}`}
-                        onClick={() => openAssistant(assistant.id)}
+                  {usingAssistants.map((assistant) => (
+                    <div
+                      key={assistant.id}
+                      className='group flex cursor-pointer items-center gap-10px rounded-8px px-12px py-10px transition-colors hover:bg-fill-1'
+                      data-testid={`skill-used-by-row-${assistant.id}`}
+                      onClick={() => openAssistant(assistant.id)}
+                    >
+                      <AssistantAvatar assistant={assistant} size={26} />
+                      <Typography.Text className='flex-1 truncate text-13px font-500 text-t-primary'>
+                        {assistantLabel(assistant)}
+                      </Typography.Text>
+                      <Button
+                        size='mini'
+                        type='text'
+                        icon={<Close size={13} />}
+                        data-testid={`btn-detach-${assistant.id}`}
+                        className='!h-22px !px-6px !text-12px !text-t-tertiary hover:!text-danger-6 opacity-0 group-hover:opacity-100 transition-opacity'
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void setAttachment(assistant, false);
+                        }}
                       >
-                        <AssistantAvatar assistant={assistant} size={26} />
-                        <Typography.Text className='flex-1 truncate text-13px font-500 text-t-primary'>
-                          {assistantLabel(assistant)}
-                        </Typography.Text>
-                        {isReadonly ? (
-                          <span className='rounded-4px border border-border-2 bg-fill-1 px-6px py-1px text-11px text-t-tertiary'>
-                            {t('settings.skillsHub.detailBuiltinAssistant', { defaultValue: 'Built-in' })}
-                          </span>
-                        ) : (
-                          <Button
-                            size='mini'
-                            type='text'
-                            icon={<Close size={13} />}
-                            data-testid={`btn-detach-${assistant.id}`}
-                            className='!h-22px !px-6px !text-12px !text-t-tertiary hover:!text-danger-6 opacity-0 group-hover:opacity-100 transition-opacity'
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              void setAttachment(assistant, false);
-                            }}
-                          >
-                            {t('settings.skillsHub.detailDetach', { defaultValue: 'Remove' })}
-                          </Button>
-                        )}
-                        <span className='flex items-center gap-2px text-12px text-t-tertiary group-hover:text-t-secondary'>
-                          {t('settings.agentManagement.viewAssistant', { defaultValue: 'View' })}
-                          <Right size={13} fill='currentColor' />
-                        </span>
-                      </div>
-                    );
-                  })}
+                        {t('settings.skillsHub.detailDetach', { defaultValue: 'Remove' })}
+                      </Button>
+                      <span className='flex items-center gap-2px text-12px text-t-tertiary group-hover:text-t-secondary'>
+                        {t('settings.agentManagement.viewAssistant', { defaultValue: 'View' })}
+                        <Right size={13} fill='currentColor' />
+                      </span>
+                    </div>
+                  ))}
                 </div>
               )}
             </SectionCard>

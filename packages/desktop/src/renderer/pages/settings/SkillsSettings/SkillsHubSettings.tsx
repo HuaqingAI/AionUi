@@ -7,7 +7,7 @@ import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import useSWR from 'swr';
-import SkillUsedByStack, { getAssistantsUsingSkill } from './SkillUsedByStack';
+import SkillUsedByStack, { filterVisibleSkillUsageAssistants, getAssistantsUsingSkill } from './SkillUsedByStack';
 import SettingsPageWrapper from '../components/SettingsPageWrapper';
 import SettingsPageHeader from '../components/SettingsPageHeader';
 import TalkToButlerButton from '@/renderer/components/base/TalkToButlerButton';
@@ -151,7 +151,9 @@ const SkillsHubSettings: React.FC<SkillsHubSettingsProps> = ({ withWrapper = tru
   const [batchMode, setBatchMode] = useState(false);
   const [selectedSkillNames, setSelectedSkillNames] = useState<Set<string>>(new Set());
   // Assistant catalog for the "used by" avatar stacks on skill cards.
-  const { data: assistantCatalog } = useSWR<Assistant[]>('assistants.list', () => ipcBridge.assistants.list.invoke());
+  const { data: assistantCatalog } = useSWR<Assistant[]>('assistants.list', () =>
+    ipcBridge.assistants.list.invoke().then(filterVisibleSkillUsageAssistants)
+  );
 
   const openSkillDetail = useCallback(
     (skillName: string) => {

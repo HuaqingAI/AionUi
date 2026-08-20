@@ -17,12 +17,13 @@ import { Tooltip } from '@arco-design/web-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 
-/**
- * Assistants that have this skill attached (enabled or custom list).
- * The live API may omit the skill arrays on some assistants, so guard both.
- */
+/** Remove built-in assistants from the AionCore catalog for skill-usage UI. */
+export const filterVisibleSkillUsageAssistants = (assistants: Assistant[]): Assistant[] =>
+  assistants.filter((assistant) => assistant.source !== 'builtin');
+
+/** The live API may omit skill arrays on some assistants, so guard both. */
 export const getAssistantsUsingSkill = (skillName: string, assistants: Assistant[]): Assistant[] =>
-  assistants.filter(
+  filterVisibleSkillUsageAssistants(assistants).filter(
     (a) => (a.enabled_skills ?? []).includes(skillName) || (a.custom_skill_names ?? []).includes(skillName)
   );
 

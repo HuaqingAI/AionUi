@@ -92,11 +92,12 @@ const makeAssistant = (overrides: Record<string, unknown>) => ({
 });
 
 describe('getAssistantsUsingSkill', () => {
-  it('matches enabled_skills and custom_skill_names, ignores others', () => {
+  it('matches enabled_skills and custom_skill_names while excluding builtin assistants', () => {
     const assistants = [
       makeAssistant({ id: 'a1', enabled_skills: ['demo-skill'] }),
       makeAssistant({ id: 'a2', custom_skill_names: ['demo-skill'] }),
       makeAssistant({ id: 'a3', enabled_skills: ['other'] }),
+      makeAssistant({ id: 'builtin', source: 'builtin', enabled_skills: ['demo-skill'] }),
     ] as never[];
     expect(getAssistantsUsingSkill('demo-skill', assistants).map((a) => a.id)).toEqual(['a1', 'a2']);
   });
@@ -124,17 +125,17 @@ describe('SkillDetailPage', () => {
     mocks.assistantsUpdate.mockResolvedValue({});
   });
 
-  it('renders skill info and used-by rows (builtin marked read-only)', async () => {
+  it('renders skill info and used-by rows without builtin assistants', async () => {
     render(<SkillDetailPage />);
 
     await waitFor(() => expect(screen.getByTestId('skill-detail-info')).toBeInTheDocument());
     expect(screen.getByText('A demo skill.')).toBeInTheDocument();
 
-    // Used by: Writer (user) + Butler (builtin)
+    // Builtin Butler is filtered after the AionCore assistant catalog is fetched.
     expect(screen.getByTestId('skill-used-by-row-a1')).toBeInTheDocument();
-    expect(screen.getByTestId('skill-used-by-row-b1')).toBeInTheDocument();
+    expect(screen.queryByTestId('skill-used-by-row-b1')).not.toBeInTheDocument();
     expect(screen.queryByTestId('skill-used-by-row-a2')).not.toBeInTheDocument();
-    expect(screen.getByText('Built-in')).toBeInTheDocument();
+    expect(screen.queryByText('Built-in')).not.toBeInTheDocument();
   });
 
   it('shows not-found state for a missing skill', async () => {
@@ -151,7 +152,7 @@ describe('SkillDetailPage', () => {
     fireEvent.click(screen.getByTestId('btn-add-assistant'));
 
     // Coder (user, not using) is addable; Writer already uses the skill and
-    // builtin Butler is never editable, so neither shows in the menu.
+    // builtin Butler is removed from the post-fetch catalog.
     await waitFor(() => expect(screen.getByTestId('menu-add-assistant-a2')).toBeInTheDocument());
     expect(screen.queryByTestId('menu-add-assistant-a1')).not.toBeInTheDocument();
     expect(screen.queryByTestId('menu-add-assistant-b1')).not.toBeInTheDocument();
@@ -181,11 +182,11 @@ describe('SkillDetailPage', () => {
     expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
-  it('builtin users show a read-only tag instead of a remove button', async () => {
+  it('does not show builtin users in the usage list', async () => {
     render(<SkillDetailPage />);
 
-    await waitFor(() => expect(screen.getByTestId('skill-used-by-row-b1')).toBeInTheDocument());
-    expect(screen.getByText('Built-in')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('skill-detail-used-by')).toBeInTheDocument());
+    expect(screen.queryByTestId('skill-used-by-row-b1')).not.toBeInTheDocument();
     expect(screen.queryByTestId('btn-detach-b1')).not.toBeInTheDocument();
   });
 
