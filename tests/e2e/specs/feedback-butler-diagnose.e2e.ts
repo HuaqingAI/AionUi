@@ -1,8 +1,6 @@
 /**
- * Butler diagnose button — the "Ask the Butler" chip next to the feedback
- * pill on conversation error bubbles. Clicking it must jump to the home chat
- * with a diagnosis prompt (containing the error text) pre-filled, mirroring
- * the report modal's "Solve via chat" flow.
+ * Conversation error bubbles must not show either the Butler diagnosis chip
+ * or the feedback action.
  *
  * Uses the ACP E2E stream injector to fabricate an error tip without needing
  * a real broken agent session.
@@ -12,7 +10,6 @@ import type { Page } from '@playwright/test';
 import { test, expect } from '../fixtures';
 import { findAssistantIdForBackend, goToGuid } from '../helpers';
 import { httpDelete, httpPost } from '../helpers/httpBridge';
-import { GUID_INPUT } from '../helpers/selectors';
 
 const ENABLED_CONVERSATION_KEY = 'aionui:e2e-message-stream-conversation-id';
 const ERROR_TEXT = 'E2E fabricated failure: provider exploded (code 500)';
@@ -32,7 +29,7 @@ async function ensureRendererReady(page: Page): Promise<void> {
   );
 }
 
-test('error bubble butler chip pre-fills a diagnosis prompt in the home chat', async ({ page }) => {
+test('error bubble hides the Butler diagnosis and feedback actions', async ({ page }) => {
   await goToGuid(page);
   await ensureRendererReady(page);
   const assistantId = await findAssistantIdForBackend(page, 'codex', { requireAvailable: true });
@@ -75,20 +72,9 @@ test('error bubble butler chip pre-fills a diagnosis prompt in the home chat', a
       { id: conversation.id, text: ERROR_TEXT }
     );
 
-    // The error bubble should surface both chips.
-    const butlerChip = page.locator('button:has-text("找管家排查"), button:has-text("Ask the Butler")').first();
-    await expect(butlerChip).toBeVisible({ timeout: 10_000 });
-    await expect(page.locator('button:has-text("反馈问题"), button:has-text("Report Issue")').first()).toBeVisible();
-
-    await butlerChip.click();
-
-    // Lands on the home chat with the diagnosis prompt (incl. error text) seeded.
-    await page.waitForFunction(() => window.location.hash.startsWith('#/guid'), { timeout: 10_000 });
-    const input = page.locator(GUID_INPUT);
-    await expect(input).toBeVisible({ timeout: 10_000 });
-    await expect(input).toHaveValue(new RegExp(ERROR_TEXT.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), {
-      timeout: 10_000,
-    });
+    await expect(page.getByText(ERROR_TEXT)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('button', { name: /找管家排查|Ask the Butler/ })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /反馈问题|Report Issue/ })).toHaveCount(0);
   } finally {
     await httpDelete(page, `/api/conversations/${encodeURIComponent(conversation.id)}`).catch(() => {});
   }

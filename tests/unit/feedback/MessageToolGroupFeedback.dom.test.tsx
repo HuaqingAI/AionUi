@@ -3,22 +3,16 @@
  * Copyright 2025 AionUi (aionui.com)
  * SPDX-License-Identifier: Apache-2.0
  *
- * Verifies MessageToolGroup renders the FeedbackButton only when a tool call
- * has status='Error' and wires it to module=conversation-session.
+ * Verifies failed tool calls keep their error content while hiding their
+ * Butler diagnosis and feedback actions.
  */
 
 import React from 'react';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (k: string) => k, i18n: { language: 'en' } }),
-}));
-
-const openFeedbackMock = vi.fn(() => Promise.resolve());
-vi.mock('@/renderer/hooks/context/FeedbackContext', () => ({
-  useFeedback: () => ({ openFeedback: openFeedbackMock }),
 }));
 
 // Stub heavy dependencies that MessageToolGroup pulls in so this test can
@@ -64,11 +58,7 @@ const buildToolGroup = (status: IMessageToolGroup['content'][number]['status']):
     ],
   }) as IMessageToolGroup;
 
-describe('MessageToolGroup — FeedbackButton wiring', () => {
-  beforeEach(() => {
-    openFeedbackMock.mockClear();
-  });
-
+describe('MessageToolGroup error actions', () => {
   afterEach(() => {
     cleanup();
   });
@@ -83,20 +73,10 @@ describe('MessageToolGroup — FeedbackButton wiring', () => {
     expect(screen.queryByText('settings.oneClickFeedback')).not.toBeInTheDocument();
   });
 
-  it('renders FeedbackButton when status=Error', () => {
+  it('hides the Butler diagnosis and feedback actions when status=Error', () => {
     render(<MessageToolGroup message={buildToolGroup('Error')} />);
-    expect(screen.getByText('settings.oneClickFeedback')).toBeInTheDocument();
-  });
-
-  it('click opens feedback with module=conversation-session', async () => {
-    const user = userEvent.setup();
-    render(<MessageToolGroup message={buildToolGroup('Error')} />);
-    await user.click(screen.getByText('settings.oneClickFeedback'));
-
-    expect(openFeedbackMock).toHaveBeenCalledTimes(1);
-    expect(openFeedbackMock).toHaveBeenCalledWith({
-      module: 'conversation-session',
-      autoScreenshot: true,
-    });
+    expect(screen.getByText('ENOENT: no such file')).toBeInTheDocument();
+    expect(screen.queryByText('settings.talkToButler.solveWithButler')).not.toBeInTheDocument();
+    expect(screen.queryByText('settings.oneClickFeedback')).not.toBeInTheDocument();
   });
 });

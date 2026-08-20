@@ -20,34 +20,23 @@ import { describe, it, expect } from 'vitest';
 const repoRoot = path.resolve(__dirname, '../../..');
 const read = (relativePath: string) => fs.readFileSync(path.join(repoRoot, relativePath), 'utf-8');
 
-describe('FeedbackButton mount points — source-level wiring', () => {
-  it('MessageToolGroup wires module=conversation-session', () => {
+describe('Conversation error action mount points', () => {
+  it('MessageToolGroup hides conversation error actions', () => {
     const src = read('packages/desktop/src/renderer/pages/conversation/Messages/components/MessageToolGroup.tsx');
-    expect(src).toMatch(/<FeedbackButton\s+module=['"]conversation-session['"]/);
-    expect(src).not.toMatch(/<FeedbackButton\s+module=['"](?!conversation-session)[^'"]+['"]/);
+    expect(src).not.toMatch(/<FeedbackButton/);
+    expect(src).not.toMatch(/<ButlerDiagnoseButton/);
   });
 
-  it('MessageTips wires module=conversation-session', () => {
+  it('MessageTips hides conversation error actions', () => {
     const src = read('packages/desktop/src/renderer/pages/conversation/Messages/components/MessageTips.tsx');
-    expect(src).toMatch(/<FeedbackButton\s+module=['"]conversation-session['"]/);
+    expect(src).not.toMatch(/<FeedbackButton/);
+    expect(src).not.toMatch(/<ButlerDiagnoseButton/);
   });
 
-  it('MessageAgentStatus wires module=conversation-session', () => {
+  it('MessageAgentStatus hides conversation error actions', () => {
     const src = read('packages/desktop/src/renderer/pages/conversation/Messages/components/MessageAgentStatus.tsx');
-    expect(src).toMatch(/<FeedbackButton\s+module=['"]conversation-session['"]/);
-  });
-
-  it('every conversation error surface pairs FeedbackButton with ButlerDiagnoseButton', () => {
-    for (const file of [
-      'packages/desktop/src/renderer/pages/conversation/Messages/components/MessageToolGroup.tsx',
-      'packages/desktop/src/renderer/pages/conversation/Messages/components/MessageTips.tsx',
-      'packages/desktop/src/renderer/pages/conversation/Messages/components/MessageAgentStatus.tsx',
-    ]) {
-      const src = read(file);
-      const feedbackCount = (src.match(/<FeedbackButton/g) ?? []).length;
-      const butlerCount = (src.match(/<ButlerDiagnoseButton/g) ?? []).length;
-      expect(butlerCount, `${file}: each FeedbackButton needs a ButlerDiagnoseButton beside it`).toBe(feedbackCount);
-    }
+    expect(src).not.toMatch(/<FeedbackButton/);
+    expect(src).not.toMatch(/<ButlerDiagnoseButton/);
   });
 
   it('InlineAgentEditor has no FeedbackButton', () => {
@@ -69,7 +58,7 @@ describe('FeedbackButton mount points — source-level wiring', () => {
 
   it('each referenced module tag exists in FEEDBACK_MODULES', () => {
     const modulesSrc = read('packages/desktop/src/common/types/feedbackDiagnostics.ts');
-    const referencedTags = ['conversation-session', 'agent-detection', 'system-settings', 'mcp-tools'];
+    const referencedTags = ['agent-detection', 'system-settings', 'mcp-tools'];
     for (const tag of referencedTags) {
       expect(modulesSrc).toContain(`tag: '${tag}'`);
     }

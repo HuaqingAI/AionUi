@@ -3,14 +3,13 @@
  * Copyright 2025 AionUi (aionui.com)
  * SPDX-License-Identifier: Apache-2.0
  *
- * Verifies MessageTips only renders the FeedbackButton on error tips and
- * wires it to module=conversation-session.
+ * Verifies conversation error tips preserve their error details without
+ * exposing Butler diagnosis or feedback actions.
  */
 
 import React from 'react';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
@@ -47,11 +46,6 @@ vi.mock('react-i18next', () => ({
     },
     i18n: { language: 'en' },
   }),
-}));
-
-const openFeedbackMock = vi.fn(() => Promise.resolve());
-vi.mock('@/renderer/hooks/context/FeedbackContext', () => ({
-  useFeedback: () => ({ openFeedback: openFeedbackMock }),
 }));
 
 // CollapsibleContent uses ResizeObserver and runtime theme context — stub it
@@ -112,11 +106,7 @@ const buildTips = (
     content: { type, content, ...(error ? { error } : {}), ...extra },
   }) as IMessageTips;
 
-describe('MessageTips — FeedbackButton wiring', () => {
-  beforeEach(() => {
-    openFeedbackMock.mockClear();
-  });
-
+describe('MessageTips error actions', () => {
   afterEach(() => {
     cleanup();
   });
@@ -136,35 +126,21 @@ describe('MessageTips — FeedbackButton wiring', () => {
     expect(screen.queryByText('settings.oneClickFeedback')).not.toBeInTheDocument();
   });
 
-  it('renders FeedbackButton when tip type is error', () => {
+  it('hides the Butler diagnosis and feedback actions when tip type is error', () => {
     render(<MessageTips message={buildTips('error')} />);
-    expect(screen.getByText('settings.oneClickFeedback')).toBeInTheDocument();
+    expect(screen.getByText('boom')).toBeInTheDocument();
+    expect(screen.queryByText('settings.talkToButler.solveWithButler')).not.toBeInTheDocument();
+    expect(screen.queryByText('settings.oneClickFeedback')).not.toBeInTheDocument();
   });
 
-  it('click opens feedback with module=conversation-session', async () => {
-    const user = userEvent.setup();
-    render(<MessageTips message={buildTips('error')} />);
-    await user.click(screen.getByText('settings.oneClickFeedback'));
-
-    expect(openFeedbackMock).toHaveBeenCalledTimes(1);
-    expect(openFeedbackMock).toHaveBeenCalledWith({
-      module: 'conversation-session',
-      autoScreenshot: true,
-    });
-  });
-
-  it('renders FeedbackButton on JSON-formatted error content too', async () => {
-    const user = userEvent.setup();
+  it('hides the actions on JSON-formatted error content too', () => {
     render(<MessageTips message={buildTips('error', '{"code":500}')} />);
-    await user.click(screen.getByText('settings.oneClickFeedback'));
-    expect(openFeedbackMock).toHaveBeenCalledWith({
-      module: 'conversation-session',
-      autoScreenshot: true,
-    });
+    expect(screen.getByText(/"code": 500/)).toBeInTheDocument();
+    expect(screen.queryByText('settings.talkToButler.solveWithButler')).not.toBeInTheDocument();
+    expect(screen.queryByText('settings.oneClickFeedback')).not.toBeInTheDocument();
   });
 
-  it('click opens feedback with structured agent error metadata', async () => {
-    const user = userEvent.setup();
+  it('hides the actions on structured agent errors', () => {
     render(
       <MessageTips
         message={buildTips('error', 'raw provider 401', {
@@ -182,33 +158,12 @@ describe('MessageTips — FeedbackButton wiring', () => {
       />
     );
 
-    await user.click(screen.getByText('settings.oneClickFeedback'));
-
-    expect(openFeedbackMock).toHaveBeenCalledWith({
-      module: 'conversation-session',
-      autoScreenshot: true,
-      tags: {
-        agent_error_code: 'USER_LLM_PROVIDER_AUTH_FAILED',
-        agent_error_ownership: 'user_llm_provider',
-        agent_error_retryable: 'false',
-        agent_error_resolution: 'check_provider_credentials',
-      },
-      extra: {
-        agent_error: {
-          code: 'USER_LLM_PROVIDER_AUTH_FAILED',
-          ownership: 'user_llm_provider',
-          retryable: false,
-          feedback_recommended: true,
-          resolution: {
-            kind: 'check_provider_credentials',
-            target: 'provider_settings',
-          },
-        },
-      },
-    });
+    expect(screen.getByText('Model provider authentication failed')).toBeInTheDocument();
+    expect(screen.queryByText('settings.talkToButler.solveWithButler')).not.toBeInTheDocument();
+    expect(screen.queryByText('settings.oneClickFeedback')).not.toBeInTheDocument();
   });
 
-  it('hides FeedbackButton but keeps ButlerDiagnoseButton when structured error opts out of feedback', () => {
+  it('hides both actions when structured error opts out of feedback', () => {
     render(
       <MessageTips
         message={buildTips('error', 'raw provider 401', {
@@ -226,42 +181,8 @@ describe('MessageTips — FeedbackButton wiring', () => {
       />
     );
 
-    // User-environment errors don't funnel to the report modal…
+    expect(screen.queryByText('settings.talkToButler.solveWithButler')).not.toBeInTheDocument();
     expect(screen.queryByText('settings.oneClickFeedback')).not.toBeInTheDocument();
-    // …but the Butler chip stays: these are exactly what it diagnoses best.
-    expect(screen.getByText('settings.talkToButler.solveWithButler')).toBeInTheDocument();
-  });
-
-  it('carries the rawError diagnostic summary into the feedback extra for internal errors', async () => {
-    const user = userEvent.setup();
-    render(
-      <MessageTips
-        message={buildTips('error', 'Something went wrong, please try again.', {
-          message: 'Something went wrong, please try again.',
-          code: 'AIONUI_INTERNAL_ERROR',
-          ownership: 'aionui',
-          detail: 'Something went wrong, please try again.',
-          retryable: true,
-          feedback_recommended: true,
-          rawError: {
-            name: 'Error',
-            message: 'connect ECONNREFUSED 127.0.0.1:8080',
-            code: 'ECONNREFUSED',
-            stack: 'Error: connect ECONNREFUSED\n    at frame',
-          },
-        })}
-      />
-    );
-
-    await user.click(screen.getByText('settings.oneClickFeedback'));
-
-    const call = openFeedbackMock.mock.calls[0][0] as { extra: { agent_error: { rawError?: unknown } } };
-    expect(call.extra.agent_error.rawError).toEqual({
-      name: 'Error',
-      message: 'connect ECONNREFUSED 127.0.0.1:8080',
-      code: 'ECONNREFUSED',
-      stack: 'Error: connect ECONNREFUSED\n    at frame',
-    });
   });
 
   it('renders HTML-like error text as literal text', () => {
