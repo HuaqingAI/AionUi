@@ -9,6 +9,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
 import {
+  addBeisenCliGlobalBinToPath,
   addCodexGlobalBinToPath,
   addDwsGlobalBinToPath,
   addOfficeCliGlobalBinToPath,
@@ -20,6 +21,7 @@ import {
   checkCodexManagedAgentHealth,
   checkDwsManagedAgentHealth,
   checkOfficeCliManagedAgentHealth,
+  ensureBeisenCliReady,
   ensureCodexReady,
   ensureDwsReady,
   ensureOfficeCliReady,
@@ -27,6 +29,7 @@ import {
   ensureShopifyCliReady,
   ensureZiniaoOpenReady,
   shouldEnsureCodexOnStartup,
+  shouldEnsureBeisenCliOnStartup,
   shouldEnsureDwsOnStartup,
   shouldEnsureOfficeCliOnStartup,
   shouldEnsureOpenCodeOnStartup,
@@ -54,6 +57,8 @@ afterEach(() => {
 
 describe('opencode startup bootstrap', () => {
   async function createManagedNodeFixture(): Promise<{
+    beisenCliCommandPath: string;
+    beisenCliPrefix: string;
     commandPath: string;
     codexCommandPath: string;
     codexPrefix: string;
@@ -78,6 +83,11 @@ describe('opencode startup bootstrap', () => {
         : path.join(nodeRoot, 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js');
     const prefix = path.join(dataPath, 'runtime', 'npm-global', 'opencode');
     const commandPath = path.join(prefix, process.platform === 'win32' ? 'opencode.cmd' : 'bin/opencode');
+    const beisenCliPrefix = path.join(dataPath, 'runtime', 'npm-global', 'beisen-cli');
+    const beisenCliCommandPath = path.join(
+      beisenCliPrefix,
+      process.platform === 'win32' ? 'beisen-cli.cmd' : 'bin/beisen-cli'
+    );
     const codexPrefix = path.join(dataPath, 'runtime', 'npm-global', 'codex');
     const codexCommandPath = path.join(codexPrefix, process.platform === 'win32' ? 'codex.cmd' : 'bin/codex');
     const dwsPrefix = path.join(dataPath, 'runtime', 'npm-global', 'dws');
@@ -99,6 +109,8 @@ describe('opencode startup bootstrap', () => {
     await writeFile(npmCliPath, '');
 
     return {
+      beisenCliCommandPath,
+      beisenCliPrefix,
       commandPath,
       codexCommandPath,
       codexPrefix,
@@ -171,6 +183,42 @@ describe('opencode startup bootstrap', () => {
     );
     const commandEnv = commandRunner.mock.calls[0]?.[2].env;
     expect(commandEnv?.PATH?.split(path.delimiter)).toContain(path.dirname(fixture.nodeExecutable));
+  });
+
+  it('uses managed Node npm to install Beisen CLI into npm-global', async () => {
+    const fixture = await createManagedNodeFixture();
+    const commandRunner = vi.fn(async () => {
+      await mkdir(path.dirname(fixture.beisenCliCommandPath), { recursive: true });
+      await writeFile(fixture.beisenCliCommandPath, '');
+      return {};
+    });
+
+    const result = await ensureBeisenCliReady({
+      commandRunner,
+      dataPath: fixture.dataPath,
+      emitStatus: vi.fn(),
+      ensureNodeRuntime: async () => ({ ready: true }),
+      env: {},
+    });
+
+    expect(result).toEqual({ status: 'ready' });
+    expect(commandRunner).toHaveBeenCalledWith(
+      fixture.nodeExecutable,
+      [
+        fixture.npmCliPath,
+        'install',
+        '--global',
+        'beisen-cli',
+        '--prefix',
+        fixture.beisenCliPrefix,
+        '--registry',
+        'https://registry.npmmirror.com',
+      ],
+      expect.objectContaining({
+        cwd: fixture.dataPath,
+        timeout: 180000,
+      })
+    );
   });
 
   it('uses the macOS managed Node npm CLI location to install OpenCode', async () => {
@@ -659,6 +707,20 @@ describe('opencode startup bootstrap', () => {
     }
   });
 
+  it('prepends the managed Beisen CLI bin directory to PATH', async () => {
+    const dataPath = await mkdtemp(path.join(tmpdir(), 'aionui-beisen-cli-path-'));
+    const env: NodeJS.ProcessEnv = {
+      PATH: ['C:\\existing\\bin'].join(path.delimiter),
+    };
+
+    const binDir = addBeisenCliGlobalBinToPath(dataPath, env);
+
+    expect(env.PATH?.split(path.delimiter)[0]).toBe(binDir);
+    if (process.platform === 'win32') {
+      expect(env.Path).toBe(env.PATH);
+    }
+  });
+
   it('prepends the managed Codex bin directory to PATH', async () => {
     const dataPath = await mkdtemp(path.join(tmpdir(), 'aionui-codex-path-'));
     const env: NodeJS.ProcessEnv = {
@@ -797,6 +859,9 @@ describe('opencode startup bootstrap', () => {
     expect(shouldEnsureOpenCodeOnStartup({ AIONUI_E2E_TEST: '1' })).toBe(false);
     expect(shouldEnsureOpenCodeOnStartup({ AIONUI_OPENCODE_BOOTSTRAP: '0' })).toBe(false);
     expect(shouldEnsureOpenCodeOnStartup({})).toBe(true);
+    expect(shouldEnsureBeisenCliOnStartup({ AIONUI_E2E_TEST: '1' })).toBe(false);
+    expect(shouldEnsureBeisenCliOnStartup({ AIONUI_BEISEN_CLI_BOOTSTRAP: '0' })).toBe(false);
+    expect(shouldEnsureBeisenCliOnStartup({})).toBe(true);
     expect(shouldEnsureCodexOnStartup({ AIONUI_E2E_TEST: '1' })).toBe(false);
     expect(shouldEnsureCodexOnStartup({ AIONUI_CODEX_BOOTSTRAP: '0' })).toBe(false);
     expect(shouldEnsureCodexOnStartup({})).toBe(true);

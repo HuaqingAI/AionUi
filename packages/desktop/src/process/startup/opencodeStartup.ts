@@ -44,6 +44,7 @@ type ManagedAcpTool = {
   commandName: string;
   displayName: string;
   envDisabledKey:
+    | 'AIONUI_BEISEN_CLI_BOOTSTRAP'
     | 'AIONUI_CODEX_BOOTSTRAP'
     | 'AIONUI_DWS_BOOTSTRAP'
     | 'AIONUI_OFFICECLI_BOOTSTRAP'
@@ -53,7 +54,7 @@ type ManagedAcpTool = {
   match: string | readonly string[];
   packageName: string;
   scope: IRuntimeStatusScope;
-  toolId: 'codex' | 'dws' | 'officecli' | 'opencode' | 'shopify-cli' | 'ziniao-open';
+  toolId: 'beisen-cli' | 'codex' | 'dws' | 'officecli' | 'opencode' | 'shopify-cli' | 'ziniao-open';
 };
 
 type EnsureNodeRuntime = (params: { scope: IRuntimeStatusScope }) => Promise<{ ready: boolean }>;
@@ -70,6 +71,7 @@ type RuntimeStatusEmitter = (event: IRuntimeStatusEvent) => void;
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 type OpenCodeStartupEnv = {
+  AIONUI_BEISEN_CLI_BOOTSTRAP?: string;
   AIONUI_CODEX_BOOTSTRAP?: string;
   AIONUI_DWS_BOOTSTRAP?: string;
   AIONUI_OFFICECLI_BOOTSTRAP?: string;
@@ -115,6 +117,12 @@ const OPENCODE_AGENT_MATCH = 'opencode';
 const OPENCODE_STARTUP_SCOPE: IRuntimeStatusScope = {
   kind: 'custom_agent',
   id: 'startup-opencode',
+};
+const BEISEN_CLI_TOOL_ID = 'beisen-cli';
+const BEISEN_CLI_PACKAGE_NAME = 'beisen-cli';
+const BEISEN_CLI_STARTUP_SCOPE: IRuntimeStatusScope = {
+  kind: 'mcp',
+  id: 'startup-beisen-cli',
 };
 const CODEX_TOOL_ID = 'codex';
 const CODEX_PACKAGE_NAME = '@openai/codex';
@@ -176,6 +184,16 @@ const OPENCODE_TOOL: ManagedAcpTool = {
   toolId: OPENCODE_TOOL_ID,
 };
 
+const BEISEN_CLI_TOOL: ManagedAcpTool = {
+  commandName: BEISEN_CLI_TOOL_ID,
+  displayName: 'Beisen CLI',
+  envDisabledKey: 'AIONUI_BEISEN_CLI_BOOTSTRAP',
+  match: BEISEN_CLI_TOOL_ID,
+  packageName: BEISEN_CLI_PACKAGE_NAME,
+  scope: BEISEN_CLI_STARTUP_SCOPE,
+  toolId: BEISEN_CLI_TOOL_ID,
+};
+
 const CODEX_TOOL: ManagedAcpTool = {
   commandName: CODEX_TOOL_ID,
   displayName: 'Codex',
@@ -228,6 +246,7 @@ const ZINIAO_OPEN_TOOL: ManagedAcpTool = {
 
 const STARTUP_TOOLS = [
   OPENCODE_TOOL,
+  BEISEN_CLI_TOOL,
   CODEX_TOOL,
   DWS_TOOL,
   OFFICECLI_TOOL,
@@ -392,6 +411,10 @@ function addManagedToolGlobalBinToPath(
 
 export function addOpenCodeGlobalBinToPath(dataPath = getDataPath(), env: NodeJS.ProcessEnv = process.env): string {
   return addManagedToolGlobalBinToPath(OPENCODE_TOOL, dataPath, env);
+}
+
+export function addBeisenCliGlobalBinToPath(dataPath = getDataPath(), env: NodeJS.ProcessEnv = process.env): string {
+  return addManagedToolGlobalBinToPath(BEISEN_CLI_TOOL, dataPath, env);
 }
 
 export function addCodexGlobalBinToPath(dataPath = getDataPath(), env: NodeJS.ProcessEnv = process.env): string {
@@ -933,6 +956,10 @@ export function shouldEnsureOpenCodeOnStartup(env: OpenCodeStartupEnv = process.
   return shouldEnsureManagedToolOnStartup(OPENCODE_TOOL, env);
 }
 
+export function shouldEnsureBeisenCliOnStartup(env: OpenCodeStartupEnv = process.env): boolean {
+  return shouldEnsureManagedToolOnStartup(BEISEN_CLI_TOOL, env);
+}
+
 export function shouldEnsureCodexOnStartup(env: OpenCodeStartupEnv = process.env): boolean {
   return shouldEnsureManagedToolOnStartup(CODEX_TOOL, env);
 }
@@ -1012,6 +1039,10 @@ export function ensureOpenCodeReady(options: EnsureOpenCodeReadyOptions = {}): P
   return ensureManagedToolReady(OPENCODE_TOOL, options);
 }
 
+export function ensureBeisenCliReady(options: EnsureOpenCodeReadyOptions = {}): Promise<OpenCodeBootstrapResult> {
+  return ensureManagedToolReady(BEISEN_CLI_TOOL, options);
+}
+
 export function ensureCodexReady(options: EnsureOpenCodeReadyOptions = {}): Promise<OpenCodeBootstrapResult> {
   return ensureManagedToolReady(CODEX_TOOL, options);
 }
@@ -1052,6 +1083,24 @@ export async function ensureOpenCodeReadyOnStartup(
       break;
     case 'failed':
       console.warn('[OpenCode] managed runtime bootstrap failed:', result.error);
+      break;
+  }
+  return result;
+}
+
+export async function ensureBeisenCliReadyOnStartup(
+  options: EnsureOpenCodeReadyOptions = {}
+): Promise<OpenCodeBootstrapResult> {
+  const result = await ensureBeisenCliReady(options);
+  switch (result.status) {
+    case 'ready':
+      console.info('[Beisen CLI] managed runtime is ready');
+      break;
+    case 'skipped':
+      console.info('[Beisen CLI] startup bootstrap skipped');
+      break;
+    case 'failed':
+      console.warn('[Beisen CLI] managed runtime bootstrap failed:', result.error);
       break;
   }
   return result;

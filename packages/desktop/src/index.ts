@@ -29,6 +29,7 @@ import {
   checkDwsManagedAgentHealthOnStartup,
   checkOfficeCliManagedAgentHealthOnStartup,
   checkOpenCodeManagedAgentHealthOnStartup,
+  ensureBeisenCliReadyOnStartup,
   ensureCodexReadyOnStartup,
   ensureDwsReadyOnStartup,
   ensureOfficeCliReadyOnStartup,
@@ -517,6 +518,9 @@ function scheduleOpenCodeManagedAgentHealthAfterRendererReady(backendPort: numbe
   });
   void ensureShopifyCliReadyOnStartup({ dataPath: openCodeRuntimeDataPath ?? undefined }).then((result) => {
     console.log(`[HQBuddy:ready] shopifyCli:${result.status}`);
+  });
+  void ensureBeisenCliReadyOnStartup({ dataPath: openCodeRuntimeDataPath ?? undefined }).then((result) => {
+    console.log(`[HQBuddy:ready] beisenCli:${result.status}`);
   });
 }
 
