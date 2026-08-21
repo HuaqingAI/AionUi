@@ -131,7 +131,7 @@ describe('HTHConfigSyncService auth handling', () => {
       version: '1.0.0',
       name: 'Updated name',
       description: 'Updated description',
-      categories: ['operations', 'customer_service'],
+      categories: ['amazon_operations', 'customer_service'],
       recommended_prompts: ['整理客户跟进记录', '生成回访话术'],
       avatar: 'robot',
       sha256: 'sha-1',
@@ -231,14 +231,14 @@ describe('HTHConfigSyncService auth handling', () => {
       name: 'Updated name',
       description: 'Updated description',
       avatar: 'robot',
-      categories: ['operations', 'customer_service'],
+      categories: ['amazon_operations', 'customer_service'],
       recommended_prompts: ['整理客户跟进记录', '生成回访话术'],
     });
     const categoriesRequest = JSON.parse((fetchMock.mock.calls[6][1] as RequestInit).body as string) as {
       'hth.assistantCategories'?: Record<string, string[]>;
     };
     expect(categoriesRequest['hth.assistantCategories']).toEqual({
-      [assistantId]: ['operations', 'customer_service'],
+      [assistantId]: ['amazon_operations', 'customer_service'],
     });
   });
 

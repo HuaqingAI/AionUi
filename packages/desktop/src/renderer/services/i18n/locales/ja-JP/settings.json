@@ -177,13 +177,17 @@
   "reorderCoachBody": "よく使うアシスタントを上にドラッグしてください。この順序が、アシスタントを選ぶ場所（ホーム、チーム、定時タスク）での表示順を決めます。",
   "assistantCategory": {
     "custom_assistant": "カスタムアシスタント",
-    "general": "General Assistants",
-    "operations": "Operations Assistants",
-    "customer_service": "Customer Service Assistants",
-    "logistics": "Logistics Assistants",
-    "marketing": "Marketing Assistants",
-    "finance": "Finance Assistants",
-    "hr": "HR Assistants"
+    "general": "汎用アシスタント",
+    "amazon_operations": "Amazon運用アシスタント",
+    "dtc_operations": "DTC運用アシスタント",
+    "marketing": "マーケティングアシスタント",
+    "design": "デザインアシスタント",
+    "customer_service": "カスタマーサービスアシスタント",
+    "logistics": "物流アシスタント",
+    "market": "市場アシスタント",
+    "finance": "財務アシスタント",
+    "hr": "人事アシスタント",
+    "administration": "管理アシスタント"
   },
   "assistantFilter": {
     "all": "すべて",

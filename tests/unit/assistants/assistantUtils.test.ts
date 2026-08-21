@@ -226,22 +226,22 @@ describe('assistantUtils', () => {
           name: 'Multi',
           sort_order: 1,
           source: 'user',
-          categories: ['customer_service', 'operations'],
+          categories: ['customer_service', 'amazon_operations'],
         },
       ];
 
       const groups = groupAssistantsByCategory(list);
 
-      expect(groups.map((group) => group.code)).toEqual(['operations', 'customer_service', 'finance']);
-      expect(groups.find((group) => group.code === 'operations')?.assistants.map((assistant) => assistant.id)).toEqual([
-        'hth-multi',
-      ]);
+      expect(groups.map((group) => group.code)).toEqual(['amazon_operations', 'customer_service', 'finance']);
+      expect(
+        groups.find((group) => group.code === 'amazon_operations')?.assistants.map((assistant) => assistant.id)
+      ).toEqual(['hth-multi']);
       expect(
         groups.find((group) => group.code === 'customer_service')?.assistants.map((assistant) => assistant.id)
       ).toEqual(['hth-multi']);
     });
 
-    it('falls back to the general category for legacy assistants', () => {
+    it('defaults unclassified assistants to the general category', () => {
       const groups = groupAssistantsByCategory([{ id: 'hth-legacy', name: 'Legacy', sort_order: 1, source: 'user' }]);
 
       expect(groups).toHaveLength(1);

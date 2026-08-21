@@ -177,13 +177,17 @@
   "reorderCoachBody": "En sevdiğiniz asistanları en üste sürükleyin — bu sıralama, bir asistan seçtiğiniz her yerde (ana ekran, ekipler, zamanlanmış görevler) nasıl görüneceklerini belirler.",
   "assistantCategory": {
     "custom_assistant": "Özel Asistanlar",
-    "general": "General Assistants",
-    "operations": "Operations Assistants",
-    "customer_service": "Customer Service Assistants",
-    "logistics": "Logistics Assistants",
-    "marketing": "Marketing Assistants",
-    "finance": "Finance Assistants",
-    "hr": "HR Assistants"
+    "general": "Genel Asistanlar",
+    "amazon_operations": "Amazon Operasyon Asistanları",
+    "dtc_operations": "DTC Operasyon Asistanları",
+    "marketing": "Pazarlama Asistanları",
+    "design": "Tasarım Asistanları",
+    "customer_service": "Müşteri Hizmetleri Asistanları",
+    "logistics": "Lojistik Asistanları",
+    "market": "Pazar Asistanları",
+    "finance": "Finans Asistanları",
+    "hr": "İnsan Kaynakları Asistanları",
+    "administration": "İdari Asistanlar"
   },
   "assistantFilter": {
     "all": "Tümü",

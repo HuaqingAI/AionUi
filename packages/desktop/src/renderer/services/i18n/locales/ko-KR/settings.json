@@ -177,13 +177,17 @@
   "reorderCoachBody": "자주 쓰는 어시스턴트를 위로 드래그하세요. 이 순서는 어시스턴트를 선택하는 모든 곳(홈, 팀, 예약 작업)에서의 표시 순서를 결정합니다.",
   "assistantCategory": {
     "custom_assistant": "사용자 지정 어시스턴트",
-    "general": "General Assistants",
-    "operations": "Operations Assistants",
-    "customer_service": "Customer Service Assistants",
-    "logistics": "Logistics Assistants",
-    "marketing": "Marketing Assistants",
-    "finance": "Finance Assistants",
-    "hr": "HR Assistants"
+    "general": "일반 어시스턴트",
+    "amazon_operations": "아마존 운영 어시스턴트",
+    "dtc_operations": "DTC 운영 어시스턴트",
+    "marketing": "마케팅 어시스턴트",
+    "design": "디자인 어시스턴트",
+    "customer_service": "고객 서비스 어시스턴트",
+    "logistics": "물류 어시스턴트",
+    "market": "시장 어시스턴트",
+    "finance": "재무 어시스턴트",
+    "hr": "인사 어시스턴트",
+    "administration": "행정 어시스턴트"
   },
   "assistantFilter": {
     "all": "전체",

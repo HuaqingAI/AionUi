@@ -177,13 +177,17 @@
   "reorderCoachBody": "Ziehe deine bevorzugten Assistenten nach oben — diese Reihenfolge bestimmt, wie sie überall dort erscheinen, wo du einen Assistenten auswählst (Startseite, Teams, geplante Aufgaben).",
   "assistantCategory": {
     "custom_assistant": "Benutzerdefinierte Assistenten",
-    "general": "General Assistants",
-    "operations": "Operations Assistants",
-    "customer_service": "Customer Service Assistants",
-    "logistics": "Logistics Assistants",
-    "marketing": "Marketing Assistants",
-    "finance": "Finance Assistants",
-    "hr": "HR Assistants"
+    "general": "Allgemeine Assistenten",
+    "amazon_operations": "Amazon-Betriebsassistenten",
+    "dtc_operations": "DTC-Betriebsassistenten",
+    "marketing": "Marketingassistenten",
+    "design": "Designassistenten",
+    "customer_service": "Kundendienstassistenten",
+    "logistics": "Logistikassistenten",
+    "market": "Marktassistenten",
+    "finance": "Finanzassistenten",
+    "hr": "Personalassistenten",
+    "administration": "Verwaltungsassistenten"
   },
   "assistantFilter": {
     "all": "Alle",

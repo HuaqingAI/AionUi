@@ -177,13 +177,17 @@
   "reorderCoachBody": "دستیارهای محبوب خود را به بالا بکشید؛ این ترتیب مشخص می‌کند آن‌ها در محل‌های انتخاب دستیار چگونه نمایش داده شوند (خانه، تیم‌ها، کارهای زمان‌بندی‌شده).",
   "assistantCategory": {
     "custom_assistant": "دستیارهای سفارشی",
-    "general": "General Assistants",
-    "operations": "Operations Assistants",
-    "customer_service": "Customer Service Assistants",
-    "logistics": "Logistics Assistants",
-    "marketing": "Marketing Assistants",
-    "finance": "Finance Assistants",
-    "hr": "HR Assistants"
+    "general": "دستیارهای عمومی",
+    "amazon_operations": "دستیارهای عملیات آمازون",
+    "dtc_operations": "دستیارهای عملیات DTC",
+    "marketing": "دستیارهای بازاریابی",
+    "design": "دستیارهای طراحی",
+    "customer_service": "دستیارهای خدمات مشتری",
+    "logistics": "دستیارهای لجستیک",
+    "market": "دستیارهای بازار",
+    "finance": "دستیارهای مالی",
+    "hr": "دستیارهای منابع انسانی",
+    "administration": "دستیارهای اداری"
   },
   "assistantFilter": {
     "all": "همه",

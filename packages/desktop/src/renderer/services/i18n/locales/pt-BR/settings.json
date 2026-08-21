@@ -177,13 +177,17 @@
   "reorderCoachBody": "Arraste seus assistentes favoritos para o topo — essa ordem define como eles aparecem em todos os lugares onde você escolhe um assistente (início, equipes, tarefas agendadas).",
   "assistantCategory": {
     "custom_assistant": "Assistentes personalizados",
-    "general": "General Assistants",
-    "operations": "Operations Assistants",
-    "customer_service": "Customer Service Assistants",
-    "logistics": "Logistics Assistants",
-    "marketing": "Marketing Assistants",
-    "finance": "Finance Assistants",
-    "hr": "HR Assistants"
+    "general": "Assistentes gerais",
+    "amazon_operations": "Assistentes de operações da Amazon",
+    "dtc_operations": "Assistentes de operações DTC",
+    "marketing": "Assistentes de marketing",
+    "design": "Assistentes de design",
+    "customer_service": "Assistentes de atendimento ao cliente",
+    "logistics": "Assistentes de logística",
+    "market": "Assistentes de mercado",
+    "finance": "Assistentes financeiros",
+    "hr": "Assistentes de recursos humanos",
+    "administration": "Assistentes administrativos"
   },
   "assistantFilter": {
     "all": "Todos",

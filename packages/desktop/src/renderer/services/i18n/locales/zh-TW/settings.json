@@ -178,12 +178,16 @@
   "assistantCategory": {
     "custom_assistant": "自訂助手",
     "general": "通用助手",
-    "operations": "營運助手",
+    "amazon_operations": "亞馬遜營運助手",
+    "dtc_operations": "DTC營運助手",
+    "marketing": "行銷助手",
+    "design": "設計助手",
     "customer_service": "客服助手",
     "logistics": "物流助手",
-    "marketing": "市場助手",
+    "market": "市場助手",
     "finance": "財務助手",
-    "hr": "人事助手"
+    "hr": "人事助手",
+    "administration": "行政助手"
   },
   "assistantFilter": {
     "all": "全部",

@@ -177,13 +177,17 @@
   "reorderCoachBody": "Перетащите любимых ассистентов наверх — этот порядок определяет, как они отображаются везде, где вы выбираете ассистента (главная, команды, запланированные задачи).",
   "assistantCategory": {
     "custom_assistant": "Пользовательские ассистенты",
-    "general": "General Assistants",
-    "operations": "Operations Assistants",
-    "customer_service": "Customer Service Assistants",
-    "logistics": "Logistics Assistants",
-    "marketing": "Marketing Assistants",
-    "finance": "Finance Assistants",
-    "hr": "HR Assistants"
+    "general": "Универсальные ассистенты",
+    "amazon_operations": "Ассистенты по работе с Amazon",
+    "dtc_operations": "Ассистенты по DTC-операциям",
+    "marketing": "Ассистенты по маркетингу",
+    "design": "Дизайнерские ассистенты",
+    "customer_service": "Ассистенты службы поддержки",
+    "logistics": "Логистические ассистенты",
+    "market": "Рыночные ассистенты",
+    "finance": "Финансовые ассистенты",
+    "hr": "HR-ассистенты",
+    "administration": "Административные ассистенты"
   },
   "assistantFilter": {
     "all": "Все",

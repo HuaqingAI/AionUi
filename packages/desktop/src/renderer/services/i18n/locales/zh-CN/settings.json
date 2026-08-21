@@ -178,12 +178,16 @@
   "assistantCategory": {
     "custom_assistant": "自定义助手",
     "general": "通用助手",
-    "operations": "运营助手",
+    "amazon_operations": "亚马逊运营助手",
+    "dtc_operations": "DTC运营助手",
+    "marketing": "营销助手",
+    "design": "设计助手",
     "customer_service": "客服助手",
     "logistics": "物流助手",
-    "marketing": "市场助手",
+    "market": "市场助手",
     "finance": "财务助手",
-    "hr": "人事助手"
+    "hr": "人事助手",
+    "administration": "行政助手"
   },
   "assistantFilter": {
     "all": "全部",

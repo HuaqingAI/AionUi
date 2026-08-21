@@ -444,7 +444,7 @@ describe('AssistantSettings', () => {
         sort_order: 2,
         source: 'user',
         enabled: true,
-        categories: ['operations'],
+        categories: ['amazon_operations'],
       },
       {
         id: 'custom-disabled',
@@ -491,7 +491,7 @@ describe('AssistantSettings', () => {
     expect(screen.queryByText('Aion Butler')).not.toBeInTheDocument();
     expect(screen.queryByText(/local CLIs|Your own assistants/)).not.toBeInTheDocument();
     expect(screen.getByTestId('assistant-category-custom_assistant')).toBeInTheDocument();
-    expect(screen.queryByTestId('assistant-category-operations')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('assistant-category-amazon_operations')).not.toBeInTheDocument();
     expect(screen.queryByTestId('assistant-category-customer_service')).not.toBeInTheDocument();
   });
 

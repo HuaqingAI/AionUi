@@ -178,12 +178,16 @@
   "assistantCategory": {
     "custom_assistant": "Custom Assistants",
     "general": "General Assistants",
-    "operations": "Operations Assistants",
+    "amazon_operations": "Amazon Operations Assistants",
+    "dtc_operations": "DTC Operations Assistants",
+    "marketing": "Marketing Assistants",
+    "design": "Design Assistants",
     "customer_service": "Customer Service Assistants",
     "logistics": "Logistics Assistants",
-    "marketing": "Marketing Assistants",
+    "market": "Market Assistants",
     "finance": "Finance Assistants",
-    "hr": "HR Assistants"
+    "hr": "HR Assistants",
+    "administration": "Administration Assistants"
   },
   "assistantFilter": {
     "all": "All",
