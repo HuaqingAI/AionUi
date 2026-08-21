@@ -19,12 +19,13 @@
  */
 import { Message } from '@arco-design/web-react';
 import { ipcBridge } from '@/common';
-import { isHTHUnauthorizedSyncResult, type HTHSyncResult } from '@/common/types/hth';
+import { isHTHUnauthorizedSyncResult, type HTHSyncProgressEvent, type HTHSyncResult } from '@/common/types/hth';
 import { useAssistantEditor, useAssistantList } from '@/renderer/hooks/assistant';
 import { useManagedAgentRuntimeCatalog } from '@/renderer/hooks/agent/useManagedAgents';
 import { buildAssistantEditorBackends, filterCreateAssistantBackends, resolveAvatarImageSrc } from './assistantUtils';
 import AssistantEditorPage from './AssistantEditorPage';
 import AssistantHomeTabs, { type HomeTab } from './home/AssistantHomeTabs';
+import AssistantSyncProgressModal from './home/AssistantSyncProgressModal';
 import DeleteAssistantModal from './DeleteAssistantModal';
 import SkillConfirmModals from './SkillConfirmModals';
 import type { AssistantEditorViewModel, AssistantListItem } from './types';
@@ -38,6 +39,13 @@ type AssistantNavigationState = {
 };
 const OPEN_ASSISTANT_EDITOR_INTENT_KEY = 'guid.openAssistantEditorIntent';
 const formatHTHText = (value: string): string => value.replace(/hth/gi, 'HTH');
+const INITIAL_HTH_SYNC_PROGRESS: HTHSyncProgressEvent = {
+  stage: 'preparing',
+  total: 0,
+  completed: 0,
+  synced: 0,
+  failed: 0,
+};
 const summarizeHTHSyncToast = (result: HTHSyncResult): { success: number; failed: number } => {
   const failed = result.packages.filter((item) => item.status === 'failed').length;
   return {
@@ -57,6 +65,8 @@ const AssistantSettings: React.FC = () => {
   // unified Enabled tab is the default entry point for assistant ordering.
   const [homeTab, setHomeTab] = React.useState<HomeTab>('enabled');
   const [syncingFromHTH, setSyncingFromHTH] = React.useState(false);
+  const [syncProgress, setSyncProgress] = React.useState<HTHSyncProgressEvent>(INITIAL_HTH_SYNC_PROGRESS);
+  const activeSyncIdRef = useRef<string | null>(null);
 
   // "Chat" on an assistant → open a new conversation with it preselected.
   const handleStartChat = useCallback(
@@ -112,10 +122,21 @@ const AssistantSettings: React.FC = () => {
     const backends = buildAssistantEditorBackends(managedAgentRuntimeCatalog, localeKey, editor.editAgent);
     return filterCreateAssistantBackends(backends);
   }, [editor.editAgent, localeKey, managedAgentRuntimeCatalog]);
+
+  useEffect(() => {
+    return ipcBridge.hth.syncAgentConfigsProgress.on((event) => {
+      if (event.syncId !== activeSyncIdRef.current) return;
+      setSyncProgress(event);
+    });
+  }, []);
+
   const handleSyncFromHTH = useCallback(async () => {
+    const syncId = crypto.randomUUID();
+    activeSyncIdRef.current = syncId;
+    setSyncProgress(INITIAL_HTH_SYNC_PROGRESS);
     setSyncingFromHTH(true);
     try {
-      const result = await ipcBridge.hth.syncAgentConfigs.invoke({ force: true });
+      const result = await ipcBridge.hth.syncAgentConfigs.invoke({ force: true, syncId });
       if (isHTHUnauthorizedSyncResult(result)) {
         await navigate('/hth-login', { replace: true });
         return;
@@ -134,6 +155,8 @@ const AssistantSettings: React.FC = () => {
       console.error('[AssistantSettings] Failed to sync hth assistant configs:', error);
       message.error(formatHTHText(t('settings.hth.syncFailed')));
     } finally {
+      activeSyncIdRef.current = null;
+      setSyncProgress(INITIAL_HTH_SYNC_PROGRESS);
       setSyncingFromHTH(false);
     }
   }, [loadAssistants, message, navigate, t]);
@@ -299,6 +322,8 @@ const AssistantSettings: React.FC = () => {
             onConfirm={editor.handleDeleteConfirm}
             activeAssistant={activeAssistant}
           />
+
+          <AssistantSyncProgressModal visible={syncingFromHTH} progress={syncProgress} />
 
           <SkillConfirmModals
             deletePendingSkillName={editor.deletePendingSkillName}

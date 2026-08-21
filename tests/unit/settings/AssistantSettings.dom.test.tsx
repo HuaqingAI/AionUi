@@ -6,7 +6,7 @@
 
 import React from 'react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ConfigProvider } from '@arco-design/web-react';
 import { MemoryRouter } from 'react-router-dom';
 import AssistantSettings from '@/renderer/pages/settings/AssistantSettings';
@@ -14,6 +14,7 @@ import EnabledAssistantsList from '@/renderer/pages/settings/AssistantSettings/h
 import AssistantHomeTabs from '@/renderer/pages/settings/AssistantSettings/home/AssistantHomeTabs';
 import MyAssistantsList from '@/renderer/pages/settings/AssistantSettings/home/MyAssistantsList';
 import type { AssistantListItem } from '@/renderer/pages/settings/AssistantSettings/types';
+import type { HTHSyncProgressEvent } from '@/common/types/hth';
 
 const {
   useAssistantListMock,
@@ -21,12 +22,14 @@ const {
   messageSuccessMock,
   messageErrorMock,
   hthSyncAgentConfigsInvokeMock,
+  hthSyncAgentConfigsProgressOnMock,
 } = vi.hoisted(() => ({
   useAssistantListMock: vi.fn(),
   useAssistantEditorMock: vi.fn(),
   messageSuccessMock: vi.fn(),
   messageErrorMock: vi.fn(),
   hthSyncAgentConfigsInvokeMock: vi.fn(),
+  hthSyncAgentConfigsProgressOnMock: vi.fn(),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -65,6 +68,9 @@ vi.mock('@/common', () => ({
     hth: {
       syncAgentConfigs: {
         invoke: hthSyncAgentConfigsInvokeMock,
+      },
+      syncAgentConfigsProgress: {
+        on: hthSyncAgentConfigsProgressOnMock,
       },
     },
   },
@@ -120,6 +126,7 @@ vi.mock('@/renderer/pages/settings/AssistantSettings/assistantUtils', async () =
 describe('AssistantSettings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    hthSyncAgentConfigsProgressOnMock.mockReturnValue(vi.fn());
     useAssistantListMock.mockReturnValue({
       assistants: [],
       activeAssistantId: 'assistant-1',
@@ -263,7 +270,7 @@ describe('AssistantSettings', () => {
       handleDeleteConfirm: vi.fn(),
       setEditVisible: vi.fn(),
     });
-    hthSyncAgentConfigsInvokeMock.mockResolvedValue({
+    const syncResult = {
       success: false,
       imported: 2,
       skipped: 1,
@@ -277,6 +284,18 @@ describe('AssistantSettings', () => {
         { id: 'assistant-4', name: 'Assistant 4', version: '1', status: 'synced' },
         { id: 'assistant-5', name: 'Assistant 5', version: '1', status: 'failed' },
       ],
+    };
+    let resolveSync: ((result: unknown) => void) | undefined;
+    let progressHandler: ((event: HTHSyncProgressEvent) => void) | undefined;
+    hthSyncAgentConfigsInvokeMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSync = resolve;
+        })
+    );
+    hthSyncAgentConfigsProgressOnMock.mockImplementation((handler: (event: HTHSyncProgressEvent) => void) => {
+      progressHandler = handler;
+      return vi.fn();
     });
 
     render(
@@ -288,6 +307,48 @@ describe('AssistantSettings', () => {
     );
 
     fireEvent.click(screen.getByText('Sync from HTH'));
+
+    await waitFor(() => {
+      expect(hthSyncAgentConfigsInvokeMock).toHaveBeenCalledWith({
+        force: true,
+        syncId: expect.any(String),
+      });
+      expect(progressHandler).toBeTypeOf('function');
+    });
+    const syncId = (hthSyncAgentConfigsInvokeMock.mock.calls[0][0] as { syncId: string }).syncId;
+
+    act(() => {
+      progressHandler?.({
+        syncId: 'another-sync',
+        stage: 'syncing_assistants',
+        total: 9,
+        completed: 4,
+        synced: 4,
+        failed: 0,
+        currentAssistant: { id: 'other', name: 'Other Assistant' },
+      });
+    });
+    expect(screen.getByTestId('assistant-sync-progress-total')).toHaveTextContent('0');
+
+    act(() => {
+      progressHandler?.({
+        syncId,
+        stage: 'syncing_assistants',
+        total: 5,
+        completed: 2,
+        synced: 2,
+        failed: 0,
+        currentAssistant: { id: 'assistant-3', name: 'Assistant 3' },
+      });
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('assistant-sync-progress-total')).toHaveTextContent('5');
+    });
+    expect(screen.getByTestId('assistant-sync-progress-current')).toHaveTextContent('Assistant 3');
+
+    act(() => {
+      resolveSync?.(syncResult);
+    });
 
     await waitFor(() => {
       expect(messageSuccessMock).toHaveBeenCalledWith('HTH sync complete: 4 successful, 1 failed');

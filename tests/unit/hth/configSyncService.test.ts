@@ -34,7 +34,7 @@ vi.mock('electron', () => ({
   },
 }));
 
-import { HTH_UNAUTHORIZED_ERROR_CODE } from '@/common/types/hth';
+import { HTH_UNAUTHORIZED_ERROR_CODE, type HTHSyncProgressEvent } from '@/common/types/hth';
 import { HTHAuthService } from '@/process/services/hth/authService';
 import { HTHConfigSyncService } from '@/process/services/hth/configSyncService';
 import { HTHPackageStore, resolveHTHAssistantId, resolveHTHPackageId } from '@/process/services/hth/packageStore';
@@ -205,10 +205,21 @@ describe('HTHConfigSyncService auth handling', () => {
     vi.stubGlobal('fetch', fetchMock);
     const authService = new HTHAuthService(authFile);
     const syncService = new HTHConfigSyncService(authService, packageStore);
+    const progressEvents: HTHSyncProgressEvent[] = [];
 
-    const result = await syncService.syncAgentConfigs({ force: false });
+    const result = await syncService.syncAgentConfigs({ force: false, syncId: 'manual-sync-success' }, (event) => {
+      progressEvents.push(event);
+    });
 
     expect(result).toMatchObject({ success: true, imported: 1, skipped: 0, updated: 1 });
+    expect(progressEvents).toContainEqual({
+      syncId: 'manual-sync-success',
+      stage: 'syncing_assistants',
+      total: 1,
+      completed: 1,
+      synced: 1,
+      failed: 0,
+    });
     const updateRequest = JSON.parse((fetchMock.mock.calls[5][1] as RequestInit).body as string) as {
       name?: string;
       description?: string;
@@ -700,7 +711,7 @@ describe('HTHConfigSyncService auth handling', () => {
     expect(deleteByAssistantId).toHaveBeenCalledWith('hth-old');
   });
 
-  it('marks an agent without cli_type as a failed package item', async () => {
+  it('reports failed assistant progress without changing the existing sync result', async () => {
     await writeStoredAuth(authFile);
     (globalThis as typeof globalThis & { __backendPort?: number }).__backendPort = 18181;
     const packageStore = {
@@ -734,8 +745,11 @@ describe('HTHConfigSyncService auth handling', () => {
     vi.stubGlobal('fetch', fetchMock);
     const authService = new HTHAuthService(authFile);
     const syncService = new HTHConfigSyncService(authService, packageStore);
+    const progressEvents: HTHSyncProgressEvent[] = [];
 
-    const result = await syncService.syncAgentConfigs({ force: true });
+    const result = await syncService.syncAgentConfigs({ force: true, syncId: 'manual-sync-1' }, (event) => {
+      progressEvents.push(event);
+    });
 
     expect(result.success).toBe(false);
     expect(result.failed).toBe(1);
@@ -744,6 +758,57 @@ describe('HTHConfigSyncService auth handling', () => {
       name: 'Missing CLI',
       status: 'failed',
     });
+    expect(progressEvents).toEqual([
+      {
+        syncId: 'manual-sync-1',
+        stage: 'preparing',
+        total: 0,
+        completed: 0,
+        synced: 0,
+        failed: 0,
+      },
+      {
+        syncId: 'manual-sync-1',
+        stage: 'syncing_assistants',
+        total: 1,
+        completed: 0,
+        synced: 0,
+        failed: 0,
+      },
+      {
+        syncId: 'manual-sync-1',
+        stage: 'syncing_assistants',
+        total: 1,
+        completed: 0,
+        synced: 0,
+        failed: 0,
+        currentAssistant: { id: 'agent-missing-cli', name: 'Missing CLI' },
+      },
+      {
+        syncId: 'manual-sync-1',
+        stage: 'syncing_assistants',
+        total: 1,
+        completed: 1,
+        synced: 0,
+        failed: 1,
+      },
+      {
+        syncId: 'manual-sync-1',
+        stage: 'saving_assistants',
+        total: 1,
+        completed: 1,
+        synced: 0,
+        failed: 1,
+      },
+      {
+        syncId: 'manual-sync-1',
+        stage: 'removing_revoked',
+        total: 1,
+        completed: 1,
+        synced: 0,
+        failed: 1,
+      },
+    ]);
   });
 
   it('syncs opencode global config into the managed OPENCODE_CONFIG_DIR home', async () => {

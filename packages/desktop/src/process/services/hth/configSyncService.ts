@@ -21,6 +21,7 @@ import type {
   HTHInjectProjectConfigResult,
   HTHSyncAgentConfigsRequest,
   HTHSyncPackageResult,
+  HTHSyncProgressEvent,
   HTHSyncResult,
 } from '@/common/types/hth';
 import { HTH_UNAUTHORIZED_ERROR_CODE } from '@/common/types/hth';
@@ -66,6 +67,8 @@ type PreparedAssistantAvatar = {
   value?: string;
   sha256?: string;
 };
+
+type HTHSyncProgressReporter = (event: HTHSyncProgressEvent) => void;
 
 type ApiEnvelope<T> = {
   success?: boolean;
@@ -141,11 +144,22 @@ export class HTHConfigSyncService {
     private readonly resolveOpenCodeConfigDir = defaultOpenCodeConfigDir
   ) {}
 
-  async syncAgentConfigs(request: HTHSyncAgentConfigsRequest): Promise<HTHSyncResult> {
+  async syncAgentConfigs(
+    request: HTHSyncAgentConfigsRequest,
+    reportProgress: HTHSyncProgressReporter = () => undefined
+  ): Promise<HTHSyncResult> {
     const access = await this.getAccessOrLogout();
     if (!access) {
       return this.authRequiredSyncResult();
     }
+
+    this.reportSyncProgress(reportProgress, request.syncId, {
+      stage: 'preparing',
+      total: 0,
+      completed: 0,
+      synced: 0,
+      failed: 0,
+    });
 
     let configs: HTHAgentConfigs;
     try {
@@ -163,9 +177,33 @@ export class HTHConfigSyncService {
     const assistants: CreateAssistantRequest[] = [];
     const currentAssistantIds = new Set<string>();
     const unchangedRemoteAvatarIds = new Set<string>();
+    const total = configs.agents.length;
+    let completed = 0;
+    let synced = 0;
+    let failed = 0;
+
+    this.reportSyncProgress(reportProgress, request.syncId, {
+      stage: 'syncing_assistants',
+      total,
+      completed,
+      synced,
+      failed,
+    });
 
     for (const agent of configs.agents) {
       let packageId = agent.id?.trim() || agent.url || agent.name;
+      let packageSynced = false;
+      this.reportSyncProgress(reportProgress, request.syncId, {
+        stage: 'syncing_assistants',
+        total,
+        completed,
+        synced,
+        failed,
+        currentAssistant: {
+          id: agent.id?.trim() || agent.artifact_key?.trim() || agent.url,
+          name: agent.name || agent.id?.trim() || agent.url,
+        },
+      });
       try {
         const cliType = this.requireAgentCliType(agent);
         const assistantId = resolveHTHAssistantId(access.baseUrl, cliType, agent);
@@ -203,6 +241,7 @@ export class HTHConfigSyncService {
           version: agent.version,
           status: this.packageResultStatus(outcome),
         });
+        packageSynced = true;
       } catch (error) {
         packageResults.push({
           id: packageId,
@@ -212,8 +251,29 @@ export class HTHConfigSyncService {
           error: error instanceof Error ? error.message : String(error),
         });
       }
+
+      completed += 1;
+      if (packageSynced) {
+        synced += 1;
+      } else {
+        failed += 1;
+      }
+      this.reportSyncProgress(reportProgress, request.syncId, {
+        stage: 'syncing_assistants',
+        total,
+        completed,
+        synced,
+        failed,
+      });
     }
 
+    this.reportSyncProgress(reportProgress, request.syncId, {
+      stage: 'saving_assistants',
+      total,
+      completed,
+      synced,
+      failed,
+    });
     const backendPort = this.requireBackendPort();
     const existingAssistants =
       assistants.length > 0 ? await this.listAssistants(backendPort) : new Map<string, Assistant>();
@@ -237,6 +297,13 @@ export class HTHConfigSyncService {
     if (assistantsWithDefaultMcp.some((assistant) => (assistant.categories?.length ?? 0) > 0)) {
       await this.persistAssistantCategories(assistantsWithDefaultMcp);
     }
+    this.reportSyncProgress(reportProgress, request.syncId, {
+      stage: 'removing_revoked',
+      total,
+      completed,
+      synced,
+      failed,
+    });
     const deleteResult = await this.deleteRevokedAssistants(currentAssistantIds);
     return {
       success:
@@ -258,6 +325,18 @@ export class HTHConfigSyncService {
       packages: packageResults,
       lastSyncedAt: Date.now(),
     };
+  }
+
+  private reportSyncProgress(
+    reporter: HTHSyncProgressReporter,
+    syncId: string | undefined,
+    event: Omit<HTHSyncProgressEvent, 'syncId'>
+  ): void {
+    try {
+      reporter({ ...event, syncId });
+    } catch (error) {
+      console.warn('[HTH] Failed to report assistant sync progress:', error);
+    }
   }
 
   async injectProjectConfig(request: HTHInjectProjectConfigRequest): Promise<HTHInjectProjectConfigResult> {

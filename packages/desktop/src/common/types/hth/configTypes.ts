@@ -40,6 +40,21 @@ export type HTHSyncPackageResult = {
   error?: string;
 };
 
+export type HTHSyncProgressStage = 'preparing' | 'syncing_assistants' | 'saving_assistants' | 'removing_revoked';
+
+export type HTHSyncProgressEvent = {
+  syncId?: string;
+  stage: HTHSyncProgressStage;
+  total: number;
+  completed: number;
+  synced: number;
+  failed: number;
+  currentAssistant?: {
+    id: string;
+    name: string;
+  };
+};
+
 export const HTH_UNAUTHORIZED_ERROR_CODE = 'hth-unauthorized';
 
 export type HTHSyncErrorCode = typeof HTH_UNAUTHORIZED_ERROR_CODE;
@@ -74,6 +89,7 @@ export function isHTHUnauthorizedSyncResult(result: unknown): result is HTHUnaut
 
 export type HTHSyncAgentConfigsRequest = {
   force?: boolean;
+  syncId?: string;
 };
 
 export type HTHInjectProjectConfigRequest = {

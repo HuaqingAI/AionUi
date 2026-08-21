@@ -252,7 +252,9 @@ export function initApplicationBridge(): void {
   ipcBridge.hth.startLogin.provider((request) => hthAuthService.startLogin(request));
   ipcBridge.hth.exchangeLoginCode.provider((request) => hthAuthService.exchangeLoginCode(request));
   ipcBridge.hth.logout.provider(() => hthAuthService.logout());
-  ipcBridge.hth.syncAgentConfigs.provider((request) => hthConfigSyncService.syncAgentConfigs(request));
+  ipcBridge.hth.syncAgentConfigs.provider((request) =>
+    hthConfigSyncService.syncAgentConfigs(request, (event) => ipcBridge.hth.syncAgentConfigsProgress.emit(event))
+  );
   ipcBridge.hth.injectProjectConfig.provider((request) => hthConfigSyncService.injectProjectConfig(request));
   ipcBridge.hth.quotaSummary.provider(() => hthQuotaService.getSummary());
   ipcBridge.hth.refreshQuotaSummary.provider(() => hthQuotaService.refreshSummary());
