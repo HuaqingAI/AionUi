@@ -19,6 +19,8 @@ import {
   buildGuidSessionExcludedAutoInjectSkills,
   filterGuidSessionSkillIds,
 } from '@/renderer/pages/guid/utils/sessionSkills';
+import { markHTHProjectConfigInjected } from '@/renderer/pages/conversation/hooks/useHTHProjectConfigInjection';
+import { getConversationOrNull } from '@/renderer/pages/conversation/utils/conversationCache';
 import type { AcpModelInfo } from '../types';
 
 const blockingHTHProjectConfigInjectionReasons = new Set([
@@ -124,6 +126,7 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
     const finalWorkspace = dir || '';
 
     const assistantConversationId = selectedAssistantId;
+    const assistantBackend = selectedAssistantBackend;
     const injectHTHProjectConfig = async (conversationId: string, workspace?: string) => {
       const result = await ipcBridge.hth.injectProjectConfig.invoke({
         conversationId,
@@ -134,7 +137,20 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
         throw new Error(`HTH project config injection failed: ${result.reason}`);
       }
     };
-    const assistantBackend = selectedAssistantBackend;
+    const injectNewConversationProjectConfig = async (conversationId: string, workspace?: string) => {
+      const projectConfigWorkspace =
+        assistantBackend === 'codex' && !workspace
+          ? (await getConversationOrNull(conversationId))?.extra?.workspace
+          : workspace;
+      if (assistantBackend === 'codex' && !projectConfigWorkspace) {
+        throw new Error('Codex workspace is unavailable after conversation creation');
+      }
+
+      await injectHTHProjectConfig(conversationId, projectConfigWorkspace);
+      if (assistantBackend === 'codex' && projectConfigWorkspace) {
+        markHTHProjectConfigInjected(conversationId, projectConfigWorkspace, assistantConversationId);
+      }
+    };
     const enabled_skills_to_send = filterGuidSessionSkillIds(guidEnabledSkills ?? assistantDefaultSkillIds);
     const excludeBuiltinSkills = buildGuidSessionExcludedAutoInjectSkills(
       guidDisabledBuiltinSkills ?? assistantDefaultDisabledBuiltinSkillIds
@@ -209,7 +225,7 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
           updateWorkspaceTime(finalWorkspace);
         }
 
-        await injectHTHProjectConfig(conversation.id, conversation.extra?.workspace);
+        await injectNewConversationProjectConfig(conversation.id, conversation.extra?.workspace);
 
         if (assistantConversationId) {
           await Promise.all([
@@ -261,7 +277,7 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
         updateWorkspaceTime(finalWorkspace);
       }
 
-      await injectHTHProjectConfig(conversation.id, conversation.extra?.workspace);
+      await injectNewConversationProjectConfig(conversation.id, conversation.extra?.workspace);
 
       if (assistantConversationId) {
         await Promise.all([

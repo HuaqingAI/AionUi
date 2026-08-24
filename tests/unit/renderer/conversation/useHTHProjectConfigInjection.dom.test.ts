@@ -6,7 +6,11 @@
 
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { useHTHProjectConfigInjection } from '@/renderer/pages/conversation/hooks/useHTHProjectConfigInjection';
+import {
+  markHTHProjectConfigInjected,
+  resetHTHProjectConfigInjectionStateForTests,
+  useHTHProjectConfigInjection,
+} from '@/renderer/pages/conversation/hooks/useHTHProjectConfigInjection';
 import { resetEnsureConversationRuntimeStateForTests } from '@/renderer/pages/conversation/utils/ensureConversationRuntime';
 
 const ensureRuntimeInvokeMock = vi.fn();
@@ -29,6 +33,7 @@ vi.mock('@/common', () => ({
 
 describe('useHTHProjectConfigInjection', () => {
   beforeEach(() => {
+    resetHTHProjectConfigInjectionStateForTests();
     resetEnsureConversationRuntimeStateForTests();
     ensureRuntimeInvokeMock.mockReset();
     ensureRuntimeInvokeMock.mockResolvedValue({ runtime: { state: 'idle' } });
@@ -58,6 +63,25 @@ describe('useHTHProjectConfigInjection', () => {
     expect(ensureRuntimeInvokeMock.mock.invocationCallOrder[0]).toBeLessThan(
       injectProjectConfigInvokeMock.mock.invocationCallOrder[0]
     );
+  });
+
+  it('does not reinject a Codex project config prepared before navigation', async () => {
+    markHTHProjectConfigInjected('conv-1', 'C:/workspace', 'hth-codex');
+
+    renderHook(() =>
+      useHTHProjectConfigInjection({
+        conversationId: 'conv-1',
+        workspace: 'C:/workspace',
+        assistantId: 'hth-codex',
+      })
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(ensureRuntimeInvokeMock).not.toHaveBeenCalled();
+    expect(injectProjectConfigInvokeMock).not.toHaveBeenCalled();
   });
 
   it('skips injection when workspace is missing', async () => {

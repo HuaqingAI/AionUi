@@ -17,6 +17,7 @@ type HTHProjectConfigInjectionParams = {
 };
 
 const injectionByKey = new Map<string, Promise<void>>();
+const completedInjectionKeys = new Set<string>();
 const blockingInjectionReasons = new Set([
   'authRequired',
   'personalApiKeyInvalid',
@@ -26,6 +27,19 @@ const blockingInjectionReasons = new Set([
   'defaultModelUnavailable',
   'openCodeConfigInvalid',
 ]);
+
+function injectionKey(conversationId: string, workspace: string, assistantId: string): string {
+  return `${conversationId}|${workspace}|${assistantId}`;
+}
+
+export function markHTHProjectConfigInjected(conversationId: string, workspace: string, assistantId: string): void {
+  completedInjectionKeys.add(injectionKey(conversationId, workspace, assistantId));
+}
+
+export function resetHTHProjectConfigInjectionStateForTests(): void {
+  injectionByKey.clear();
+  completedInjectionKeys.clear();
+}
 
 export function useHTHProjectConfigInjection({
   conversationId,
@@ -39,7 +53,10 @@ export function useHTHProjectConfigInjection({
       return;
     }
 
-    const key = `${conversationId}|${workspace}|${assistantId}`;
+    const key = injectionKey(conversationId, workspace, assistantId);
+    if (completedInjectionKeys.has(key)) {
+      return;
+    }
     const existing = injectionByKey.get(key);
     if (existing) {
       await existing;

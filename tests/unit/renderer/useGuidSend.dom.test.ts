@@ -7,10 +7,12 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IMcpServer } from '@/common/config/storage';
+import { resetHTHProjectConfigInjectionStateForTests } from '@/renderer/pages/conversation/hooks/useHTHProjectConfigInjection';
 import { useGuidSend, type GuidSendDeps } from '@/renderer/pages/guid/hooks/useGuidSend';
 
 const createConversationInvokeMock = vi.fn();
 const injectProjectConfigInvokeMock = vi.fn();
+const getConversationOrNullMock = vi.fn();
 const swrMutateMock = vi.fn();
 
 vi.mock('@/common', () => ({
@@ -40,6 +42,10 @@ vi.mock('swr', () => ({
 
 vi.mock('@/renderer/utils/workspace/workspaceHistory', () => ({
   updateWorkspaceTime: vi.fn(),
+}));
+
+vi.mock('@/renderer/pages/conversation/utils/conversationCache', () => ({
+  getConversationOrNull: (...args: unknown[]) => getConversationOrNullMock(...args),
 }));
 
 vi.mock('@arco-design/web-react', () => ({
@@ -83,10 +89,13 @@ const createDeps = (): GuidSendDeps => ({
 
 describe('useGuidSend', () => {
   beforeEach(() => {
+    resetHTHProjectConfigInjectionStateForTests();
     createConversationInvokeMock.mockReset();
     createConversationInvokeMock.mockResolvedValue({ id: 'conv-1' });
     injectProjectConfigInvokeMock.mockReset();
     injectProjectConfigInvokeMock.mockResolvedValue({ injected: false, files: [], reason: 'workspaceMissing' });
+    getConversationOrNullMock.mockReset();
+    getConversationOrNullMock.mockResolvedValue(null);
     swrMutateMock.mockReset();
     swrMutateMock.mockResolvedValue(undefined);
   });
@@ -124,6 +133,50 @@ describe('useGuidSend', () => {
     });
     expect(swrMutateMock).toHaveBeenCalledWith('guid.assistant.detail.assistant-1.zh-CN');
     expect(swrMutateMock).toHaveBeenCalledWith('assistants.list');
+  });
+
+  it('prepares the AionCore temporary workspace before navigating to a Codex conversation', async () => {
+    const deps = createDeps();
+    const navigateMock = vi.fn(() => Promise.resolve());
+    deps.selectedAssistantBackend = 'codex';
+    deps.navigate = navigateMock as never;
+    getConversationOrNullMock.mockResolvedValue({
+      id: 'conv-1',
+      extra: { workspace: 'C:/aioncore-temp-workspace' },
+    });
+    injectProjectConfigInvokeMock.mockResolvedValue({ injected: true, files: ['.codex/config.toml'] });
+
+    const { result } = renderHook(() => useGuidSend(deps));
+
+    await act(async () => {
+      await result.current.handleSend();
+    });
+
+    expect(getConversationOrNullMock).toHaveBeenCalledWith('conv-1');
+    expect(injectProjectConfigInvokeMock).toHaveBeenCalledWith({
+      conversationId: 'conv-1',
+      workspace: 'C:/aioncore-temp-workspace',
+      assistantId: 'assistant-1',
+    });
+    expect(injectProjectConfigInvokeMock.mock.invocationCallOrder[0]).toBeLessThan(
+      navigateMock.mock.invocationCallOrder[0]
+    );
+  });
+
+  it('does not navigate when AionCore cannot provide a Codex workspace', async () => {
+    const deps = createDeps();
+    const navigateMock = vi.fn(() => Promise.resolve());
+    deps.selectedAssistantBackend = 'codex';
+    deps.navigate = navigateMock as never;
+
+    const { result } = renderHook(() => useGuidSend(deps));
+
+    await expect(result.current.handleSend()).rejects.toThrow(
+      'Codex workspace is unavailable after conversation creation'
+    );
+
+    expect(injectProjectConfigInvokeMock).not.toHaveBeenCalled();
+    expect(navigateMock).not.toHaveBeenCalled();
   });
 
   it('falls back to assistant default skill and MCP ids for preset conversations before local Guid overrides exist', async () => {
