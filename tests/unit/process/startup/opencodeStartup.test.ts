@@ -12,6 +12,7 @@ import {
   addBeisenCliGlobalBinToPath,
   addCodexGlobalBinToPath,
   addDwsGlobalBinToPath,
+  addNoxinfluencerCliGlobalBinToPath,
   addOfficeCliGlobalBinToPath,
   addOpenCodeGlobalBinToPath,
   addShopifyCliGlobalBinToPath,
@@ -24,6 +25,7 @@ import {
   ensureBeisenCliReady,
   ensureCodexReady,
   ensureDwsReady,
+  ensureNoxinfluencerCliReady,
   ensureOfficeCliReady,
   ensureOpenCodeReady,
   ensureShopifyCliReady,
@@ -31,6 +33,7 @@ import {
   shouldEnsureCodexOnStartup,
   shouldEnsureBeisenCliOnStartup,
   shouldEnsureDwsOnStartup,
+  shouldEnsureNoxinfluencerCliOnStartup,
   shouldEnsureOfficeCliOnStartup,
   shouldEnsureOpenCodeOnStartup,
   shouldEnsureShopifyCliOnStartup,
@@ -65,6 +68,8 @@ describe('opencode startup bootstrap', () => {
     dataPath: string;
     dwsCommandPath: string;
     dwsPrefix: string;
+    noxinfluencerCliCommandPath: string;
+    noxinfluencerCliPrefix: string;
     npmCliPath: string;
     nodeExecutable: string;
     officeCliCommandPath: string;
@@ -92,6 +97,11 @@ describe('opencode startup bootstrap', () => {
     const codexCommandPath = path.join(codexPrefix, process.platform === 'win32' ? 'codex.cmd' : 'bin/codex');
     const dwsPrefix = path.join(dataPath, 'runtime', 'npm-global', 'dws');
     const dwsCommandPath = path.join(dwsPrefix, process.platform === 'win32' ? 'dws.cmd' : 'bin/dws');
+    const noxinfluencerCliPrefix = path.join(dataPath, 'runtime', 'npm-global', 'noxinfluencer-cli');
+    const noxinfluencerCliCommandPath = path.join(
+      noxinfluencerCliPrefix,
+      process.platform === 'win32' ? 'noxinfluencer.cmd' : 'bin/noxinfluencer'
+    );
     const officeCliPrefix = path.join(dataPath, 'runtime', 'npm-global', 'officecli');
     const officeCliCommandPath = path.join(
       officeCliPrefix,
@@ -117,6 +127,8 @@ describe('opencode startup bootstrap', () => {
       dataPath,
       dwsCommandPath,
       dwsPrefix,
+      noxinfluencerCliCommandPath,
+      noxinfluencerCliPrefix,
       npmCliPath,
       nodeExecutable,
       officeCliCommandPath,
@@ -342,6 +354,42 @@ describe('opencode startup bootstrap', () => {
         }),
         timeout: 180000,
       }
+    );
+  });
+
+  it('uses managed Node npm to install Noxinfluencer CLI into npm-global', async () => {
+    const fixture = await createManagedNodeFixture();
+    const commandRunner = vi.fn(async () => {
+      await mkdir(path.dirname(fixture.noxinfluencerCliCommandPath), { recursive: true });
+      await writeFile(fixture.noxinfluencerCliCommandPath, '');
+      return {};
+    });
+
+    const result = await ensureNoxinfluencerCliReady({
+      commandRunner,
+      dataPath: fixture.dataPath,
+      emitStatus: vi.fn(),
+      ensureNodeRuntime: async () => ({ ready: true }),
+      env: {},
+    });
+
+    expect(result).toEqual({ status: 'ready' });
+    expect(commandRunner).toHaveBeenCalledWith(
+      fixture.nodeExecutable,
+      [
+        fixture.npmCliPath,
+        'install',
+        '--global',
+        '@noxinfluencer/cli@latest',
+        '--prefix',
+        fixture.noxinfluencerCliPrefix,
+        '--registry',
+        'https://registry.npmmirror.com',
+      ],
+      expect.objectContaining({
+        cwd: fixture.dataPath,
+        timeout: 180000,
+      })
     );
   });
 
@@ -749,6 +797,20 @@ describe('opencode startup bootstrap', () => {
     }
   });
 
+  it('prepends the managed Noxinfluencer CLI bin directory to PATH', async () => {
+    const dataPath = await mkdtemp(path.join(tmpdir(), 'aionui-noxinfluencer-cli-path-'));
+    const env: NodeJS.ProcessEnv = {
+      PATH: ['C:\\existing\\bin'].join(path.delimiter),
+    };
+
+    const binDir = addNoxinfluencerCliGlobalBinToPath(dataPath, env);
+
+    expect(env.PATH?.split(path.delimiter)[0]).toBe(binDir);
+    if (process.platform === 'win32') {
+      expect(env.Path).toBe(env.PATH);
+    }
+  });
+
   it('prepends the managed OfficeCLI bin directory to PATH', async () => {
     const dataPath = await mkdtemp(path.join(tmpdir(), 'aionui-officecli-path-'));
     const env: NodeJS.ProcessEnv = {
@@ -868,6 +930,9 @@ describe('opencode startup bootstrap', () => {
     expect(shouldEnsureDwsOnStartup({ AIONUI_E2E_TEST: '1' })).toBe(false);
     expect(shouldEnsureDwsOnStartup({ AIONUI_DWS_BOOTSTRAP: '0' })).toBe(false);
     expect(shouldEnsureDwsOnStartup({})).toBe(true);
+    expect(shouldEnsureNoxinfluencerCliOnStartup({ AIONUI_E2E_TEST: '1' })).toBe(false);
+    expect(shouldEnsureNoxinfluencerCliOnStartup({ AIONUI_NOXINFLUENCER_CLI_BOOTSTRAP: '0' })).toBe(false);
+    expect(shouldEnsureNoxinfluencerCliOnStartup({})).toBe(true);
     expect(shouldEnsureOfficeCliOnStartup({ AIONUI_E2E_TEST: '1' })).toBe(false);
     expect(shouldEnsureOfficeCliOnStartup({ AIONUI_OFFICECLI_BOOTSTRAP: '0' })).toBe(false);
     expect(shouldEnsureOfficeCliOnStartup({})).toBe(true);

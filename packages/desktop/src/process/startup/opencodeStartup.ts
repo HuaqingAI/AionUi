@@ -47,14 +47,24 @@ type ManagedAcpTool = {
     | 'AIONUI_BEISEN_CLI_BOOTSTRAP'
     | 'AIONUI_CODEX_BOOTSTRAP'
     | 'AIONUI_DWS_BOOTSTRAP'
+    | 'AIONUI_NOXINFLUENCER_CLI_BOOTSTRAP'
     | 'AIONUI_OFFICECLI_BOOTSTRAP'
     | 'AIONUI_OPENCODE_BOOTSTRAP'
     | 'AIONUI_SHOPIFY_CLI_BOOTSTRAP'
     | 'AIONUI_ZINIAO_OPEN_BOOTSTRAP';
   match: string | readonly string[];
   packageName: string;
+  packageSpec?: string;
   scope: IRuntimeStatusScope;
-  toolId: 'beisen-cli' | 'codex' | 'dws' | 'officecli' | 'opencode' | 'shopify-cli' | 'ziniao-open';
+  toolId:
+    | 'beisen-cli'
+    | 'codex'
+    | 'dws'
+    | 'noxinfluencer-cli'
+    | 'officecli'
+    | 'opencode'
+    | 'shopify-cli'
+    | 'ziniao-open';
 };
 
 type EnsureNodeRuntime = (params: { scope: IRuntimeStatusScope }) => Promise<{ ready: boolean }>;
@@ -76,6 +86,7 @@ type OpenCodeStartupEnv = {
   AIONUI_DWS_BOOTSTRAP?: string;
   AIONUI_OFFICECLI_BOOTSTRAP?: string;
   AIONUI_E2E_TEST?: string;
+  AIONUI_NOXINFLUENCER_CLI_BOOTSTRAP?: string;
   AIONUI_OPENCODE_BOOTSTRAP?: string;
   AIONUI_SHOPIFY_CLI_BOOTSTRAP?: string;
   AIONUI_ZINIAO_OPEN_BOOTSTRAP?: string;
@@ -138,6 +149,13 @@ const DWS_AGENT_MATCH = ['monoskill', 'dws', 'dingtalk'] as const;
 const DWS_STARTUP_SCOPE: IRuntimeStatusScope = {
   kind: 'custom_agent',
   id: 'startup-dws',
+};
+const NOXINFLUENCER_CLI_TOOL_ID = 'noxinfluencer-cli';
+const NOXINFLUENCER_CLI_COMMAND_NAME = 'noxinfluencer';
+const NOXINFLUENCER_CLI_PACKAGE_NAME = '@noxinfluencer/cli';
+const NOXINFLUENCER_CLI_STARTUP_SCOPE: IRuntimeStatusScope = {
+  kind: 'mcp',
+  id: 'startup-noxinfluencer-cli',
 };
 const OFFICECLI_TOOL_ID = 'officecli';
 const OFFICECLI_PACKAGE_NAME = '@officecli/officecli';
@@ -214,6 +232,17 @@ const DWS_TOOL: ManagedAcpTool = {
   toolId: DWS_TOOL_ID,
 };
 
+const NOXINFLUENCER_CLI_TOOL: ManagedAcpTool = {
+  commandName: NOXINFLUENCER_CLI_COMMAND_NAME,
+  displayName: 'Noxinfluencer CLI',
+  envDisabledKey: 'AIONUI_NOXINFLUENCER_CLI_BOOTSTRAP',
+  match: NOXINFLUENCER_CLI_TOOL_ID,
+  packageName: NOXINFLUENCER_CLI_PACKAGE_NAME,
+  packageSpec: '@noxinfluencer/cli@latest',
+  scope: NOXINFLUENCER_CLI_STARTUP_SCOPE,
+  toolId: NOXINFLUENCER_CLI_TOOL_ID,
+};
+
 const OFFICECLI_TOOL: ManagedAcpTool = {
   commandName: OFFICECLI_TOOL_ID,
   displayName: 'OfficeCLI',
@@ -249,6 +278,7 @@ const STARTUP_TOOLS = [
   BEISEN_CLI_TOOL,
   CODEX_TOOL,
   DWS_TOOL,
+  NOXINFLUENCER_CLI_TOOL,
   OFFICECLI_TOOL,
   SHOPIFY_CLI_TOOL,
   ZINIAO_OPEN_TOOL,
@@ -423,6 +453,13 @@ export function addCodexGlobalBinToPath(dataPath = getDataPath(), env: NodeJS.Pr
 
 export function addDwsGlobalBinToPath(dataPath = getDataPath(), env: NodeJS.ProcessEnv = process.env): string {
   return addManagedToolGlobalBinToPath(DWS_TOOL, dataPath, env);
+}
+
+export function addNoxinfluencerCliGlobalBinToPath(
+  dataPath = getDataPath(),
+  env: NodeJS.ProcessEnv = process.env
+): string {
+  return addManagedToolGlobalBinToPath(NOXINFLUENCER_CLI_TOOL, dataPath, env);
 }
 
 export function addOfficeCliGlobalBinToPath(dataPath = getDataPath(), env: NodeJS.ProcessEnv = process.env): string {
@@ -921,7 +958,7 @@ async function ensureManagedToolInstalledWithManagedNode(options: {
       npmCliPath,
       'install',
       '--global',
-      options.tool.packageName,
+      options.tool.packageSpec ?? options.tool.packageName,
       '--prefix',
       prefix,
       '--registry',
@@ -966,6 +1003,10 @@ export function shouldEnsureCodexOnStartup(env: OpenCodeStartupEnv = process.env
 
 export function shouldEnsureDwsOnStartup(env: OpenCodeStartupEnv = process.env): boolean {
   return shouldEnsureManagedToolOnStartup(DWS_TOOL, env);
+}
+
+export function shouldEnsureNoxinfluencerCliOnStartup(env: OpenCodeStartupEnv = process.env): boolean {
+  return shouldEnsureManagedToolOnStartup(NOXINFLUENCER_CLI_TOOL, env);
 }
 
 export function shouldEnsureOfficeCliOnStartup(env: OpenCodeStartupEnv = process.env): boolean {
@@ -1049,6 +1090,12 @@ export function ensureCodexReady(options: EnsureOpenCodeReadyOptions = {}): Prom
 
 export function ensureDwsReady(options: EnsureOpenCodeReadyOptions = {}): Promise<OpenCodeBootstrapResult> {
   return ensureManagedToolReady(DWS_TOOL, options);
+}
+
+export function ensureNoxinfluencerCliReady(
+  options: EnsureOpenCodeReadyOptions = {}
+): Promise<OpenCodeBootstrapResult> {
+  return ensureManagedToolReady(NOXINFLUENCER_CLI_TOOL, options);
 }
 
 export function ensureOfficeCliReady(options: EnsureOpenCodeReadyOptions = {}): Promise<OpenCodeBootstrapResult> {
@@ -1137,6 +1184,24 @@ export async function ensureDwsReadyOnStartup(
       break;
     case 'failed':
       console.warn('[DingTalk DWS] managed runtime bootstrap failed:', result.error);
+      break;
+  }
+  return result;
+}
+
+export async function ensureNoxinfluencerCliReadyOnStartup(
+  options: EnsureOpenCodeReadyOptions = {}
+): Promise<OpenCodeBootstrapResult> {
+  const result = await ensureNoxinfluencerCliReady(options);
+  switch (result.status) {
+    case 'ready':
+      console.info('[Noxinfluencer CLI] managed runtime is ready');
+      break;
+    case 'skipped':
+      console.info('[Noxinfluencer CLI] startup bootstrap skipped');
+      break;
+    case 'failed':
+      console.warn('[Noxinfluencer CLI] managed runtime bootstrap failed:', result.error);
       break;
   }
   return result;
