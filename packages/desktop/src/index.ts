@@ -32,6 +32,7 @@ import {
   ensureBeisenCliReadyOnStartup,
   ensureCodexReadyOnStartup,
   ensureDwsReadyOnStartup,
+  ensureGoogleWorkspaceCliReadyOnStartup,
   ensureNoxinfluencerCliReadyOnStartup,
   ensureOfficeCliReadyOnStartup,
   ensureOpenCodeReadyOnStartup,
@@ -522,6 +523,9 @@ function scheduleOpenCodeManagedAgentHealthAfterRendererReady(backendPort: numbe
   });
   void ensureBeisenCliReadyOnStartup({ dataPath: openCodeRuntimeDataPath ?? undefined }).then((result) => {
     console.log(`[HQBuddy:ready] beisenCli:${result.status}`);
+  });
+  void ensureGoogleWorkspaceCliReadyOnStartup({ dataPath: openCodeRuntimeDataPath ?? undefined }).then((result) => {
+    console.log(`[HQBuddy:ready] googleWorkspaceCli:${result.status}`);
   });
   void ensureNoxinfluencerCliReadyOnStartup({ dataPath: openCodeRuntimeDataPath ?? undefined }).then((result) => {
     console.log(`[HQBuddy:ready] noxinfluencerCli:${result.status}`);

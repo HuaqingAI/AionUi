@@ -47,6 +47,7 @@ type ManagedAcpTool = {
     | 'AIONUI_BEISEN_CLI_BOOTSTRAP'
     | 'AIONUI_CODEX_BOOTSTRAP'
     | 'AIONUI_DWS_BOOTSTRAP'
+    | 'AIONUI_GOOGLEWORKSPACE_CLI_BOOTSTRAP'
     | 'AIONUI_NOXINFLUENCER_CLI_BOOTSTRAP'
     | 'AIONUI_OFFICECLI_BOOTSTRAP'
     | 'AIONUI_OPENCODE_BOOTSTRAP'
@@ -60,6 +61,7 @@ type ManagedAcpTool = {
     | 'beisen-cli'
     | 'codex'
     | 'dws'
+    | 'googleworkspace-cli'
     | 'noxinfluencer-cli'
     | 'officecli'
     | 'opencode'
@@ -86,6 +88,7 @@ type OpenCodeStartupEnv = {
   AIONUI_DWS_BOOTSTRAP?: string;
   AIONUI_OFFICECLI_BOOTSTRAP?: string;
   AIONUI_E2E_TEST?: string;
+  AIONUI_GOOGLEWORKSPACE_CLI_BOOTSTRAP?: string;
   AIONUI_NOXINFLUENCER_CLI_BOOTSTRAP?: string;
   AIONUI_OPENCODE_BOOTSTRAP?: string;
   AIONUI_SHOPIFY_CLI_BOOTSTRAP?: string;
@@ -168,6 +171,12 @@ const ADSPIRER_PLUGIN_SPEC: CodexPluginSpec = {
   marketplaceUrl: 'https://github.com/amekala/ads-mcp.git',
   pluginId: 'adspirer-ads-agent@adspirer-marketplace',
 };
+const SHOPIFY_PLUGIN_SPEC: CodexPluginSpec = {
+  displayName: 'Shopify',
+  marketplaceName: 'shopify-ai-toolkit',
+  marketplaceUrl: 'https://github.com/Shopify/Shopify-AI-Toolkit.git',
+  pluginId: 'shopify-plugin@shopify-ai-toolkit',
+};
 const DWS_TOOL_ID = 'dws';
 const DWS_COMMAND_NAME = 'dws';
 const DWS_PACKAGE_NAME = 'dingtalk-workspace-cli';
@@ -175,6 +184,13 @@ const DWS_AGENT_MATCH = ['monoskill', 'dws', 'dingtalk'] as const;
 const DWS_STARTUP_SCOPE: IRuntimeStatusScope = {
   kind: 'custom_agent',
   id: 'startup-dws',
+};
+const GOOGLEWORKSPACE_CLI_TOOL_ID = 'googleworkspace-cli';
+const GOOGLEWORKSPACE_CLI_COMMAND_NAME = 'gws';
+const GOOGLEWORKSPACE_CLI_PACKAGE_NAME = '@googleworkspace/cli';
+const GOOGLEWORKSPACE_CLI_STARTUP_SCOPE: IRuntimeStatusScope = {
+  kind: 'mcp',
+  id: 'startup-googleworkspace-cli',
 };
 const NOXINFLUENCER_CLI_TOOL_ID = 'noxinfluencer-cli';
 const NOXINFLUENCER_CLI_COMMAND_NAME = 'noxinfluencer';
@@ -258,6 +274,16 @@ const DWS_TOOL: ManagedAcpTool = {
   toolId: DWS_TOOL_ID,
 };
 
+const GOOGLEWORKSPACE_CLI_TOOL: ManagedAcpTool = {
+  commandName: GOOGLEWORKSPACE_CLI_COMMAND_NAME,
+  displayName: 'Google Workspace CLI',
+  envDisabledKey: 'AIONUI_GOOGLEWORKSPACE_CLI_BOOTSTRAP',
+  match: GOOGLEWORKSPACE_CLI_TOOL_ID,
+  packageName: GOOGLEWORKSPACE_CLI_PACKAGE_NAME,
+  scope: GOOGLEWORKSPACE_CLI_STARTUP_SCOPE,
+  toolId: GOOGLEWORKSPACE_CLI_TOOL_ID,
+};
+
 const NOXINFLUENCER_CLI_TOOL: ManagedAcpTool = {
   commandName: NOXINFLUENCER_CLI_COMMAND_NAME,
   displayName: 'Noxinfluencer CLI',
@@ -304,6 +330,7 @@ const STARTUP_TOOLS = [
   BEISEN_CLI_TOOL,
   CODEX_TOOL,
   DWS_TOOL,
+  GOOGLEWORKSPACE_CLI_TOOL,
   NOXINFLUENCER_CLI_TOOL,
   OFFICECLI_TOOL,
   SHOPIFY_CLI_TOOL,
@@ -479,6 +506,13 @@ export function addCodexGlobalBinToPath(dataPath = getDataPath(), env: NodeJS.Pr
 
 export function addDwsGlobalBinToPath(dataPath = getDataPath(), env: NodeJS.ProcessEnv = process.env): string {
   return addManagedToolGlobalBinToPath(DWS_TOOL, dataPath, env);
+}
+
+export function addGoogleWorkspaceCliGlobalBinToPath(
+  dataPath = getDataPath(),
+  env: NodeJS.ProcessEnv = process.env
+): string {
+  return addManagedToolGlobalBinToPath(GOOGLEWORKSPACE_CLI_TOOL, dataPath, env);
 }
 
 export function addNoxinfluencerCliGlobalBinToPath(
@@ -1142,6 +1176,10 @@ export function shouldEnsureDwsOnStartup(env: OpenCodeStartupEnv = process.env):
   return shouldEnsureManagedToolOnStartup(DWS_TOOL, env);
 }
 
+export function shouldEnsureGoogleWorkspaceCliOnStartup(env: OpenCodeStartupEnv = process.env): boolean {
+  return shouldEnsureManagedToolOnStartup(GOOGLEWORKSPACE_CLI_TOOL, env);
+}
+
 export function shouldEnsureNoxinfluencerCliOnStartup(env: OpenCodeStartupEnv = process.env): boolean {
   return shouldEnsureManagedToolOnStartup(NOXINFLUENCER_CLI_TOOL, env);
 }
@@ -1229,6 +1267,12 @@ export function ensureDwsReady(options: EnsureOpenCodeReadyOptions = {}): Promis
   return ensureManagedToolReady(DWS_TOOL, options);
 }
 
+export function ensureGoogleWorkspaceCliReady(
+  options: EnsureOpenCodeReadyOptions = {}
+): Promise<OpenCodeBootstrapResult> {
+  return ensureManagedToolReady(GOOGLEWORKSPACE_CLI_TOOL, options);
+}
+
 export function ensureNoxinfluencerCliReady(
   options: EnsureOpenCodeReadyOptions = {}
 ): Promise<OpenCodeBootstrapResult> {
@@ -1301,7 +1345,7 @@ export async function ensureCodexReadyOnStartup(
       emitStatus: options.emitStatus ?? ipcBridge.runtime.localStatusChanged.emit,
     };
     let pluginError: string | undefined;
-    for (const plugin of [CHATCUT_PLUGIN_SPEC, FIGMA_PLUGIN_SPEC, ADSPIRER_PLUGIN_SPEC]) {
+    for (const plugin of [CHATCUT_PLUGIN_SPEC, FIGMA_PLUGIN_SPEC, ADSPIRER_PLUGIN_SPEC, SHOPIFY_PLUGIN_SPEC]) {
       try {
         await ensureCodexPluginInstalled({ ...pluginOptions, plugin });
       } catch (error) {
@@ -1317,7 +1361,7 @@ export async function ensureCodexReadyOnStartup(
 
   switch (result.status) {
     case 'ready':
-      console.info('[Codex] managed runtime, ChatCut, Figma, and Adspirer plugins are ready');
+      console.info('[Codex] managed runtime, ChatCut, Figma, Adspirer, and Shopify plugins are ready');
       break;
     case 'skipped':
       console.info('[Codex] startup bootstrap skipped');
@@ -1342,6 +1386,24 @@ export async function ensureDwsReadyOnStartup(
       break;
     case 'failed':
       console.warn('[DingTalk DWS] managed runtime bootstrap failed:', result.error);
+      break;
+  }
+  return result;
+}
+
+export async function ensureGoogleWorkspaceCliReadyOnStartup(
+  options: EnsureOpenCodeReadyOptions = {}
+): Promise<OpenCodeBootstrapResult> {
+  const result = await ensureGoogleWorkspaceCliReady(options);
+  switch (result.status) {
+    case 'ready':
+      console.info('[Google Workspace CLI] managed runtime is ready');
+      break;
+    case 'skipped':
+      console.info('[Google Workspace CLI] startup bootstrap skipped');
+      break;
+    case 'failed':
+      console.warn('[Google Workspace CLI] managed runtime bootstrap failed:', result.error);
       break;
   }
   return result;

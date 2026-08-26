@@ -12,6 +12,7 @@ import {
   addBeisenCliGlobalBinToPath,
   addCodexGlobalBinToPath,
   addDwsGlobalBinToPath,
+  addGoogleWorkspaceCliGlobalBinToPath,
   addNoxinfluencerCliGlobalBinToPath,
   addOfficeCliGlobalBinToPath,
   addOpenCodeGlobalBinToPath,
@@ -26,6 +27,7 @@ import {
   ensureCodexReady,
   ensureCodexReadyOnStartup,
   ensureDwsReady,
+  ensureGoogleWorkspaceCliReady,
   ensureNoxinfluencerCliReady,
   ensureOfficeCliReady,
   ensureOpenCodeReady,
@@ -34,6 +36,7 @@ import {
   shouldEnsureCodexOnStartup,
   shouldEnsureBeisenCliOnStartup,
   shouldEnsureDwsOnStartup,
+  shouldEnsureGoogleWorkspaceCliOnStartup,
   shouldEnsureNoxinfluencerCliOnStartup,
   shouldEnsureOfficeCliOnStartup,
   shouldEnsureOpenCodeOnStartup,
@@ -69,6 +72,8 @@ describe('opencode startup bootstrap', () => {
     dataPath: string;
     dwsCommandPath: string;
     dwsPrefix: string;
+    googleWorkspaceCliCommandPath: string;
+    googleWorkspaceCliPrefix: string;
     noxinfluencerCliCommandPath: string;
     noxinfluencerCliPrefix: string;
     npmCliPath: string;
@@ -98,6 +103,11 @@ describe('opencode startup bootstrap', () => {
     const codexCommandPath = path.join(codexPrefix, process.platform === 'win32' ? 'codex.cmd' : 'bin/codex');
     const dwsPrefix = path.join(dataPath, 'runtime', 'npm-global', 'dws');
     const dwsCommandPath = path.join(dwsPrefix, process.platform === 'win32' ? 'dws.cmd' : 'bin/dws');
+    const googleWorkspaceCliPrefix = path.join(dataPath, 'runtime', 'npm-global', 'googleworkspace-cli');
+    const googleWorkspaceCliCommandPath = path.join(
+      googleWorkspaceCliPrefix,
+      process.platform === 'win32' ? 'gws.cmd' : 'bin/gws'
+    );
     const noxinfluencerCliPrefix = path.join(dataPath, 'runtime', 'npm-global', 'noxinfluencer-cli');
     const noxinfluencerCliCommandPath = path.join(
       noxinfluencerCliPrefix,
@@ -128,6 +138,8 @@ describe('opencode startup bootstrap', () => {
       dataPath,
       dwsCommandPath,
       dwsPrefix,
+      googleWorkspaceCliCommandPath,
+      googleWorkspaceCliPrefix,
       noxinfluencerCliCommandPath,
       noxinfluencerCliPrefix,
       npmCliPath,
@@ -311,7 +323,7 @@ describe('opencode startup bootstrap', () => {
     );
   });
 
-  it('installs ChatCut, Figma, and Adspirer plugins with the managed Codex and configured CODEX_HOME', async () => {
+  it('installs ChatCut, Figma, Adspirer, and Shopify plugins with the managed Codex and configured CODEX_HOME', async () => {
     const fixture = await createManagedNodeFixture();
     const calls: string[] = [];
     const codexHome = path.join(fixture.dataPath, 'runtime', 'codex-home');
@@ -339,7 +351,9 @@ describe('opencode startup bootstrap', () => {
             ? 'chatcut@chatcut-inc'
             : marketplace === 'openai-api-curated'
               ? 'figma@openai-api-curated'
-              : 'adspirer-ads-agent@adspirer-marketplace';
+              : marketplace === 'adspirer-marketplace'
+                ? 'adspirer-ads-agent@adspirer-marketplace'
+                : 'shopify-plugin@shopify-ai-toolkit';
         return listCount === 2
           ? { stdout: JSON.stringify({ installed: [{ pluginId, installed: true, enabled: true }] }) }
           : { stdout: JSON.stringify({ installed: [] }) };
@@ -375,6 +389,10 @@ describe('opencode startup bootstrap', () => {
       'marketplace-add-https://github.com/amekala/ads-mcp.git',
       'plugin-add-adspirer-ads-agent@adspirer-marketplace',
       'plugin-list-adspirer-marketplace-2',
+      'plugin-list-shopify-ai-toolkit-1',
+      'marketplace-add-https://github.com/Shopify/Shopify-AI-Toolkit.git',
+      'plugin-add-shopify-plugin@shopify-ai-toolkit',
+      'plugin-list-shopify-ai-toolkit-2',
     ]);
     expect(commandRunner.mock.calls[1]?.[0]).toBe(fixture.nodeExecutable);
     expect(commandRunner.mock.calls[1]?.[1]).toContain('plugin');
@@ -398,7 +416,7 @@ describe('opencode startup bootstrap', () => {
     expect(commandRunner).not.toHaveBeenCalled();
   });
 
-  it('continues with Figma and Adspirer when ChatCut installation fails', async () => {
+  it('continues with Figma, Adspirer, and Shopify when ChatCut installation fails', async () => {
     const fixture = await createManagedNodeFixture();
     const calls: string[] = [];
     const pluginListCounts = new Map<string, number>();
@@ -430,6 +448,13 @@ describe('opencode startup bootstrap', () => {
           return {
             stdout: JSON.stringify({
               installed: [{ pluginId: 'adspirer-ads-agent@adspirer-marketplace', installed: true, enabled: true }],
+            }),
+          };
+        }
+        if (marketplace === 'shopify-ai-toolkit' && listCount === 2) {
+          return {
+            stdout: JSON.stringify({
+              installed: [{ pluginId: 'shopify-plugin@shopify-ai-toolkit', installed: true, enabled: true }],
             }),
           };
         }
@@ -465,6 +490,10 @@ describe('opencode startup bootstrap', () => {
       'marketplace-add-https://github.com/amekala/ads-mcp.git',
       'plugin-add-adspirer-ads-agent@adspirer-marketplace',
       'plugin-list-adspirer-marketplace',
+      'plugin-list-shopify-ai-toolkit',
+      'marketplace-add-https://github.com/Shopify/Shopify-AI-Toolkit.git',
+      'plugin-add-shopify-plugin@shopify-ai-toolkit',
+      'plugin-list-shopify-ai-toolkit',
     ]);
   });
 
@@ -541,6 +570,42 @@ describe('opencode startup bootstrap', () => {
         '@noxinfluencer/cli@latest',
         '--prefix',
         fixture.noxinfluencerCliPrefix,
+        '--registry',
+        'https://registry.npmmirror.com',
+      ],
+      expect.objectContaining({
+        cwd: fixture.dataPath,
+        timeout: 180000,
+      })
+    );
+  });
+
+  it('uses managed Node npm to install Google Workspace CLI into npm-global', async () => {
+    const fixture = await createManagedNodeFixture();
+    const commandRunner = vi.fn(async () => {
+      await mkdir(path.dirname(fixture.googleWorkspaceCliCommandPath), { recursive: true });
+      await writeFile(fixture.googleWorkspaceCliCommandPath, '');
+      return {};
+    });
+
+    const result = await ensureGoogleWorkspaceCliReady({
+      commandRunner,
+      dataPath: fixture.dataPath,
+      emitStatus: vi.fn(),
+      ensureNodeRuntime: async () => ({ ready: true }),
+      env: {},
+    });
+
+    expect(result).toEqual({ status: 'ready' });
+    expect(commandRunner).toHaveBeenCalledWith(
+      fixture.nodeExecutable,
+      [
+        fixture.npmCliPath,
+        'install',
+        '--global',
+        '@googleworkspace/cli',
+        '--prefix',
+        fixture.googleWorkspaceCliPrefix,
         '--registry',
         'https://registry.npmmirror.com',
       ],
@@ -969,6 +1034,20 @@ describe('opencode startup bootstrap', () => {
     }
   });
 
+  it('prepends the managed Google Workspace CLI bin directory to PATH', async () => {
+    const dataPath = await mkdtemp(path.join(tmpdir(), 'aionui-googleworkspace-cli-path-'));
+    const env: NodeJS.ProcessEnv = {
+      PATH: ['C:\\existing\\bin'].join(path.delimiter),
+    };
+
+    const binDir = addGoogleWorkspaceCliGlobalBinToPath(dataPath, env);
+
+    expect(env.PATH?.split(path.delimiter)[0]).toBe(binDir);
+    if (process.platform === 'win32') {
+      expect(env.Path).toBe(env.PATH);
+    }
+  });
+
   it('prepends the managed OfficeCLI bin directory to PATH', async () => {
     const dataPath = await mkdtemp(path.join(tmpdir(), 'aionui-officecli-path-'));
     const env: NodeJS.ProcessEnv = {
@@ -1088,6 +1167,9 @@ describe('opencode startup bootstrap', () => {
     expect(shouldEnsureDwsOnStartup({ AIONUI_E2E_TEST: '1' })).toBe(false);
     expect(shouldEnsureDwsOnStartup({ AIONUI_DWS_BOOTSTRAP: '0' })).toBe(false);
     expect(shouldEnsureDwsOnStartup({})).toBe(true);
+    expect(shouldEnsureGoogleWorkspaceCliOnStartup({ AIONUI_E2E_TEST: '1' })).toBe(false);
+    expect(shouldEnsureGoogleWorkspaceCliOnStartup({ AIONUI_GOOGLEWORKSPACE_CLI_BOOTSTRAP: '0' })).toBe(false);
+    expect(shouldEnsureGoogleWorkspaceCliOnStartup({})).toBe(true);
     expect(shouldEnsureNoxinfluencerCliOnStartup({ AIONUI_E2E_TEST: '1' })).toBe(false);
     expect(shouldEnsureNoxinfluencerCliOnStartup({ AIONUI_NOXINFLUENCER_CLI_BOOTSTRAP: '0' })).toBe(false);
     expect(shouldEnsureNoxinfluencerCliOnStartup({})).toBe(true);
