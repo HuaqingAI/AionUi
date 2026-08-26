@@ -162,6 +162,12 @@ const FIGMA_PLUGIN_SPEC: CodexPluginSpec = {
   marketplaceName: 'openai-api-curated',
   pluginId: 'figma@openai-api-curated',
 };
+const ADSPIRER_PLUGIN_SPEC: CodexPluginSpec = {
+  displayName: 'Adspirer',
+  marketplaceName: 'adspirer-marketplace',
+  marketplaceUrl: 'https://github.com/amekala/ads-mcp.git',
+  pluginId: 'adspirer-ads-agent@adspirer-marketplace',
+};
 const DWS_TOOL_ID = 'dws';
 const DWS_COMMAND_NAME = 'dws';
 const DWS_PACKAGE_NAME = 'dingtalk-workspace-cli';
@@ -1295,7 +1301,7 @@ export async function ensureCodexReadyOnStartup(
       emitStatus: options.emitStatus ?? ipcBridge.runtime.localStatusChanged.emit,
     };
     let pluginError: string | undefined;
-    for (const plugin of [CHATCUT_PLUGIN_SPEC, FIGMA_PLUGIN_SPEC]) {
+    for (const plugin of [CHATCUT_PLUGIN_SPEC, FIGMA_PLUGIN_SPEC, ADSPIRER_PLUGIN_SPEC]) {
       try {
         await ensureCodexPluginInstalled({ ...pluginOptions, plugin });
       } catch (error) {
@@ -1311,7 +1317,7 @@ export async function ensureCodexReadyOnStartup(
 
   switch (result.status) {
     case 'ready':
-      console.info('[Codex] managed runtime, ChatCut plugin, and Figma plugin are ready');
+      console.info('[Codex] managed runtime, ChatCut, Figma, and Adspirer plugins are ready');
       break;
     case 'skipped':
       console.info('[Codex] startup bootstrap skipped');

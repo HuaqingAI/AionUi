@@ -311,7 +311,7 @@ describe('opencode startup bootstrap', () => {
     );
   });
 
-  it('installs ChatCut and Figma plugins with the managed Codex and configured CODEX_HOME', async () => {
+  it('installs ChatCut, Figma, and Adspirer plugins with the managed Codex and configured CODEX_HOME', async () => {
     const fixture = await createManagedNodeFixture();
     const calls: string[] = [];
     const codexHome = path.join(fixture.dataPath, 'runtime', 'codex-home');
@@ -334,14 +334,19 @@ describe('opencode startup bootstrap', () => {
         const listCount = (pluginListCounts.get(marketplace) ?? 0) + 1;
         pluginListCounts.set(marketplace, listCount);
         calls.push(`plugin-list-${marketplace}-${listCount}`);
-        const pluginId = marketplace === 'chatcut-inc' ? 'chatcut@chatcut-inc' : 'figma@openai-api-curated';
+        const pluginId =
+          marketplace === 'chatcut-inc'
+            ? 'chatcut@chatcut-inc'
+            : marketplace === 'openai-api-curated'
+              ? 'figma@openai-api-curated'
+              : 'adspirer-ads-agent@adspirer-marketplace';
         return listCount === 2
           ? { stdout: JSON.stringify({ installed: [{ pluginId, installed: true, enabled: true }] }) }
           : { stdout: JSON.stringify({ installed: [] }) };
       }
 
       if (args.includes('marketplace')) {
-        calls.push(`marketplace-add-${args[args.indexOf('--ref') - 1]}`);
+        calls.push(`marketplace-add-${args[4]}`);
       } else {
         calls.push(`plugin-add-${args.at(-1)}`);
       }
@@ -366,6 +371,10 @@ describe('opencode startup bootstrap', () => {
       'plugin-list-openai-api-curated-1',
       'plugin-add-figma@openai-api-curated',
       'plugin-list-openai-api-curated-2',
+      'plugin-list-adspirer-marketplace-1',
+      'marketplace-add-https://github.com/amekala/ads-mcp.git',
+      'plugin-add-adspirer-ads-agent@adspirer-marketplace',
+      'plugin-list-adspirer-marketplace-2',
     ]);
     expect(commandRunner.mock.calls[1]?.[0]).toBe(fixture.nodeExecutable);
     expect(commandRunner.mock.calls[1]?.[1]).toContain('plugin');
@@ -389,10 +398,10 @@ describe('opencode startup bootstrap', () => {
     expect(commandRunner).not.toHaveBeenCalled();
   });
 
-  it('continues with Figma when ChatCut installation fails', async () => {
+  it('continues with Figma and Adspirer when ChatCut installation fails', async () => {
     const fixture = await createManagedNodeFixture();
     const calls: string[] = [];
-    let figmaListCount = 0;
+    const pluginListCounts = new Map<string, number>();
     const commandRunner = vi.fn(async (_file: string, args: string[], options: { env?: NodeJS.ProcessEnv }) => {
       if (args.some((arg) => arg.endsWith('npm-cli.js'))) {
         await mkdir(path.dirname(fixture.codexCommandPath), { recursive: true });
@@ -408,21 +417,30 @@ describe('opencode startup bootstrap', () => {
       if (args.includes('list')) {
         const marketplace = args[args.indexOf('--marketplace') + 1];
         calls.push(`plugin-list-${marketplace}`);
-        if (marketplace === 'openai-api-curated') {
-          figmaListCount += 1;
-          return figmaListCount === 2
-            ? {
-                stdout: JSON.stringify({
-                  installed: [{ pluginId: 'figma@openai-api-curated', installed: true, enabled: true }],
-                }),
-              }
-            : { stdout: JSON.stringify({ installed: [] }) };
+        const listCount = (pluginListCounts.get(marketplace) ?? 0) + 1;
+        pluginListCounts.set(marketplace, listCount);
+        if (marketplace === 'openai-api-curated' && listCount === 2) {
+          return {
+            stdout: JSON.stringify({
+              installed: [{ pluginId: 'figma@openai-api-curated', installed: true, enabled: true }],
+            }),
+          };
+        }
+        if (marketplace === 'adspirer-marketplace' && listCount === 2) {
+          return {
+            stdout: JSON.stringify({
+              installed: [{ pluginId: 'adspirer-ads-agent@adspirer-marketplace', installed: true, enabled: true }],
+            }),
+          };
         }
         return { stdout: JSON.stringify({ installed: [] }) };
       }
       if (args.includes('marketplace')) {
-        calls.push('marketplace-add-chatcut');
-        throw new Error('ChatCut marketplace unavailable');
+        calls.push(`marketplace-add-${args[4]}`);
+        if (args[4] === 'https://github.com/ChatCut-Inc/agent-plugin.git') {
+          throw new Error('ChatCut marketplace unavailable');
+        }
+        return {};
       }
       calls.push(`plugin-add-${args.at(-1)}`);
       return {};
@@ -439,10 +457,14 @@ describe('opencode startup bootstrap', () => {
     expect(result).toEqual({ status: 'failed', error: 'ChatCut marketplace unavailable' });
     expect(calls).toEqual([
       'plugin-list-chatcut-inc',
-      'marketplace-add-chatcut',
+      'marketplace-add-https://github.com/ChatCut-Inc/agent-plugin.git',
       'plugin-list-openai-api-curated',
       'plugin-add-figma@openai-api-curated',
       'plugin-list-openai-api-curated',
+      'plugin-list-adspirer-marketplace',
+      'marketplace-add-https://github.com/amekala/ads-mcp.git',
+      'plugin-add-adspirer-ads-agent@adspirer-marketplace',
+      'plugin-list-adspirer-marketplace',
     ]);
   });
 
