@@ -24,6 +24,7 @@ import {
   checkOfficeCliManagedAgentHealth,
   ensureBeisenCliReady,
   ensureCodexReady,
+  ensureCodexReadyOnStartup,
   ensureDwsReady,
   ensureNoxinfluencerCliReady,
   ensureOfficeCliReady,
@@ -308,6 +309,141 @@ describe('opencode startup bootstrap', () => {
         timeout: 180000,
       }
     );
+  });
+
+  it('installs ChatCut and Figma plugins with the managed Codex and configured CODEX_HOME', async () => {
+    const fixture = await createManagedNodeFixture();
+    const calls: string[] = [];
+    const codexHome = path.join(fixture.dataPath, 'runtime', 'codex-home');
+    const pluginListCounts = new Map<string, number>();
+    const commandRunner = vi.fn(async (_file: string, args: string[], options: { env?: NodeJS.ProcessEnv }) => {
+      if (args.some((arg) => arg.endsWith('npm-cli.js'))) {
+        calls.push('codex-install');
+        await mkdir(path.dirname(fixture.codexCommandPath), { recursive: true });
+        await writeFile(fixture.codexCommandPath, '');
+        const packageRoot = path.join(fixture.codexPrefix, 'node_modules', '@openai', 'codex');
+        await mkdir(path.join(packageRoot, 'bin'), { recursive: true });
+        await writeFile(path.join(packageRoot, 'package.json'), JSON.stringify({ bin: { codex: 'bin/codex.js' } }));
+        await writeFile(path.join(packageRoot, 'bin', 'codex.js'), '');
+        return {};
+      }
+
+      expect(options.env?.CODEX_HOME).toBe(codexHome);
+      if (args.includes('list')) {
+        const marketplace = args[args.indexOf('--marketplace') + 1];
+        const listCount = (pluginListCounts.get(marketplace) ?? 0) + 1;
+        pluginListCounts.set(marketplace, listCount);
+        calls.push(`plugin-list-${marketplace}-${listCount}`);
+        const pluginId = marketplace === 'chatcut-inc' ? 'chatcut@chatcut-inc' : 'figma@openai-api-curated';
+        return listCount === 2
+          ? { stdout: JSON.stringify({ installed: [{ pluginId, installed: true, enabled: true }] }) }
+          : { stdout: JSON.stringify({ installed: [] }) };
+      }
+
+      if (args.includes('marketplace')) {
+        calls.push(`marketplace-add-${args[args.indexOf('--ref') - 1]}`);
+      } else {
+        calls.push(`plugin-add-${args.at(-1)}`);
+      }
+      return {};
+    });
+
+    const result = await ensureCodexReadyOnStartup({
+      commandRunner,
+      dataPath: fixture.dataPath,
+      emitStatus: vi.fn(),
+      ensureNodeRuntime: async () => ({ ready: true }),
+      env: {},
+    });
+
+    expect(result).toEqual({ status: 'ready' });
+    expect(calls).toEqual([
+      'codex-install',
+      'plugin-list-chatcut-inc-1',
+      'marketplace-add-https://github.com/ChatCut-Inc/agent-plugin.git',
+      'plugin-add-chatcut@chatcut-inc',
+      'plugin-list-chatcut-inc-2',
+      'plugin-list-openai-api-curated-1',
+      'plugin-add-figma@openai-api-curated',
+      'plugin-list-openai-api-curated-2',
+    ]);
+    expect(commandRunner.mock.calls[1]?.[0]).toBe(fixture.nodeExecutable);
+    expect(commandRunner.mock.calls[1]?.[1]).toContain('plugin');
+    expect(commandRunner.mock.calls[1]?.[2].env).toEqual(expect.objectContaining({ CODEX_HOME: codexHome }));
+  });
+
+  it('does not install Codex plugins when Codex installation fails', async () => {
+    const commandRunner = vi.fn(async () => ({}));
+    const result = await ensureCodexReadyOnStartup({
+      commandRunner,
+      dataPath: await mkdtemp(path.join(tmpdir(), 'aionui-codex-plugin-failure-')),
+      emitStatus: vi.fn(),
+      ensureNodeRuntime: async () => ({ ready: false }),
+      env: {},
+    });
+
+    expect(result).toEqual({
+      status: 'failed',
+      error: 'managed Node runtime is not ready',
+    });
+    expect(commandRunner).not.toHaveBeenCalled();
+  });
+
+  it('continues with Figma when ChatCut installation fails', async () => {
+    const fixture = await createManagedNodeFixture();
+    const calls: string[] = [];
+    let figmaListCount = 0;
+    const commandRunner = vi.fn(async (_file: string, args: string[], options: { env?: NodeJS.ProcessEnv }) => {
+      if (args.some((arg) => arg.endsWith('npm-cli.js'))) {
+        await mkdir(path.dirname(fixture.codexCommandPath), { recursive: true });
+        await writeFile(fixture.codexCommandPath, '');
+        const packageRoot = path.join(fixture.codexPrefix, 'node_modules', '@openai', 'codex');
+        await mkdir(path.join(packageRoot, 'bin'), { recursive: true });
+        await writeFile(path.join(packageRoot, 'package.json'), JSON.stringify({ bin: { codex: 'bin/codex.js' } }));
+        await writeFile(path.join(packageRoot, 'bin', 'codex.js'), '');
+        return {};
+      }
+
+      expect(options.env?.CODEX_HOME).toBe(path.join(fixture.dataPath, 'runtime', 'codex-home'));
+      if (args.includes('list')) {
+        const marketplace = args[args.indexOf('--marketplace') + 1];
+        calls.push(`plugin-list-${marketplace}`);
+        if (marketplace === 'openai-api-curated') {
+          figmaListCount += 1;
+          return figmaListCount === 2
+            ? {
+                stdout: JSON.stringify({
+                  installed: [{ pluginId: 'figma@openai-api-curated', installed: true, enabled: true }],
+                }),
+              }
+            : { stdout: JSON.stringify({ installed: [] }) };
+        }
+        return { stdout: JSON.stringify({ installed: [] }) };
+      }
+      if (args.includes('marketplace')) {
+        calls.push('marketplace-add-chatcut');
+        throw new Error('ChatCut marketplace unavailable');
+      }
+      calls.push(`plugin-add-${args.at(-1)}`);
+      return {};
+    });
+
+    const result = await ensureCodexReadyOnStartup({
+      commandRunner,
+      dataPath: fixture.dataPath,
+      emitStatus: vi.fn(),
+      ensureNodeRuntime: async () => ({ ready: true }),
+      env: {},
+    });
+
+    expect(result).toEqual({ status: 'failed', error: 'ChatCut marketplace unavailable' });
+    expect(calls).toEqual([
+      'plugin-list-chatcut-inc',
+      'marketplace-add-chatcut',
+      'plugin-list-openai-api-curated',
+      'plugin-add-figma@openai-api-curated',
+      'plugin-list-openai-api-curated',
+    ]);
   });
 
   it('uses managed Node npm to install DingTalk DWS into npm-global', async () => {

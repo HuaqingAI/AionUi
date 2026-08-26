@@ -142,6 +142,26 @@ const CODEX_STARTUP_SCOPE: IRuntimeStatusScope = {
   kind: 'custom_agent',
   id: 'startup-codex',
 };
+type CodexPluginSpec = {
+  displayName: string;
+  marketplaceName: string;
+  marketplaceRef?: string;
+  marketplaceUrl?: string;
+  pluginId: string;
+};
+
+const CHATCUT_PLUGIN_SPEC: CodexPluginSpec = {
+  displayName: 'ChatCut',
+  marketplaceName: 'chatcut-inc',
+  marketplaceRef: 'main',
+  marketplaceUrl: 'https://github.com/ChatCut-Inc/agent-plugin.git',
+  pluginId: 'chatcut@chatcut-inc',
+};
+const FIGMA_PLUGIN_SPEC: CodexPluginSpec = {
+  displayName: 'Figma',
+  marketplaceName: 'openai-api-curated',
+  pluginId: 'figma@openai-api-curated',
+};
 const DWS_TOOL_ID = 'dws';
 const DWS_COMMAND_NAME = 'dws';
 const DWS_PACKAGE_NAME = 'dingtalk-workspace-cli';
@@ -337,8 +357,8 @@ function findManagedAgent(rows: ManagedAgentRow[], match: string | readonly stri
   });
 }
 
-function getCodexHomeDir(): string {
-  return path.join(getSystemDir().workDir, 'runtime', 'codex-home');
+function getCodexHomeDir(dataPath = getSystemDir().workDir): string {
+  return path.join(dataPath, 'runtime', 'codex-home');
 }
 
 function getOpenCodeConfigDir(dataPath = getSystemDir().workDir): string {
@@ -982,6 +1002,117 @@ async function ensureManagedToolInstalledWithManagedNode(options: {
   await ensureManagedToolLauncherUsesManagedNode(options.tool, options.dataPath, nodeExecutable);
 }
 
+function isCodexPluginInstalled(stdout: string | undefined, pluginId: string): boolean {
+  if (!stdout) {
+    return false;
+  }
+
+  try {
+    const parsed = JSON.parse(stdout) as {
+      installed?: Array<{ enabled?: boolean; installed?: boolean; pluginId?: string }>;
+    };
+    return (
+      parsed.installed?.some(
+        (plugin) => plugin.pluginId === pluginId && plugin.installed === true && plugin.enabled === true
+      ) ?? false
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function ensureCodexPluginInstalled(options: {
+  commandRunner: CommandRunner;
+  dataPath: string;
+  emitStatus: RuntimeStatusEmitter;
+  plugin: CodexPluginSpec;
+}): Promise<void> {
+  const nodeExecutable = await findManagedNodeExecutable(options.dataPath);
+  if (!nodeExecutable) {
+    throw new Error('managed Node executable was not found');
+  }
+
+  const codexCliPath = await findManagedToolPackageBinTarget(CODEX_TOOL, options.dataPath);
+  if (!codexCliPath || !(await pathExists(codexCliPath))) {
+    throw new Error('managed Codex CLI entrypoint was not found');
+  }
+
+  const codexHome = getCodexHomeDir(options.dataPath);
+  await fs.mkdir(codexHome, { recursive: true });
+
+  const nodeBinDir = path.dirname(nodeExecutable);
+  const codexBinDir = getManagedToolGlobalBinDir(CODEX_TOOL, options.dataPath);
+  const commandEnv: NodeJS.ProcessEnv = {
+    ...process.env,
+    CODEX_HOME: codexHome,
+    PATH: [codexBinDir, nodeBinDir, process.env.PATH ?? process.env.Path ?? ''].filter(Boolean).join(path.delimiter),
+  };
+  if (process.platform === 'win32') {
+    commandEnv.Path = commandEnv.PATH;
+  }
+
+  const commandOptions = {
+    cwd: options.dataPath,
+    env: commandEnv,
+    timeout: OPENCODE_INSTALL_TIMEOUT_MS,
+  };
+  const runCodex = (args: string[]) => options.commandRunner(nodeExecutable, [codexCliPath, ...args], commandOptions);
+
+  emitToolRuntimeStatus(
+    options.emitStatus,
+    CODEX_TOOL,
+    'validating',
+    `Checking ${options.plugin.displayName} Codex plugin installation`
+  );
+
+  let pluginList: { stdout?: string } | undefined;
+  try {
+    pluginList = await runCodex(['plugin', 'list', '--marketplace', options.plugin.marketplaceName, '--json']);
+  } catch {
+    // A missing marketplace is represented as an empty list by current Codex versions.
+    // Continue with the add flow for older versions that return a non-zero status here.
+  }
+  if (isCodexPluginInstalled(pluginList?.stdout, options.plugin.pluginId)) {
+    emitToolRuntimeStatus(
+      options.emitStatus,
+      CODEX_TOOL,
+      'ready',
+      `${options.plugin.displayName} Codex plugin is ready`
+    );
+    return;
+  }
+
+  emitToolRuntimeStatus(
+    options.emitStatus,
+    CODEX_TOOL,
+    'downloading',
+    `Installing ${options.plugin.displayName} Codex plugin`
+  );
+  if (options.plugin.marketplaceUrl) {
+    await runCodex([
+      'plugin',
+      'marketplace',
+      'add',
+      options.plugin.marketplaceUrl,
+      ...(options.plugin.marketplaceRef ? ['--ref', options.plugin.marketplaceRef] : []),
+    ]);
+  }
+  await runCodex(['plugin', 'add', options.plugin.pluginId]);
+
+  const verifiedPluginList = await runCodex([
+    'plugin',
+    'list',
+    '--marketplace',
+    options.plugin.marketplaceName,
+    '--json',
+  ]);
+  if (!isCodexPluginInstalled(verifiedPluginList.stdout, options.plugin.pluginId)) {
+    throw new Error(`${options.plugin.displayName} Codex plugin was not installed in ${codexHome}`);
+  }
+
+  emitToolRuntimeStatus(options.emitStatus, CODEX_TOOL, 'ready', `${options.plugin.displayName} Codex plugin is ready`);
+}
+
 function shouldEnsureManagedToolOnStartup(tool: ManagedAcpTool, env: OpenCodeStartupEnv = process.env): boolean {
   if (env[tool.envDisabledKey] === '0') {
     return false;
@@ -1156,10 +1287,31 @@ export async function ensureBeisenCliReadyOnStartup(
 export async function ensureCodexReadyOnStartup(
   options: EnsureOpenCodeReadyOptions = {}
 ): Promise<OpenCodeBootstrapResult> {
-  const result = await ensureCodexReady(options);
+  let result = await ensureCodexReady(options);
+  if (result.status === 'ready') {
+    const pluginOptions = {
+      commandRunner: options.commandRunner ?? runCommand,
+      dataPath: options.dataPath ?? getDataPath(),
+      emitStatus: options.emitStatus ?? ipcBridge.runtime.localStatusChanged.emit,
+    };
+    let pluginError: string | undefined;
+    for (const plugin of [CHATCUT_PLUGIN_SPEC, FIGMA_PLUGIN_SPEC]) {
+      try {
+        await ensureCodexPluginInstalled({ ...pluginOptions, plugin });
+      } catch (error) {
+        const normalizedError = normalizeError(error);
+        pluginError ??= normalizedError;
+        emitToolRuntimeStatus(pluginOptions.emitStatus, CODEX_TOOL, 'failed', normalizedError);
+      }
+    }
+    if (pluginError) {
+      result = { status: 'failed', error: pluginError };
+    }
+  }
+
   switch (result.status) {
     case 'ready':
-      console.info('[Codex] managed runtime is ready');
+      console.info('[Codex] managed runtime, ChatCut plugin, and Figma plugin are ready');
       break;
     case 'skipped':
       console.info('[Codex] startup bootstrap skipped');
