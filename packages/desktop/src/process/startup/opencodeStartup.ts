@@ -160,11 +160,6 @@ const CHATCUT_PLUGIN_SPEC: CodexPluginSpec = {
   marketplaceUrl: 'https://github.com/ChatCut-Inc/agent-plugin.git',
   pluginId: 'chatcut@chatcut-inc',
 };
-const FIGMA_PLUGIN_SPEC: CodexPluginSpec = {
-  displayName: 'Figma',
-  marketplaceName: 'openai-api-curated',
-  pluginId: 'figma@openai-api-curated',
-};
 const ADSPIRER_PLUGIN_SPEC: CodexPluginSpec = {
   displayName: 'Adspirer',
   marketplaceName: 'adspirer-marketplace',
@@ -1345,7 +1340,7 @@ export async function ensureCodexReadyOnStartup(
       emitStatus: options.emitStatus ?? ipcBridge.runtime.localStatusChanged.emit,
     };
     let pluginError: string | undefined;
-    for (const plugin of [CHATCUT_PLUGIN_SPEC, FIGMA_PLUGIN_SPEC, ADSPIRER_PLUGIN_SPEC, SHOPIFY_PLUGIN_SPEC]) {
+    for (const plugin of [CHATCUT_PLUGIN_SPEC, ADSPIRER_PLUGIN_SPEC, SHOPIFY_PLUGIN_SPEC]) {
       try {
         await ensureCodexPluginInstalled({ ...pluginOptions, plugin });
       } catch (error) {
@@ -1361,7 +1356,7 @@ export async function ensureCodexReadyOnStartup(
 
   switch (result.status) {
     case 'ready':
-      console.info('[Codex] managed runtime, ChatCut, Figma, Adspirer, and Shopify plugins are ready');
+      console.info('[Codex] managed runtime, ChatCut, Adspirer, and Shopify plugins are ready');
       break;
     case 'skipped':
       console.info('[Codex] startup bootstrap skipped');

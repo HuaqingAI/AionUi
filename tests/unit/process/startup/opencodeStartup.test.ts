@@ -323,7 +323,7 @@ describe('opencode startup bootstrap', () => {
     );
   });
 
-  it('installs ChatCut, Figma, Adspirer, and Shopify plugins with the managed Codex and configured CODEX_HOME', async () => {
+  it('installs ChatCut, Adspirer, and Shopify plugins with the managed Codex and configured CODEX_HOME', async () => {
     const fixture = await createManagedNodeFixture();
     const calls: string[] = [];
     const codexHome = path.join(fixture.dataPath, 'runtime', 'codex-home');
@@ -349,11 +349,9 @@ describe('opencode startup bootstrap', () => {
         const pluginId =
           marketplace === 'chatcut-inc'
             ? 'chatcut@chatcut-inc'
-            : marketplace === 'openai-api-curated'
-              ? 'figma@openai-api-curated'
-              : marketplace === 'adspirer-marketplace'
-                ? 'adspirer-ads-agent@adspirer-marketplace'
-                : 'shopify-plugin@shopify-ai-toolkit';
+            : marketplace === 'adspirer-marketplace'
+              ? 'adspirer-ads-agent@adspirer-marketplace'
+              : 'shopify-plugin@shopify-ai-toolkit';
         return listCount === 2
           ? { stdout: JSON.stringify({ installed: [{ pluginId, installed: true, enabled: true }] }) }
           : { stdout: JSON.stringify({ installed: [] }) };
@@ -382,9 +380,6 @@ describe('opencode startup bootstrap', () => {
       'marketplace-add-https://github.com/ChatCut-Inc/agent-plugin.git',
       'plugin-add-chatcut@chatcut-inc',
       'plugin-list-chatcut-inc-2',
-      'plugin-list-openai-api-curated-1',
-      'plugin-add-figma@openai-api-curated',
-      'plugin-list-openai-api-curated-2',
       'plugin-list-adspirer-marketplace-1',
       'marketplace-add-https://github.com/amekala/ads-mcp.git',
       'plugin-add-adspirer-ads-agent@adspirer-marketplace',
@@ -416,7 +411,7 @@ describe('opencode startup bootstrap', () => {
     expect(commandRunner).not.toHaveBeenCalled();
   });
 
-  it('continues with Figma, Adspirer, and Shopify when ChatCut installation fails', async () => {
+  it('continues with Adspirer and Shopify when ChatCut installation fails', async () => {
     const fixture = await createManagedNodeFixture();
     const calls: string[] = [];
     const pluginListCounts = new Map<string, number>();
@@ -437,13 +432,6 @@ describe('opencode startup bootstrap', () => {
         calls.push(`plugin-list-${marketplace}`);
         const listCount = (pluginListCounts.get(marketplace) ?? 0) + 1;
         pluginListCounts.set(marketplace, listCount);
-        if (marketplace === 'openai-api-curated' && listCount === 2) {
-          return {
-            stdout: JSON.stringify({
-              installed: [{ pluginId: 'figma@openai-api-curated', installed: true, enabled: true }],
-            }),
-          };
-        }
         if (marketplace === 'adspirer-marketplace' && listCount === 2) {
           return {
             stdout: JSON.stringify({
@@ -483,9 +471,6 @@ describe('opencode startup bootstrap', () => {
     expect(calls).toEqual([
       'plugin-list-chatcut-inc',
       'marketplace-add-https://github.com/ChatCut-Inc/agent-plugin.git',
-      'plugin-list-openai-api-curated',
-      'plugin-add-figma@openai-api-curated',
-      'plugin-list-openai-api-curated',
       'plugin-list-adspirer-marketplace',
       'marketplace-add-https://github.com/amekala/ads-mcp.git',
       'plugin-add-adspirer-ads-agent@adspirer-marketplace',
