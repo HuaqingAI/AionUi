@@ -148,7 +148,6 @@ const CODEX_STARTUP_SCOPE: IRuntimeStatusScope = {
 type CodexPluginSpec = {
   displayName: string;
   marketplaceName: string;
-  marketplaceRef?: string;
   marketplaceUrl?: string;
   pluginId: string;
 };
@@ -156,7 +155,6 @@ type CodexPluginSpec = {
 const CHATCUT_PLUGIN_SPEC: CodexPluginSpec = {
   displayName: 'ChatCut',
   marketplaceName: 'chatcut-inc',
-  marketplaceRef: 'main',
   marketplaceUrl: 'https://github.com/ChatCut-Inc/agent-plugin.git',
   pluginId: 'chatcut@chatcut-inc',
 };
@@ -1056,6 +1054,36 @@ function isCodexPluginInstalled(stdout: string | undefined, pluginId: string): b
   }
 }
 
+function isCodexMarketplaceConfigured(stdout: string | undefined, marketplaceName: string): boolean {
+  if (!stdout) {
+    return false;
+  }
+
+  try {
+    const parsed = JSON.parse(stdout) as {
+      marketplaces?: Array<{ name?: string }>;
+    };
+    return parsed.marketplaces?.some((marketplace) => marketplace.name === marketplaceName) ?? false;
+  } catch {
+    return false;
+  }
+}
+
+function isCodexPluginAvailable(stdout: string | undefined, pluginId: string): boolean {
+  if (!stdout) {
+    return false;
+  }
+
+  try {
+    const parsed = JSON.parse(stdout) as {
+      available?: Array<{ pluginId?: string }>;
+    };
+    return parsed.available?.some((plugin) => plugin.pluginId === pluginId) ?? false;
+  } catch {
+    return false;
+  }
+}
+
 async function ensureCodexPluginInstalled(options: {
   commandRunner: CommandRunner;
   dataPath: string;
@@ -1124,15 +1152,39 @@ async function ensureCodexPluginInstalled(options: {
     `Installing ${options.plugin.displayName} Codex plugin`
   );
   if (options.plugin.marketplaceUrl) {
-    await runCodex([
-      'plugin',
-      'marketplace',
-      'add',
-      options.plugin.marketplaceUrl,
-      ...(options.plugin.marketplaceRef ? ['--ref', options.plugin.marketplaceRef] : []),
-    ]);
+    let marketplaceList: { stdout?: string } | undefined;
+    try {
+      marketplaceList = await runCodex(['plugin', 'marketplace', 'list', '--json']);
+    } catch {
+      // Keep supporting Codex versions that do not return a JSON marketplace list.
+    }
+    const marketplaceConfigured = isCodexMarketplaceConfigured(marketplaceList?.stdout, options.plugin.marketplaceName);
+    if (!marketplaceConfigured) {
+      try {
+        await runCodex(['plugin', 'marketplace', 'add', options.plugin.marketplaceUrl]);
+      } catch (error) {
+        if (!normalizeError(error).includes(`marketplace '${options.plugin.marketplaceName}' is already added`)) {
+          throw error;
+        }
+      }
+    } else if (!isCodexPluginAvailable(pluginList?.stdout, options.plugin.pluginId)) {
+      await runCodex(['plugin', 'marketplace', 'remove', options.plugin.marketplaceName]);
+      await runCodex(['plugin', 'marketplace', 'add', options.plugin.marketplaceUrl]);
+    }
   }
-  await runCodex(['plugin', 'add', options.plugin.pluginId]);
+  try {
+    await runCodex(['plugin', 'add', options.plugin.pluginId]);
+  } catch (error) {
+    if (
+      !options.plugin.marketplaceUrl ||
+      !normalizeError(error).includes(`was not found in marketplace '${options.plugin.marketplaceName}'`)
+    ) {
+      throw error;
+    }
+    await runCodex(['plugin', 'marketplace', 'remove', options.plugin.marketplaceName]);
+    await runCodex(['plugin', 'marketplace', 'add', options.plugin.marketplaceUrl]);
+    await runCodex(['plugin', 'add', options.plugin.pluginId]);
+  }
 
   const verifiedPluginList = await runCodex([
     'plugin',

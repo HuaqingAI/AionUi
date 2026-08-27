@@ -341,6 +341,10 @@ describe('opencode startup bootstrap', () => {
       }
 
       expect(options.env?.CODEX_HOME).toBe(codexHome);
+      if (args[2] === 'marketplace' && args[3] === 'list') {
+        calls.push('marketplace-list');
+        return { stdout: JSON.stringify({ marketplaces: [] }) };
+      }
       if (args.includes('list')) {
         const marketplace = args[args.indexOf('--marketplace') + 1];
         const listCount = (pluginListCounts.get(marketplace) ?? 0) + 1;
@@ -377,14 +381,17 @@ describe('opencode startup bootstrap', () => {
     expect(calls).toEqual([
       'codex-install',
       'plugin-list-chatcut-inc-1',
+      'marketplace-list',
       'marketplace-add-https://github.com/ChatCut-Inc/agent-plugin.git',
       'plugin-add-chatcut@chatcut-inc',
       'plugin-list-chatcut-inc-2',
       'plugin-list-adspirer-marketplace-1',
+      'marketplace-list',
       'marketplace-add-https://github.com/amekala/ads-mcp.git',
       'plugin-add-adspirer-ads-agent@adspirer-marketplace',
       'plugin-list-adspirer-marketplace-2',
       'plugin-list-shopify-ai-toolkit-1',
+      'marketplace-list',
       'marketplace-add-https://github.com/Shopify/Shopify-AI-Toolkit.git',
       'plugin-add-shopify-plugin@shopify-ai-toolkit',
       'plugin-list-shopify-ai-toolkit-2',
@@ -392,6 +399,151 @@ describe('opencode startup bootstrap', () => {
     expect(commandRunner.mock.calls[1]?.[0]).toBe(fixture.nodeExecutable);
     expect(commandRunner.mock.calls[1]?.[1]).toContain('plugin');
     expect(commandRunner.mock.calls[1]?.[2].env).toEqual(expect.objectContaining({ CODEX_HOME: codexHome }));
+    const chatcutMarketplaceAdd = commandRunner.mock.calls.find(
+      ([, args]) =>
+        args[2] === 'marketplace' && args[3] === 'add' && args[4] === 'https://github.com/ChatCut-Inc/agent-plugin.git'
+    );
+    expect(chatcutMarketplaceAdd?.[1].slice(1)).toEqual([
+      'plugin',
+      'marketplace',
+      'add',
+      'https://github.com/ChatCut-Inc/agent-plugin.git',
+    ]);
+  });
+
+  it('installs ChatCut without re-adding an existing marketplace', async () => {
+    const fixture = await createManagedNodeFixture();
+    const chatcutPluginListCount = new Map<string, number>();
+    const commandRunner = vi.fn(async (_file: string, args: string[]) => {
+      if (args.some((arg) => arg.endsWith('npm-cli.js'))) {
+        await mkdir(path.dirname(fixture.codexCommandPath), { recursive: true });
+        await writeFile(fixture.codexCommandPath, '');
+        const packageRoot = path.join(fixture.codexPrefix, 'node_modules', '@openai', 'codex');
+        await mkdir(path.join(packageRoot, 'bin'), { recursive: true });
+        await writeFile(path.join(packageRoot, 'package.json'), JSON.stringify({ bin: { codex: 'bin/codex.js' } }));
+        await writeFile(path.join(packageRoot, 'bin', 'codex.js'), '');
+        return {};
+      }
+
+      if (args[2] === 'marketplace' && args[3] === 'list') {
+        return { stdout: JSON.stringify({ marketplaces: [{ name: 'chatcut-inc' }] }) };
+      }
+      if (args[2] === 'list') {
+        const marketplace = args[args.indexOf('--marketplace') + 1];
+        if (marketplace !== 'chatcut-inc') {
+          const pluginId =
+            marketplace === 'adspirer-marketplace'
+              ? 'adspirer-ads-agent@adspirer-marketplace'
+              : 'shopify-plugin@shopify-ai-toolkit';
+          return { stdout: JSON.stringify({ installed: [{ pluginId, installed: true, enabled: true }] }) };
+        }
+        const listCount = (chatcutPluginListCount.get(marketplace) ?? 0) + 1;
+        chatcutPluginListCount.set(marketplace, listCount);
+        return listCount === 2
+          ? {
+              stdout: JSON.stringify({
+                installed: [{ pluginId: 'chatcut@chatcut-inc', installed: true, enabled: true }],
+              }),
+            }
+          : { stdout: JSON.stringify({ available: [{ pluginId: 'chatcut@chatcut-inc' }], installed: [] }) };
+      }
+      return {};
+    });
+
+    const result = await ensureCodexReadyOnStartup({
+      commandRunner,
+      dataPath: fixture.dataPath,
+      emitStatus: vi.fn(),
+      ensureNodeRuntime: async () => ({ ready: true }),
+      env: {},
+    });
+
+    expect(result).toEqual({ status: 'ready' });
+    expect(
+      commandRunner.mock.calls.some(
+        ([, args]) =>
+          args[2] === 'marketplace' &&
+          args[3] === 'add' &&
+          args[4] === 'https://github.com/ChatCut-Inc/agent-plugin.git'
+      )
+    ).toBe(false);
+    expect(commandRunner.mock.calls.some(([, args]) => args[2] === 'add' && args[3] === 'chatcut@chatcut-inc')).toBe(
+      true
+    );
+  });
+
+  it('repairs ChatCut when plugin installation detects a stale marketplace listing', async () => {
+    const fixture = await createManagedNodeFixture();
+    const calls: string[] = [];
+    let chatcutPluginAddCount = 0;
+    let chatcutPluginListCount = 0;
+    const commandRunner = vi.fn(async (_file: string, args: string[]) => {
+      if (args.some((arg) => arg.endsWith('npm-cli.js'))) {
+        await mkdir(path.dirname(fixture.codexCommandPath), { recursive: true });
+        await writeFile(fixture.codexCommandPath, '');
+        const packageRoot = path.join(fixture.codexPrefix, 'node_modules', '@openai', 'codex');
+        await mkdir(path.join(packageRoot, 'bin'), { recursive: true });
+        await writeFile(path.join(packageRoot, 'package.json'), JSON.stringify({ bin: { codex: 'bin/codex.js' } }));
+        await writeFile(path.join(packageRoot, 'bin', 'codex.js'), '');
+        return {};
+      }
+
+      if (args[2] === 'marketplace' && args[3] === 'list') {
+        return { stdout: JSON.stringify({ marketplaces: [{ name: 'chatcut-inc' }] }) };
+      }
+      if (args[2] === 'marketplace' && args[3] === 'remove') {
+        calls.push(`marketplace-remove-${args[4]}`);
+        return {};
+      }
+      if (args[2] === 'marketplace' && args[3] === 'add') {
+        calls.push(`marketplace-add-${args[4]}`);
+        return {};
+      }
+      if (args[2] === 'list') {
+        const marketplace = args[args.indexOf('--marketplace') + 1];
+        if (marketplace !== 'chatcut-inc') {
+          const pluginId =
+            marketplace === 'adspirer-marketplace'
+              ? 'adspirer-ads-agent@adspirer-marketplace'
+              : 'shopify-plugin@shopify-ai-toolkit';
+          return { stdout: JSON.stringify({ installed: [{ pluginId, installed: true, enabled: true }] }) };
+        }
+        chatcutPluginListCount += 1;
+        return chatcutPluginListCount === 2
+          ? {
+              stdout: JSON.stringify({
+                installed: [{ pluginId: 'chatcut@chatcut-inc', installed: true, enabled: true }],
+              }),
+            }
+          : { stdout: JSON.stringify({ available: [{ pluginId: 'chatcut@chatcut-inc' }], installed: [] }) };
+      }
+      if (args[2] === 'add') {
+        calls.push(`plugin-add-${args[3]}`);
+        if (args[3] === 'chatcut@chatcut-inc') {
+          chatcutPluginAddCount += 1;
+          if (chatcutPluginAddCount === 1) {
+            throw new Error("plugin 'chatcut' was not found in marketplace 'chatcut-inc'");
+          }
+        }
+      }
+      return {};
+    });
+
+    const result = await ensureCodexReadyOnStartup({
+      commandRunner,
+      dataPath: fixture.dataPath,
+      emitStatus: vi.fn(),
+      ensureNodeRuntime: async () => ({ ready: true }),
+      env: {},
+    });
+
+    expect(result).toEqual({ status: 'ready' });
+    expect(calls).toEqual([
+      'plugin-add-chatcut@chatcut-inc',
+      'marketplace-remove-chatcut-inc',
+      'marketplace-add-https://github.com/ChatCut-Inc/agent-plugin.git',
+      'plugin-add-chatcut@chatcut-inc',
+    ]);
   });
 
   it('does not install Codex plugins when Codex installation fails', async () => {
@@ -427,6 +579,10 @@ describe('opencode startup bootstrap', () => {
       }
 
       expect(options.env?.CODEX_HOME).toBe(path.join(fixture.dataPath, 'runtime', 'codex-home'));
+      if (args[2] === 'marketplace' && args[3] === 'list') {
+        calls.push('marketplace-list');
+        return { stdout: JSON.stringify({ marketplaces: [] }) };
+      }
       if (args.includes('list')) {
         const marketplace = args[args.indexOf('--marketplace') + 1];
         calls.push(`plugin-list-${marketplace}`);
@@ -470,12 +626,15 @@ describe('opencode startup bootstrap', () => {
     expect(result).toEqual({ status: 'failed', error: 'ChatCut marketplace unavailable' });
     expect(calls).toEqual([
       'plugin-list-chatcut-inc',
+      'marketplace-list',
       'marketplace-add-https://github.com/ChatCut-Inc/agent-plugin.git',
       'plugin-list-adspirer-marketplace',
+      'marketplace-list',
       'marketplace-add-https://github.com/amekala/ads-mcp.git',
       'plugin-add-adspirer-ads-agent@adspirer-marketplace',
       'plugin-list-adspirer-marketplace',
       'plugin-list-shopify-ai-toolkit',
+      'marketplace-list',
       'marketplace-add-https://github.com/Shopify/Shopify-AI-Toolkit.git',
       'plugin-add-shopify-plugin@shopify-ai-toolkit',
       'plugin-list-shopify-ai-toolkit',
