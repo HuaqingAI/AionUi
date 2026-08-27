@@ -145,7 +145,7 @@ describe('useAcpModelInfo', () => {
     expect(ensureRuntimeInvokeMock).toHaveBeenCalledWith({ conversation_id: 'conv-1' });
   });
 
-  it('orders model options by their displayed multiplier', async () => {
+  it('preserves model option order even when labels contain multiplier text', async () => {
     ensureRuntimeInvokeMock.mockResolvedValue({
       recovered: true,
       config_options: [
@@ -175,11 +175,11 @@ describe('useAcpModelInfo', () => {
       expect(result.current.model_info?.current_model_id).toBe('gpt-5.6-terra');
     });
     expect(result.current.model_info?.available_models.map((model) => model.id)).toEqual([
+      'gpt-5.6-terra',
       'deepseek-v4-flash',
+      'gpt-5.6-sol',
       'deepseek-v4-pro',
       'gpt-5.5',
-      'gpt-5.6-terra',
-      'gpt-5.6-sol',
     ]);
   });
 

@@ -49,29 +49,6 @@ export function filterOpenCodeZenModels<T extends OpenCodeZenModelCandidate>(mod
   return models.filter((model) => !isOpenCodeZenModel(model));
 }
 
-function getModelMultiplier(model: OpenCodeZenModelCandidate): number | null {
-  for (const value of [model.label, model.name, model.value, model.id]) {
-    if (typeof value !== 'string') continue;
-    const match = value.match(/\b(\d+)x\b/i);
-    if (match) return Number(match[1]);
-  }
-  return null;
-}
-
-export function sortModelOptionsByMultiplier<T extends OpenCodeZenModelCandidate>(models: T[]): T[] {
-  if (!models.some((model) => getModelMultiplier(model) !== null)) return models;
-
-  return models
-    .map((model, index) => ({ model, index, multiplier: getModelMultiplier(model) }))
-    .toSorted((left, right) => {
-      if (left.multiplier === null && right.multiplier === null) return left.index - right.index;
-      if (left.multiplier === null) return 1;
-      if (right.multiplier === null) return -1;
-      return left.multiplier - right.multiplier || left.index - right.index;
-    })
-    .map(({ model }) => model);
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
@@ -118,8 +95,8 @@ function buildModelInfoFromPayload(value: unknown): AcpModelInfo | null {
     return null;
   }
 
-  const available_models = sortModelOptionsByMultiplier(
-    filterOpenCodeZenModels(payload.available_models.map(normalizeModelOption).filter((item) => item !== null))
+  const available_models = filterOpenCodeZenModels(
+    payload.available_models.map(normalizeModelOption).filter((item) => item !== null)
   );
   if (available_models.length === 0) return null;
 
@@ -186,14 +163,12 @@ function buildModelInfoFromConfigOptions(configOptions: AcpSessionConfigOption[]
   const modelOption = configOptions.find((option) => option.category === 'model' && option.type === 'select');
   if (!modelOption?.options || modelOption.options.length === 0) return null;
 
-  const available_models = sortModelOptionsByMultiplier(
-    filterOpenCodeZenModels(
-      modelOption.options.map((option) => ({
-        id: option.value,
-        label: option.label || option.name || option.value,
-        description: option.description || undefined,
-      }))
-    )
+  const available_models = filterOpenCodeZenModels(
+    modelOption.options.map((option) => ({
+      id: option.value,
+      label: option.label || option.name || option.value,
+      description: option.description || undefined,
+    }))
   );
   if (available_models.length === 0) return null;
 

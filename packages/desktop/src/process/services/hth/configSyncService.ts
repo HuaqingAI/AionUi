@@ -36,6 +36,12 @@ import { createHash, randomUUID } from 'crypto';
 import { parse as parseToml } from 'smol-toml';
 import { resolveOpenCodeProviderApiBase } from './baseUrl';
 import codexModelCatalogTemplate from './codexModelCatalogTemplate.json';
+import {
+  appendModelMultiplier,
+  calculateModelPricing,
+  type ModelPricingDisplay,
+  type ModelPricingSnapshot,
+} from '@/common/modelPricing';
 
 type ManagedAgentRow = {
   id?: string;
@@ -138,6 +144,7 @@ const ASSISTANT_AVATAR_DIR_NAME = 'hth-assistant-avatars';
 const MAX_HTH_MODELS = 500;
 const MAX_HTH_MODEL_ID_LENGTH = 256;
 const HTH_MODEL_REQUEST_TIMEOUT_MS = 10_000;
+const HTH_PRICING_CACHE_TTL_MS = 5 * 60 * 1000;
 const CODEX_CATALOG_FILE_NAME = 'hth-model-catalog.json';
 const CODEX_CONFIG_FILE_NAME = 'config.toml';
 
@@ -158,6 +165,8 @@ class HTHUnauthorizedConfigError extends Error {
 
 export class HTHConfigSyncService {
   private codexModelCatalogSyncPromise: Promise<CodexConfigFailureReason | undefined> | null = null;
+  private modelPricingCache: { key: string; expiresAt: number; snapshot: ModelPricingSnapshot } | null = null;
+  private modelPricingRequest: { key: string; promise: Promise<ModelPricingSnapshot | null> } | null = null;
 
   constructor(
     private readonly authService: HTHAuthService,
@@ -594,7 +603,8 @@ export class HTHConfigSyncService {
 
     const provider = config.provider as Record<string, unknown>;
     const hthProvider = provider.hth as Record<string, unknown>;
-    hthProvider.models = this.buildOpenCodeModels(modelIdsResult);
+    const pricing = await this.getHTHModelPricing(access);
+    hthProvider.models = this.buildOpenCodeModels(modelIdsResult, pricing);
     await fs.writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
     return undefined;
   }
@@ -711,7 +721,8 @@ export class HTHConfigSyncService {
     }
 
     const nextConfigContent = this.ensureCodexModelCatalogReference(configContent, config, catalogPath);
-    const catalog = this.buildCodexModelCatalog(modelIdsResult);
+    const pricing = await this.getHTHModelPricing(access);
+    const catalog = this.buildCodexModelCatalog(modelIdsResult, pricing);
     await this.writeFileAtomically(catalogPath, JSON.stringify(catalog, null, 2) + '\n');
     if (nextConfigContent !== configContent) {
       await this.writeFileAtomically(configPath, nextConfigContent);
@@ -719,16 +730,20 @@ export class HTHConfigSyncService {
     return undefined;
   }
 
-  private buildCodexModelCatalog(modelIds: string[]): typeof codexModelCatalogTemplate {
+  private buildCodexModelCatalog(
+    modelIds: string[],
+    pricing: ModelPricingSnapshot | null
+  ): typeof codexModelCatalogTemplate {
     const template = codexModelCatalogTemplate.models[0];
+    const pricingByModel = this.calculatePricing(modelIds, pricing);
     return {
       models: modelIds
         .toSorted((left, right) => left.localeCompare(right))
         .map((id) =>
           Object.assign({}, template, {
             slug: id,
-            display_name: id.toUpperCase(),
-            description: id.toUpperCase(),
+            display_name: appendModelMultiplier(id.toUpperCase(), pricingByModel.get(id)),
+            description: appendModelMultiplier(id.toUpperCase(), pricingByModel.get(id)),
             input_modalities: id.toLowerCase().startsWith('deepseek') ? ['text'] : template.input_modalities,
           })
         ),
@@ -772,11 +787,15 @@ export class HTHConfigSyncService {
     }
   }
 
-  private buildOpenCodeModels(modelIds: string[]): Record<string, Record<string, unknown>> {
+  private buildOpenCodeModels(
+    modelIds: string[],
+    pricing: ModelPricingSnapshot | null
+  ): Record<string, Record<string, unknown>> {
     const models: Record<string, Record<string, unknown>> = Object.create(null) as Record<
       string,
       Record<string, unknown>
     >;
+    const pricingByModel = this.calculatePricing(modelIds, pricing);
     for (const id of modelIds) {
       const isGPT = id.toLowerCase().startsWith('gpt-');
       models[id] = {
@@ -788,13 +807,67 @@ export class HTHConfigSyncService {
         modalities: isGPT
           ? { input: ['text', 'image'], output: ['text', 'image'] }
           : { input: ['text'], output: ['text'] },
-        name: id.toUpperCase(),
+        name: appendModelMultiplier(id.toUpperCase(), pricingByModel.get(id)),
         reasoning: true,
         temperature: false,
         tool_call: true,
       };
     }
     return models;
+  }
+
+  private calculatePricing(modelIds: string[], pricing: ModelPricingSnapshot | null): Map<string, ModelPricingDisplay> {
+    if (!pricing) return new Map();
+    return calculateModelPricing(modelIds, pricing.data, pricing.groupRatio);
+  }
+
+  private async getHTHModelPricing(access: HTHAccess): Promise<ModelPricingSnapshot | null> {
+    const cacheKey = `${access.baseUrl}|${access.email}`;
+    const now = Date.now();
+    if (this.modelPricingCache?.key === cacheKey && this.modelPricingCache.expiresAt > now) {
+      return this.modelPricingCache.snapshot;
+    }
+    if (this.modelPricingRequest?.key === cacheKey) return this.modelPricingRequest.promise;
+
+    const request = this.fetchHTHModelPricing(access, cacheKey);
+    this.modelPricingRequest = { key: cacheKey, promise: request };
+    try {
+      return await request;
+    } finally {
+      if (this.modelPricingRequest?.promise === request) this.modelPricingRequest = null;
+    }
+  }
+
+  private async fetchHTHModelPricing(access: HTHAccess, cacheKey: string): Promise<ModelPricingSnapshot | null> {
+    try {
+      const response = await fetch(new URL('/api/pricing', access.baseUrl), {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${access.token}`,
+        },
+        redirect: 'error',
+        signal: AbortSignal.timeout(HTH_MODEL_REQUEST_TIMEOUT_MS),
+      });
+      if (!response.ok) return this.modelPricingCache?.key === cacheKey ? this.modelPricingCache.snapshot : null;
+
+      const payload = JSON.parse(await response.text()) as unknown;
+      if (
+        !this.isRecord(payload) ||
+        payload.success === false ||
+        !Array.isArray(payload.data) ||
+        payload.data.length > MAX_HTH_MODELS
+      ) {
+        return this.modelPricingCache?.key === cacheKey ? this.modelPricingCache.snapshot : null;
+      }
+      const groupRatio = this.isRecord(payload.group_ratio) ? payload.group_ratio : {};
+      const pricingVersion = typeof payload.pricing_version === 'string' ? payload.pricing_version : undefined;
+      const snapshot: ModelPricingSnapshot = { data: payload.data, groupRatio, pricingVersion };
+      this.modelPricingCache = { key: cacheKey, expiresAt: Date.now() + HTH_PRICING_CACHE_TTL_MS, snapshot };
+      return snapshot;
+    } catch {
+      return this.modelPricingCache?.key === cacheKey ? this.modelPricingCache.snapshot : null;
+    }
   }
 
   private hasAsciiControlCharacters(value: string): boolean {

@@ -942,21 +942,33 @@ describe('HTHConfigSyncService auth handling', () => {
     const authService = new HTHAuthService(authFile);
     const codexHome = path.join(tempDir, 'aionui', 'runtime', 'codex-home');
     const syncService = new HTHConfigSyncService(authService, packageStore, () => codexHome);
-    const fetchMock = vi.fn(
-      async () =>
-        new Response(
+    const fetchMock = vi.fn(async (input: string | URL) => {
+      if (String(input).includes('/api/pricing')) {
+        return new Response(
           JSON.stringify({
-            object: 'list',
             data: [
-              { id: 'gpt-5.6-terra' },
-              { id: 'deepseek-v4-flash' },
-              { id: 'custom-text-model' },
-              { id: 'gpt-5.6-terra' },
+              { model_name: 'gpt-5.6-terra', quota_type: 0, model_ratio: 5, completion_ratio: 1 },
+              { model_name: 'deepseek-v4-flash', quota_type: 0, model_ratio: 1, completion_ratio: 1 },
+              { model_name: 'custom-text-model', quota_type: 1, model_price: 0.01 },
             ],
+            group_ratio: { default: 1 },
           }),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
-        )
-    );
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          object: 'list',
+          data: [
+            { id: 'gpt-5.6-terra' },
+            { id: 'deepseek-v4-flash' },
+            { id: 'custom-text-model' },
+            { id: 'gpt-5.6-terra' },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    });
     vi.stubGlobal('fetch', fetchMock);
 
     const result = await syncService.injectProjectConfig({
@@ -976,11 +988,11 @@ describe('HTHConfigSyncService auth handling', () => {
     const models = projectConfig.provider.hth.models;
     expect(Object.keys(models)).toEqual(['gpt-5.6-terra', 'deepseek-v4-flash', 'custom-text-model']);
     expect(models['gpt-5.6-terra']).toMatchObject({
-      name: 'GPT-5.6-TERRA',
+      name: 'GPT-5.6-TERRA x5',
       modalities: { input: ['text', 'image'], output: ['text', 'image'] },
     });
     expect(models['deepseek-v4-flash']).toMatchObject({
-      name: 'DEEPSEEK-V4-FLASH',
+      name: 'DEEPSEEK-V4-FLASH x1',
       modalities: { input: ['text'], output: ['text'] },
     });
     expect(models['gpt-5.6-terra']).not.toHaveProperty('variants');
@@ -990,6 +1002,12 @@ describe('HTHConfigSyncService auth handling', () => {
       new URL('http://127.0.0.1:3001/v1/models'),
       expect.objectContaining({
         headers: expect.objectContaining({ Authorization: 'Bearer sk-personal-1' }),
+      })
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      new URL('http://127.0.0.1:3001/api/pricing'),
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer token-1' }),
       })
     );
     const syncManifest = JSON.parse(await fs.readFile(path.join(workspace, '.aionui-hth-sync.json'), 'utf8'));
@@ -1136,15 +1154,27 @@ describe('HTHConfigSyncService auth handling', () => {
     );
     vi.stubGlobal(
       'fetch',
-      vi.fn(
-        async () =>
-          new Response(
+      vi.fn(async (input: string | URL) => {
+        if (String(input).includes('/api/pricing')) {
+          return new Response(
             JSON.stringify({
-              data: [{ id: 'gpt-5.6-terra' }, { id: 'grok-4.5' }, { id: 'deepseek-reasoner' }, { id: 'grok-4.5' }],
+              data: [
+                { model_name: 'gpt-5.6-terra', quota_type: 0, model_ratio: 5, completion_ratio: 1 },
+                { model_name: 'grok-4.5', quota_type: 0, model_ratio: 2, completion_ratio: 2 },
+                { model_name: 'deepseek-reasoner', quota_type: 0, model_ratio: 1, completion_ratio: 1 },
+              ],
+              group_ratio: { default: 1 },
             }),
             { status: 200, headers: { 'Content-Type': 'application/json' } }
-          )
-      )
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            data: [{ id: 'gpt-5.6-terra' }, { id: 'grok-4.5' }, { id: 'deepseek-reasoner' }, { id: 'grok-4.5' }],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      })
     );
     const syncService = new HTHConfigSyncService(authService, packageStore, () => codexHome);
 
@@ -1170,8 +1200,8 @@ describe('HTHConfigSyncService auth handling', () => {
     ]);
     expect(catalog.models[2]).toMatchObject({
       slug: 'grok-4.5',
-      display_name: 'GROK-4.5',
-      description: 'GROK-4.5',
+      display_name: 'GROK-4.5 x2.4',
+      description: 'GROK-4.5 x2.4',
       visibility: 'list',
       supported_in_api: true,
     });
