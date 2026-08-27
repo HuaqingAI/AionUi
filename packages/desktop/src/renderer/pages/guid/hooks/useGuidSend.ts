@@ -31,6 +31,7 @@ const blockingHTHProjectConfigInjectionReasons = new Set([
   'modelListEmpty',
   'defaultModelUnavailable',
   'openCodeConfigInvalid',
+  'codexConfigInvalid',
 ]);
 
 export type GuidSendDeps = {

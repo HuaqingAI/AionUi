@@ -1121,6 +1121,31 @@ describe('HTHConfigSyncService auth handling', () => {
     } as unknown as HTHPackageStore;
     const authService = new HTHAuthService(authFile);
     const codexHome = path.join(tempDir, 'aionui', 'runtime', 'codex-home');
+    await fs.mkdir(codexHome, { recursive: true });
+    await fs.writeFile(
+      path.join(codexHome, 'config.toml'),
+      [
+        '# Existing user configuration',
+        'model = "gpt-5.6-terra"',
+        '',
+        '[model_providers.hth]',
+        'name = "hth"',
+        '',
+      ].join('\n'),
+      'utf8'
+    );
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              data: [{ id: 'gpt-5.6-terra' }, { id: 'grok-4.5' }, { id: 'deepseek-reasoner' }, { id: 'grok-4.5' }],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          )
+      )
+    );
     const syncService = new HTHConfigSyncService(authService, packageStore, () => codexHome);
 
     const result = await syncService.injectProjectConfig({
@@ -1134,8 +1159,133 @@ describe('HTHConfigSyncService auth handling', () => {
       '姓名：张三\n邮箱：user@example.com\n部门：研发部'
     );
     const codexHomeConfig = await fs.readFile(path.join(codexHome, 'config.toml'), 'utf8');
+    expect(codexHomeConfig).toContain(
+      'model_catalog_json = ' + JSON.stringify(path.join(codexHome, 'hth-model-catalog.json'))
+    );
+    const catalog = JSON.parse(await fs.readFile(path.join(codexHome, 'hth-model-catalog.json'), 'utf8'));
+    expect(catalog.models.map((model: { slug: string }) => model.slug)).toEqual([
+      'deepseek-reasoner',
+      'gpt-5.6-terra',
+      'grok-4.5',
+    ]);
+    expect(catalog.models[2]).toMatchObject({
+      slug: 'grok-4.5',
+      display_name: 'GROK-4.5',
+      description: 'GROK-4.5',
+      visibility: 'list',
+      supported_in_api: true,
+    });
+    expect(catalog.models[0].input_modalities).toEqual(['text']);
+    expect(catalog.models[1].input_modalities).toEqual(['text', 'image']);
+    expect(createHash('sha256').update(catalog.models[0].base_instructions).digest('hex')).toBe(
+      'cbefa6b0bede0e332d957fca70ccacf9f12f4c0ecdf81b819e5cbe1a3b16e265'
+    );
     expect(codexHomeConfig).toContain(`[projects."${workspace.replaceAll('\\', '\\\\')}"]`);
     expect(codexHomeConfig).toContain('trust_level = "trusted"');
+  });
+
+  it('preserves an existing Codex model catalog reference while refreshing the HTH catalog', async () => {
+    await writeStoredAuth(authFile);
+    const extractDir = path.join(tempDir, 'codex-existing-reference-extracted');
+    const workspace = path.join(tempDir, 'codex-existing-reference-workspace');
+    const codexHome = path.join(tempDir, 'aionui', 'runtime', 'codex-home');
+    const existingCatalogPath = path.join(codexHome, 'manual-model-catalog.json');
+    await fs.mkdir(path.join(extractDir, 'project'), { recursive: true });
+    await fs.writeFile(path.join(extractDir, 'project', 'instructions.md'), 'Use the project instructions.\n', 'utf8');
+    await fs.mkdir(codexHome, { recursive: true });
+    await fs.writeFile(
+      path.join(codexHome, 'config.toml'),
+      'model_catalog_json = ' + JSON.stringify(existingCatalogPath) + '\nmodel = "gpt-5.6-terra"\n',
+      'utf8'
+    );
+    const packageStore = {
+      findByAssistantId: vi.fn(async () => ({
+        packageId: 'codex-existing-reference-package',
+        assistantId: 'hth-codex',
+        cliType: 'codex',
+        artifactKey: 'oss://bucket/agent-packages/codex/demo/1.0.0/codex.zip',
+        sourceUrl: 'https://oss.test/codex.zip',
+        version: '1.0.0',
+        name: 'Codex',
+        syncedAt: Date.now(),
+        extractDir,
+        globalFiles: [],
+        projectFiles: ['instructions.md'],
+      })),
+    } as unknown as HTHPackageStore;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ data: [{ id: 'gpt-5.6-terra' }, { id: 'grok-4.5' }] }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+      )
+    );
+
+    const result = await new HTHConfigSyncService(
+      new HTHAuthService(authFile),
+      packageStore,
+      () => codexHome
+    ).injectProjectConfig({
+      conversationId: 'conversation-1',
+      workspace,
+      assistantId: 'hth-codex',
+    });
+
+    expect(result).toMatchObject({ injected: true });
+    const config = await fs.readFile(path.join(codexHome, 'config.toml'), 'utf8');
+    expect(config.match(/^model_catalog_json =/gm)).toHaveLength(1);
+    expect(config).toContain('model_catalog_json = ' + JSON.stringify(existingCatalogPath));
+    const catalog = JSON.parse(await fs.readFile(path.join(codexHome, 'hth-model-catalog.json'), 'utf8'));
+    expect(catalog.models.map((model: { slug: string }) => model.slug)).toEqual(['gpt-5.6-terra', 'grok-4.5']);
+  });
+
+  it('keeps the previous Codex catalog when the model list is unavailable', async () => {
+    await writeStoredAuth(authFile);
+    const extractDir = path.join(tempDir, 'codex-unavailable-extracted');
+    const workspace = path.join(tempDir, 'codex-unavailable-workspace');
+    const codexHome = path.join(tempDir, 'aionui', 'runtime', 'codex-home');
+    const catalogPath = path.join(codexHome, 'hth-model-catalog.json');
+    const previousCatalog = '{"models":[{"slug":"gpt-5.6-terra"}]}\n';
+    await fs.mkdir(path.join(extractDir, 'project'), { recursive: true });
+    await fs.writeFile(path.join(extractDir, 'project', 'instructions.md'), 'Use the project instructions.\n', 'utf8');
+    await fs.mkdir(codexHome, { recursive: true });
+    await fs.writeFile(path.join(codexHome, 'config.toml'), 'model = "gpt-5.6-terra"\n', 'utf8');
+    await fs.writeFile(catalogPath, previousCatalog, 'utf8');
+    const packageStore = {
+      findByAssistantId: vi.fn(async () => ({
+        packageId: 'codex-unavailable-package',
+        assistantId: 'hth-codex',
+        cliType: 'codex',
+        artifactKey: 'oss://bucket/agent-packages/codex/demo/1.0.0/codex.zip',
+        sourceUrl: 'https://oss.test/codex.zip',
+        version: '1.0.0',
+        name: 'Codex',
+        syncedAt: Date.now(),
+        extractDir,
+        globalFiles: [],
+        projectFiles: ['instructions.md'],
+      })),
+    } as unknown as HTHPackageStore;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('', { status: 503, headers: { 'Content-Type': 'application/json' } }))
+    );
+
+    const result = await new HTHConfigSyncService(
+      new HTHAuthService(authFile),
+      packageStore,
+      () => codexHome
+    ).injectProjectConfig({
+      conversationId: 'conversation-1',
+      workspace,
+      assistantId: 'hth-codex',
+    });
+
+    expect(result).toMatchObject({ injected: false, reason: 'modelListUnavailable' });
+    await expect(fs.readFile(catalogPath, 'utf8')).resolves.toBe(previousCatalog);
   });
 
   it('creates HTH OpenCode project files for a manually created OpenCode assistant', async () => {

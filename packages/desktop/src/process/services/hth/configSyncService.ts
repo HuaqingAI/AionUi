@@ -32,8 +32,10 @@ import { assertPathInside, copyManagedSection, extractZip } from './zipSecurity'
 import { getSystemDir } from '@/process/utils/initStorage';
 import fs from 'fs/promises';
 import path from 'path';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
+import { parse as parseToml } from 'smol-toml';
 import { resolveOpenCodeProviderApiBase } from './baseUrl';
+import codexModelCatalogTemplate from './codexModelCatalogTemplate.json';
 
 type ManagedAgentRow = {
   id?: string;
@@ -89,9 +91,14 @@ type HTHAccess = {
   quotaApplyUrl?: string;
 };
 
-type OpenCodeModelListItem = {
+type HTHModelListItem = {
   id?: unknown;
 };
+
+type ModelListFailureReason = Extract<
+  NonNullable<HTHInjectProjectConfigResult['reason']>,
+  'modelListUnavailable' | 'modelListInvalid' | 'modelListEmpty'
+>;
 
 type OpenCodeConfigFailureReason = Extract<
   NonNullable<HTHInjectProjectConfigResult['reason']>,
@@ -102,6 +109,17 @@ type OpenCodeConfigFailureReason = Extract<
   | 'modelListEmpty'
   | 'defaultModelUnavailable'
   | 'openCodeConfigInvalid'
+>;
+
+type CodexConfigFailureReason = Extract<
+  NonNullable<HTHInjectProjectConfigResult['reason']>,
+  | 'authRequired'
+  | 'personalApiKeyInvalid'
+  | 'modelListUnavailable'
+  | 'modelListInvalid'
+  | 'modelListEmpty'
+  | 'defaultModelUnavailable'
+  | 'codexConfigInvalid'
 >;
 
 const MANAGED_AGENT_MATCH: Record<HTHCliType, string> = {
@@ -117,9 +135,11 @@ const HTH_ASSISTANT_CATEGORIES_SETTING = 'hth.assistantCategories';
 const MAX_AGENT_PACKAGE_BYTES = 50 * 1024 * 1024;
 const MAX_ASSISTANT_AVATAR_BYTES = 2 * 1024 * 1024;
 const ASSISTANT_AVATAR_DIR_NAME = 'hth-assistant-avatars';
-const MAX_OPENCODE_MODELS = 500;
-const MAX_OPENCODE_MODEL_ID_LENGTH = 256;
-const OPENCODE_MODEL_REQUEST_TIMEOUT_MS = 10_000;
+const MAX_HTH_MODELS = 500;
+const MAX_HTH_MODEL_ID_LENGTH = 256;
+const HTH_MODEL_REQUEST_TIMEOUT_MS = 10_000;
+const CODEX_CATALOG_FILE_NAME = 'hth-model-catalog.json';
+const CODEX_CONFIG_FILE_NAME = 'config.toml';
 
 function defaultCodexHomeDir(): string {
   return path.join(getSystemDir().workDir, 'runtime', 'codex-home');
@@ -137,6 +157,8 @@ class HTHUnauthorizedConfigError extends Error {
 }
 
 export class HTHConfigSyncService {
+  private codexModelCatalogSyncPromise: Promise<CodexConfigFailureReason | undefined> | null = null;
+
   constructor(
     private readonly authService: HTHAuthService,
     private readonly packageStore = new HTHPackageStore(),
@@ -358,13 +380,17 @@ export class HTHConfigSyncService {
     const copied = await copyManagedSection(manifest.extractDir, 'project', request.workspace, manifest.version);
     const access = await this.getAccessOrLogout();
     if (!access) {
-      if (manifest.cliType === 'opencode') {
+      if (manifest.cliType === 'opencode' || manifest.cliType === 'codex') {
         return { injected: false, files: copied, reason: 'authRequired' };
       }
     } else {
       await this.replaceRuntimePlaceholdersInFiles(request.workspace, copied, access);
     }
     if (manifest.cliType === 'codex') {
+      const reason = await this.syncCodexModelCatalog(access);
+      if (reason) {
+        return { injected: false, files: copied, reason };
+      }
       await this.ensureCodexTrustedWorkspace(request.workspace);
     }
     if (manifest.cliType === 'opencode' && access) {
@@ -555,7 +581,7 @@ export class HTHConfigSyncService {
       return 'openCodeConfigInvalid';
     }
 
-    const modelIdsResult = await this.fetchOpenCodeModelIds(access, providerApiBase);
+    const modelIdsResult = await this.fetchHTHModelIds(access, providerApiBase);
     if (typeof modelIdsResult !== 'object') {
       return modelIdsResult;
     }
@@ -573,12 +599,10 @@ export class HTHConfigSyncService {
     return undefined;
   }
 
-  private async fetchOpenCodeModelIds(
+  private async fetchHTHModelIds(
     access: HTHAccess,
     providerApiBase = new URL('/v1', access.baseUrl).toString()
-  ): Promise<
-    string[] | Exclude<OpenCodeConfigFailureReason, 'authRequired' | 'personalApiKeyInvalid' | 'openCodeConfigInvalid'>
-  > {
+  ): Promise<string[] | Exclude<ModelListFailureReason, 'modelListEmpty'>> {
     let response: Response;
     try {
       response = await fetch(new URL('models', `${providerApiBase.replace(/\/$/, '')}/`), {
@@ -588,7 +612,7 @@ export class HTHConfigSyncService {
           Authorization: `Bearer ${access.personalApiKey}`,
         },
         redirect: 'error',
-        signal: AbortSignal.timeout(OPENCODE_MODEL_REQUEST_TIMEOUT_MS),
+        signal: AbortSignal.timeout(HTH_MODEL_REQUEST_TIMEOUT_MS),
       });
     } catch {
       return 'modelListUnavailable';
@@ -597,13 +621,13 @@ export class HTHConfigSyncService {
       return 'modelListUnavailable';
     }
 
-    let payload: ApiEnvelope<OpenCodeModelListItem[]>;
+    let payload: ApiEnvelope<HTHModelListItem[]>;
     try {
-      payload = JSON.parse(await response.text()) as ApiEnvelope<OpenCodeModelListItem[]>;
+      payload = JSON.parse(await response.text()) as ApiEnvelope<HTHModelListItem[]>;
     } catch {
       return 'modelListInvalid';
     }
-    if (payload.success === false || !Array.isArray(payload.data) || payload.data.length > MAX_OPENCODE_MODELS) {
+    if (payload.success === false || !Array.isArray(payload.data) || payload.data.length > MAX_HTH_MODELS) {
       return 'modelListInvalid';
     }
 
@@ -611,13 +635,141 @@ export class HTHConfigSyncService {
     const seen = new Set<string>();
     for (const item of payload.data) {
       const id = typeof item?.id === 'string' ? item.id.trim() : '';
-      if (!id || id.length > MAX_OPENCODE_MODEL_ID_LENGTH || seen.has(id)) {
+      if (!id || id.length > MAX_HTH_MODEL_ID_LENGTH || this.hasAsciiControlCharacters(id) || seen.has(id)) {
         continue;
       }
       seen.add(id);
       ids.push(id);
     }
     return ids;
+  }
+
+  private async syncCodexModelCatalog(access: HTHAccess): Promise<CodexConfigFailureReason | undefined> {
+    if (this.codexModelCatalogSyncPromise) {
+      return this.codexModelCatalogSyncPromise;
+    }
+
+    const syncPromise = this.doSyncCodexModelCatalog(access);
+    this.codexModelCatalogSyncPromise = syncPromise;
+    try {
+      return await syncPromise;
+    } finally {
+      if (this.codexModelCatalogSyncPromise === syncPromise) {
+        this.codexModelCatalogSyncPromise = null;
+      }
+    }
+  }
+
+  private async doSyncCodexModelCatalog(access: HTHAccess): Promise<CodexConfigFailureReason | undefined> {
+    if (access.personalApiKeyName.trim() !== HTH_DEFAULT_PERSONAL_API_KEY_NAME) {
+      return 'personalApiKeyInvalid';
+    }
+
+    const modelIdsResult = await this.fetchHTHModelIds(access);
+    if (typeof modelIdsResult !== 'object') {
+      return modelIdsResult;
+    }
+    if (modelIdsResult.length === 0) {
+      return 'modelListEmpty';
+    }
+
+    const codexHome = this.codexHomeDir();
+    const configPath = path.join(codexHome, CODEX_CONFIG_FILE_NAME);
+    const catalogPath = path.join(codexHome, CODEX_CATALOG_FILE_NAME);
+    let configContent = '';
+    try {
+      configContent = await fs.readFile(configPath, 'utf8');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw error;
+      }
+    }
+
+    let config: Record<string, unknown>;
+    try {
+      const parsed = parseToml(configContent);
+      if (!this.isRecord(parsed)) {
+        return 'codexConfigInvalid';
+      }
+      config = parsed;
+    } catch {
+      return 'codexConfigInvalid';
+    }
+
+    const configuredModel = config.model;
+    if (configuredModel !== undefined) {
+      if (
+        typeof configuredModel !== 'string' ||
+        !configuredModel.trim() ||
+        this.hasAsciiControlCharacters(configuredModel)
+      ) {
+        return 'codexConfigInvalid';
+      }
+      if (!modelIdsResult.includes(configuredModel.trim())) {
+        return 'defaultModelUnavailable';
+      }
+    }
+
+    const nextConfigContent = this.ensureCodexModelCatalogReference(configContent, config, catalogPath);
+    const catalog = this.buildCodexModelCatalog(modelIdsResult);
+    await this.writeFileAtomically(catalogPath, JSON.stringify(catalog, null, 2) + '\n');
+    if (nextConfigContent !== configContent) {
+      await this.writeFileAtomically(configPath, nextConfigContent);
+    }
+    return undefined;
+  }
+
+  private buildCodexModelCatalog(modelIds: string[]): typeof codexModelCatalogTemplate {
+    const template = codexModelCatalogTemplate.models[0];
+    return {
+      models: modelIds
+        .toSorted((left, right) => left.localeCompare(right))
+        .map((id) =>
+          Object.assign({}, template, {
+            slug: id,
+            display_name: id.toUpperCase(),
+            description: id.toUpperCase(),
+            input_modalities: id.toLowerCase().startsWith('deepseek') ? ['text'] : template.input_modalities,
+          })
+        ),
+    };
+  }
+
+  private ensureCodexModelCatalogReference(
+    content: string,
+    config: Record<string, unknown>,
+    catalogPath: string
+  ): string {
+    if (Object.prototype.hasOwnProperty.call(config, 'model_catalog_json')) {
+      if (config.model_catalog_json !== catalogPath) {
+        console.warn('[HTH][CodexModelCatalog] Existing model_catalog_json points to a different file');
+      }
+      return content;
+    }
+
+    const lineBreak = content.includes('\r\n') ? '\r\n' : '\n';
+    const bom = content.startsWith('\uFEFF') ? '\uFEFF' : '';
+    const body = bom ? content.slice(1) : content;
+    return bom + 'model_catalog_json = ' + JSON.stringify(catalogPath) + lineBreak + body;
+  }
+
+  private async writeFileAtomically(filePath: string, content: string): Promise<void> {
+    const parentDir = path.dirname(filePath);
+    await fs.mkdir(parentDir, { recursive: true });
+    const temporaryPath = path.join(
+      parentDir,
+      '.' + path.basename(filePath) + '.' + process.pid + '.' + randomUUID() + '.tmp'
+    );
+    try {
+      await fs.writeFile(temporaryPath, content, { encoding: 'utf8', mode: 0o600 });
+      await fs.rename(temporaryPath, filePath);
+    } finally {
+      try {
+        await fs.rm(temporaryPath, { force: true });
+      } catch {
+        // The target file has already been committed or the original write failed.
+      }
+    }
   }
 
   private buildOpenCodeModels(modelIds: string[]): Record<string, Record<string, unknown>> {
@@ -643,6 +795,16 @@ export class HTHConfigSyncService {
       };
     }
     return models;
+  }
+
+  private hasAsciiControlCharacters(value: string): boolean {
+    for (let index = 0; index < value.length; index += 1) {
+      const charCode = value.charCodeAt(index);
+      if (charCode <= 0x1f || charCode === 0x7f) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private isRecord(value: unknown): value is Record<string, unknown> {

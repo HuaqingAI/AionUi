@@ -113,6 +113,7 @@ export type HTHInjectProjectConfigResult = {
     | 'modelListEmpty'
     | 'defaultModelUnavailable'
     | 'openCodeConfigInvalid'
+    | 'codexConfigInvalid'
     | 'assistantRuntimeUnsupported';
 };
 
