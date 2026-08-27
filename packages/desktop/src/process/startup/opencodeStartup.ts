@@ -145,31 +145,6 @@ const CODEX_STARTUP_SCOPE: IRuntimeStatusScope = {
   kind: 'custom_agent',
   id: 'startup-codex',
 };
-type CodexPluginSpec = {
-  displayName: string;
-  marketplaceName: string;
-  marketplaceUrl?: string;
-  pluginId: string;
-};
-
-const CHATCUT_PLUGIN_SPEC: CodexPluginSpec = {
-  displayName: 'ChatCut',
-  marketplaceName: 'chatcut-inc',
-  marketplaceUrl: 'https://github.com/ChatCut-Inc/agent-plugin.git',
-  pluginId: 'chatcut@chatcut-inc',
-};
-const ADSPIRER_PLUGIN_SPEC: CodexPluginSpec = {
-  displayName: 'Adspirer',
-  marketplaceName: 'adspirer-marketplace',
-  marketplaceUrl: 'https://github.com/amekala/ads-mcp.git',
-  pluginId: 'adspirer-ads-agent@adspirer-marketplace',
-};
-const SHOPIFY_PLUGIN_SPEC: CodexPluginSpec = {
-  displayName: 'Shopify',
-  marketplaceName: 'shopify-ai-toolkit',
-  marketplaceUrl: 'https://github.com/Shopify/Shopify-AI-Toolkit.git',
-  pluginId: 'shopify-plugin@shopify-ai-toolkit',
-};
 const DWS_TOOL_ID = 'dws';
 const DWS_COMMAND_NAME = 'dws';
 const DWS_PACKAGE_NAME = 'dingtalk-workspace-cli';
@@ -1035,171 +1010,6 @@ async function ensureManagedToolInstalledWithManagedNode(options: {
   await ensureManagedToolLauncherUsesManagedNode(options.tool, options.dataPath, nodeExecutable);
 }
 
-function isCodexPluginInstalled(stdout: string | undefined, pluginId: string): boolean {
-  if (!stdout) {
-    return false;
-  }
-
-  try {
-    const parsed = JSON.parse(stdout) as {
-      installed?: Array<{ enabled?: boolean; installed?: boolean; pluginId?: string }>;
-    };
-    return (
-      parsed.installed?.some(
-        (plugin) => plugin.pluginId === pluginId && plugin.installed === true && plugin.enabled === true
-      ) ?? false
-    );
-  } catch {
-    return false;
-  }
-}
-
-function isCodexMarketplaceConfigured(stdout: string | undefined, marketplaceName: string): boolean {
-  if (!stdout) {
-    return false;
-  }
-
-  try {
-    const parsed = JSON.parse(stdout) as {
-      marketplaces?: Array<{ name?: string }>;
-    };
-    return parsed.marketplaces?.some((marketplace) => marketplace.name === marketplaceName) ?? false;
-  } catch {
-    return false;
-  }
-}
-
-function isCodexPluginAvailable(stdout: string | undefined, pluginId: string): boolean {
-  if (!stdout) {
-    return false;
-  }
-
-  try {
-    const parsed = JSON.parse(stdout) as {
-      available?: Array<{ pluginId?: string }>;
-    };
-    return parsed.available?.some((plugin) => plugin.pluginId === pluginId) ?? false;
-  } catch {
-    return false;
-  }
-}
-
-async function ensureCodexPluginInstalled(options: {
-  commandRunner: CommandRunner;
-  dataPath: string;
-  emitStatus: RuntimeStatusEmitter;
-  plugin: CodexPluginSpec;
-}): Promise<void> {
-  const nodeExecutable = await findManagedNodeExecutable(options.dataPath);
-  if (!nodeExecutable) {
-    throw new Error('managed Node executable was not found');
-  }
-
-  const codexCliPath = await findManagedToolPackageBinTarget(CODEX_TOOL, options.dataPath);
-  if (!codexCliPath || !(await pathExists(codexCliPath))) {
-    throw new Error('managed Codex CLI entrypoint was not found');
-  }
-
-  const codexHome = getCodexHomeDir(options.dataPath);
-  await fs.mkdir(codexHome, { recursive: true });
-
-  const nodeBinDir = path.dirname(nodeExecutable);
-  const codexBinDir = getManagedToolGlobalBinDir(CODEX_TOOL, options.dataPath);
-  const commandEnv: NodeJS.ProcessEnv = {
-    ...process.env,
-    CODEX_HOME: codexHome,
-    PATH: [codexBinDir, nodeBinDir, process.env.PATH ?? process.env.Path ?? ''].filter(Boolean).join(path.delimiter),
-  };
-  if (process.platform === 'win32') {
-    commandEnv.Path = commandEnv.PATH;
-  }
-
-  const commandOptions = {
-    cwd: options.dataPath,
-    env: commandEnv,
-    timeout: OPENCODE_INSTALL_TIMEOUT_MS,
-  };
-  const runCodex = (args: string[]) => options.commandRunner(nodeExecutable, [codexCliPath, ...args], commandOptions);
-
-  emitToolRuntimeStatus(
-    options.emitStatus,
-    CODEX_TOOL,
-    'validating',
-    `Checking ${options.plugin.displayName} Codex plugin installation`
-  );
-
-  let pluginList: { stdout?: string } | undefined;
-  try {
-    pluginList = await runCodex(['plugin', 'list', '--marketplace', options.plugin.marketplaceName, '--json']);
-  } catch {
-    // A missing marketplace is represented as an empty list by current Codex versions.
-    // Continue with the add flow for older versions that return a non-zero status here.
-  }
-  if (isCodexPluginInstalled(pluginList?.stdout, options.plugin.pluginId)) {
-    emitToolRuntimeStatus(
-      options.emitStatus,
-      CODEX_TOOL,
-      'ready',
-      `${options.plugin.displayName} Codex plugin is ready`
-    );
-    return;
-  }
-
-  emitToolRuntimeStatus(
-    options.emitStatus,
-    CODEX_TOOL,
-    'downloading',
-    `Installing ${options.plugin.displayName} Codex plugin`
-  );
-  if (options.plugin.marketplaceUrl) {
-    let marketplaceList: { stdout?: string } | undefined;
-    try {
-      marketplaceList = await runCodex(['plugin', 'marketplace', 'list', '--json']);
-    } catch {
-      // Keep supporting Codex versions that do not return a JSON marketplace list.
-    }
-    const marketplaceConfigured = isCodexMarketplaceConfigured(marketplaceList?.stdout, options.plugin.marketplaceName);
-    if (!marketplaceConfigured) {
-      try {
-        await runCodex(['plugin', 'marketplace', 'add', options.plugin.marketplaceUrl]);
-      } catch (error) {
-        if (!normalizeError(error).includes(`marketplace '${options.plugin.marketplaceName}' is already added`)) {
-          throw error;
-        }
-      }
-    } else if (!isCodexPluginAvailable(pluginList?.stdout, options.plugin.pluginId)) {
-      await runCodex(['plugin', 'marketplace', 'remove', options.plugin.marketplaceName]);
-      await runCodex(['plugin', 'marketplace', 'add', options.plugin.marketplaceUrl]);
-    }
-  }
-  try {
-    await runCodex(['plugin', 'add', options.plugin.pluginId]);
-  } catch (error) {
-    if (
-      !options.plugin.marketplaceUrl ||
-      !normalizeError(error).includes(`was not found in marketplace '${options.plugin.marketplaceName}'`)
-    ) {
-      throw error;
-    }
-    await runCodex(['plugin', 'marketplace', 'remove', options.plugin.marketplaceName]);
-    await runCodex(['plugin', 'marketplace', 'add', options.plugin.marketplaceUrl]);
-    await runCodex(['plugin', 'add', options.plugin.pluginId]);
-  }
-
-  const verifiedPluginList = await runCodex([
-    'plugin',
-    'list',
-    '--marketplace',
-    options.plugin.marketplaceName,
-    '--json',
-  ]);
-  if (!isCodexPluginInstalled(verifiedPluginList.stdout, options.plugin.pluginId)) {
-    throw new Error(`${options.plugin.displayName} Codex plugin was not installed in ${codexHome}`);
-  }
-
-  emitToolRuntimeStatus(options.emitStatus, CODEX_TOOL, 'ready', `${options.plugin.displayName} Codex plugin is ready`);
-}
-
 function shouldEnsureManagedToolOnStartup(tool: ManagedAcpTool, env: OpenCodeStartupEnv = process.env): boolean {
   if (env[tool.envDisabledKey] === '0') {
     return false;
@@ -1384,31 +1194,11 @@ export async function ensureBeisenCliReadyOnStartup(
 export async function ensureCodexReadyOnStartup(
   options: EnsureOpenCodeReadyOptions = {}
 ): Promise<OpenCodeBootstrapResult> {
-  let result = await ensureCodexReady(options);
-  if (result.status === 'ready') {
-    const pluginOptions = {
-      commandRunner: options.commandRunner ?? runCommand,
-      dataPath: options.dataPath ?? getDataPath(),
-      emitStatus: options.emitStatus ?? ipcBridge.runtime.localStatusChanged.emit,
-    };
-    let pluginError: string | undefined;
-    for (const plugin of [CHATCUT_PLUGIN_SPEC, ADSPIRER_PLUGIN_SPEC, SHOPIFY_PLUGIN_SPEC]) {
-      try {
-        await ensureCodexPluginInstalled({ ...pluginOptions, plugin });
-      } catch (error) {
-        const normalizedError = normalizeError(error);
-        pluginError ??= normalizedError;
-        emitToolRuntimeStatus(pluginOptions.emitStatus, CODEX_TOOL, 'failed', normalizedError);
-      }
-    }
-    if (pluginError) {
-      result = { status: 'failed', error: pluginError };
-    }
-  }
+  const result = await ensureCodexReady(options);
 
   switch (result.status) {
     case 'ready':
-      console.info('[Codex] managed runtime, ChatCut, Adspirer, and Shopify plugins are ready');
+      console.info('[Codex] managed runtime is ready');
       break;
     case 'skipped':
       console.info('[Codex] startup bootstrap skipped');
