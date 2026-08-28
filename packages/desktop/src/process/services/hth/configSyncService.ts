@@ -859,7 +859,7 @@ export class HTHConfigSyncService {
 
   private calculatePricing(modelIds: string[], pricing: ModelPricingSnapshot | null): Map<string, ModelPricingDisplay> {
     if (!pricing) return new Map();
-    return calculateModelPricing(modelIds, pricing.data, pricing.groupRatio);
+    return calculateModelPricing(modelIds, pricing.data, pricing.groupRatio, pricing.pricingGroup);
   }
 
   private async getHTHModelPricing(access: HTHAccess): Promise<ModelPricingSnapshot | null> {
@@ -902,8 +902,9 @@ export class HTHConfigSyncService {
         return this.modelPricingCache?.key === cacheKey ? this.modelPricingCache.snapshot : null;
       }
       const groupRatio = this.isRecord(payload.group_ratio) ? payload.group_ratio : {};
+      const pricingGroup = typeof payload.pricing_group === 'string' ? payload.pricing_group.trim() : undefined;
       const pricingVersion = typeof payload.pricing_version === 'string' ? payload.pricing_version : undefined;
-      const snapshot: ModelPricingSnapshot = { data: payload.data, groupRatio, pricingVersion };
+      const snapshot: ModelPricingSnapshot = { data: payload.data, groupRatio, pricingGroup, pricingVersion };
       this.modelPricingCache = { key: cacheKey, expiresAt: Date.now() + HTH_PRICING_CACHE_TTL_MS, snapshot };
       return snapshot;
     } catch {

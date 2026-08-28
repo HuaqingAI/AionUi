@@ -943,7 +943,7 @@ describe('HTHConfigSyncService auth handling', () => {
     const codexHome = path.join(tempDir, 'aionui', 'runtime', 'codex-home');
     const syncService = new HTHConfigSyncService(authService, packageStore, () => codexHome);
     const fetchMock = vi.fn(async (input: string | URL) => {
-      if (String(input).includes('/api/pricing')) {
+      if (String(input).includes('/api/aionui/pricing')) {
         return new Response(
           JSON.stringify({
             data: [
@@ -951,7 +951,8 @@ describe('HTHConfigSyncService auth handling', () => {
               { model_name: 'deepseek-v4-flash', quota_type: 0, model_ratio: 1, completion_ratio: 1 },
               { model_name: 'custom-text-model', quota_type: 1, model_price: 0.01 },
             ],
-            group_ratio: { default: 1 },
+            group_ratio: { default: 1, hthbuddy: 2 },
+            pricing_group: 'hthbuddy',
           }),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
         );
@@ -989,12 +990,12 @@ describe('HTHConfigSyncService auth handling', () => {
     expect(Object.keys(models)).toEqual(['gpt-5.6-terra', 'deepseek-v4-flash', 'custom-text-model']);
     expect(models['gpt-5.6-terra']).toMatchObject({
       name: 'GPT-5.6-TERRA x5',
-      description: '输入 $10.00 / 百万 Token\n输出 $10.00 / 百万 Token',
+      description: '输入 $20.00 / 百万 Token\n输出 $20.00 / 百万 Token',
       modalities: { input: ['text', 'image'], output: ['text', 'image'] },
     });
     expect(models['deepseek-v4-flash']).toMatchObject({
       name: 'DEEPSEEK-V4-FLASH x1',
-      description: '输入 $2.00 / 百万 Token\n输出 $2.00 / 百万 Token',
+      description: '输入 $4.00 / 百万 Token\n输出 $4.00 / 百万 Token',
       modalities: { input: ['text'], output: ['text'] },
     });
     expect(models['gpt-5.6-terra']).not.toHaveProperty('variants');
@@ -1007,7 +1008,7 @@ describe('HTHConfigSyncService auth handling', () => {
       })
     );
     expect(fetchMock).toHaveBeenCalledWith(
-      new URL('http://127.0.0.1:3001/api/pricing'),
+      new URL('http://127.0.0.1:3001/api/aionui/pricing'),
       expect.objectContaining({
         headers: expect.objectContaining({ Authorization: 'Bearer token-1' }),
       })
@@ -1157,7 +1158,7 @@ describe('HTHConfigSyncService auth handling', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: string | URL) => {
-        if (String(input).includes('/api/pricing')) {
+        if (String(input).includes('/api/aionui/pricing')) {
           return new Response(
             JSON.stringify({
               data: [
@@ -1399,7 +1400,7 @@ describe('HTHConfigSyncService auth handling', () => {
   it('returns descriptions only for requested token-priced HTH models', async () => {
     await writeStoredAuth(authFile);
     const fetchMock = vi.fn(async (input: string | URL) => {
-      expect(String(input)).toBe('http://127.0.0.1:3001/api/pricing');
+      expect(String(input)).toBe('http://127.0.0.1:3001/api/aionui/pricing');
       return new Response(
         JSON.stringify({
           data: [
