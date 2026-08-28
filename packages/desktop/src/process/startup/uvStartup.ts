@@ -9,8 +9,6 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import yauzl from 'yauzl';
-import { ipcBridge } from '@/common';
-import type { IRuntimeStatusEvent, IRuntimeStatusScope } from '@/common/adapter/ipcBridge';
 import { getDataPath } from '../utils/utils';
 
 export type UvBootstrapStatus = 'ready' | 'skipped' | 'failed';
@@ -20,40 +18,22 @@ export type UvBootstrapResult = {
   error?: string;
 };
 
-type CommandRunner = (
-  file: string,
-  args: string[],
-  options: { cwd?: string; env?: NodeJS.ProcessEnv; timeout?: number }
-) => Promise<{ stderr?: string; stdout?: string }>;
 type CopyArtifact = (source: string, destination: string) => Promise<void>;
 type ExtractArtifact = (archivePath: string, destination: string) => Promise<void>;
-type RuntimeStatusEmitter = (event: IRuntimeStatusEvent) => void;
-
 type UvStartupEnv = {
   AIONUI_E2E_TEST?: string;
-  AIONUI_ZINIAO_BOOTSTRAP?: string;
 };
 
-export type EnsureZiniaoReadyOptions = {
+export type EnsureUvReadyOptions = {
   bundledArtifactPath?: string;
-  commandRunner?: CommandRunner;
   copyArtifact?: CopyArtifact;
   dataPath?: string;
-  emitStatus?: RuntimeStatusEmitter;
   env?: UvStartupEnv;
   extractArtifact?: ExtractArtifact;
 };
 
 const UV_VERSION = '0.11.31';
-const ZINIAO_PACKAGE_NAME = 'ziniao';
-const ZINIAO_MCP_REQUIREMENT = 'mcp<2';
-const ZINIAO_PYPI_INDEX = 'https://pypi.tuna.tsinghua.edu.cn/simple';
 const UV_INSTALL_TIMEOUT_MS = 180000;
-const NODRIVER_GB18030_ENCODING_HEADER = Buffer.from('# -*- coding: gb18030 -*-\n', 'ascii');
-const ZINIAO_STARTUP_SCOPE: IRuntimeStatusScope = {
-  kind: 'mcp',
-  id: 'startup-ziniao',
-};
 const execFileAsync = promisify(execFile);
 
 let startupPromise: Promise<UvBootstrapResult> | null = null;
@@ -122,71 +102,12 @@ function getUvExecutablePath(dataPath = getDataPath(), command: 'uv' | 'uvx' = '
   return path.join(getUvRuntimeDirectory(dataPath), `${command}${getUvTarget().executableExtension}`);
 }
 
-function getZiniaoCommandPath(dataPath = getDataPath()): string {
-  return path.join(getUvToolBinDirectory(dataPath), `ziniao${getUvTarget().executableExtension}`);
-}
-
-function getZiniaoInstallProfilePath(dataPath = getDataPath()): string {
-  return path.join(dataPath, 'runtime', 'uv-tools', 'ziniao', '.aionui-install-profile');
-}
-
 async function pathExists(filePath: string): Promise<boolean> {
   try {
     await fs.access(filePath);
     return true;
   } catch {
     return false;
-  }
-}
-
-async function hasCurrentZiniaoInstallProfile(dataPath: string): Promise<boolean> {
-  try {
-    return (await fs.readFile(getZiniaoInstallProfilePath(dataPath), 'utf8')).trim() === ZINIAO_MCP_REQUIREMENT;
-  } catch {
-    return false;
-  }
-}
-
-async function patchZiniaoNodriverSource(dataPath: string): Promise<void> {
-  const toolDirectory = path.join(dataPath, 'runtime', 'uv-tools', ZINIAO_PACKAGE_NAME);
-  let sitePackagesDirectory = path.join(toolDirectory, 'Lib', 'site-packages');
-
-  if (process.platform !== 'win32') {
-    try {
-      const libraryDirectories = await fs.readdir(path.join(toolDirectory, 'lib'), { withFileTypes: true });
-      const pythonDirectory = libraryDirectories.find(
-        (directory) => directory.isDirectory() && directory.name.startsWith('python')
-      );
-      if (!pythonDirectory) {
-        return;
-      }
-      sitePackagesDirectory = path.join(toolDirectory, 'lib', pythonDirectory.name, 'site-packages');
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        return;
-      }
-      throw error;
-    }
-  }
-
-  const networkModulePath = path.join(sitePackagesDirectory, 'nodriver', 'cdp', 'network.py');
-  let source: Buffer;
-  try {
-    source = await fs.readFile(networkModulePath);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return;
-    }
-    throw error;
-  }
-
-  try {
-    new TextDecoder('utf-8', { fatal: true }).decode(source);
-  } catch {
-    // nodriver 0.48.x ships this generated CDP file in GB18030 without a declaration.
-    if (!source.subarray(0, NODRIVER_GB18030_ENCODING_HEADER.length).equals(NODRIVER_GB18030_ENCODING_HEADER)) {
-      await fs.writeFile(networkModulePath, Buffer.concat([NODRIVER_GB18030_ENCODING_HEADER, source]));
-    }
   }
 }
 
@@ -215,7 +136,6 @@ export function addManagedUvBinsToPath(dataPath = getDataPath(), env: NodeJS.Pro
   env.UV_TOOL_BIN_DIR = toolBin;
   env.UV_PYTHON_INSTALL_DIR = path.join(dataPath, 'runtime', 'uv-python');
   env.UV_MANAGED_PYTHON = '1';
-  env.UV_DEFAULT_INDEX = ZINIAO_PYPI_INDEX;
   env.UV_NO_PROGRESS = '1';
 }
 
@@ -333,22 +253,12 @@ async function findBundledUvArtifact(): Promise<string> {
   throw new Error(`bundled uv artifact is missing: ${archiveName}`);
 }
 
-function shouldEnsureZiniaoOnStartup(env: UvStartupEnv = process.env): boolean {
-  return env.AIONUI_E2E_TEST !== '1' && env.AIONUI_ZINIAO_BOOTSTRAP !== '0';
+function shouldEnsureUvOnStartup(env: UvStartupEnv = process.env): boolean {
+  return env.AIONUI_E2E_TEST !== '1';
 }
 
-export function isZiniaoBootstrapEnabled(env: UvStartupEnv = process.env): boolean {
-  return shouldEnsureZiniaoOnStartup(env);
-}
-
-function emitStatus(emitter: RuntimeStatusEmitter, phase: IRuntimeStatusEvent['phase'], message?: string): void {
-  emitter({
-    resource: 'acp_tool',
-    resource_id: 'ziniao',
-    scope: ZINIAO_STARTUP_SCOPE,
-    phase,
-    message,
-  });
+export function isUvBootstrapEnabled(env: UvStartupEnv = process.env): boolean {
+  return shouldEnsureUvOnStartup(env);
 }
 
 async function ensureUvInstalled(options: {
@@ -389,89 +299,46 @@ async function ensureUvInstalled(options: {
   }
 }
 
-export async function ensureZiniaoReady(options: EnsureZiniaoReadyOptions = {}): Promise<UvBootstrapResult> {
+export async function ensureUvReady(options: EnsureUvReadyOptions = {}): Promise<UvBootstrapResult> {
   const env = options.env ?? process.env;
-  if (!shouldEnsureZiniaoOnStartup(env)) {
+  if (!shouldEnsureUvOnStartup(env)) {
     return { status: 'skipped' };
   }
 
   const dataPath = options.dataPath ?? getDataPath();
-  const statusEmitter = options.emitStatus ?? ipcBridge.runtime.localStatusChanged.emit;
-  const commandRunner = options.commandRunner ?? runCommand;
   const copyArtifact = options.copyArtifact ?? fs.copyFile;
   const extractArtifact = options.extractArtifact ?? extractBundledArtifact;
 
   try {
     addManagedUvBinsToPath(dataPath);
-    const ziniaoPath = getZiniaoCommandPath(dataPath);
-    const hadZiniao = await pathExists(ziniaoPath);
-    const hasCurrentProfile = hadZiniao && (await hasCurrentZiniaoInstallProfile(dataPath));
-    const needsZiniaoInstall = !hasCurrentProfile;
-    emitStatus(
-      statusEmitter,
-      needsZiniaoInstall ? 'extracting' : 'validating',
-      needsZiniaoInstall ? 'Preparing bundled uv and Ziniao MCP' : 'Checking Ziniao MCP installation'
-    );
     await ensureUvInstalled({
       bundledArtifactPath: options.bundledArtifactPath,
       copyArtifact,
       dataPath,
       extractArtifact,
     });
-    if (needsZiniaoInstall) {
-      await fs.mkdir(getUvToolBinDirectory(dataPath), { recursive: true });
-      await commandRunner(
-        getUvExecutablePath(dataPath),
-        [
-          'tool',
-          'install',
-          '--reinstall',
-          '--default-index',
-          ZINIAO_PYPI_INDEX,
-          '--with',
-          ZINIAO_MCP_REQUIREMENT,
-          ZINIAO_PACKAGE_NAME,
-        ],
-        {
-          cwd: dataPath,
-          env: process.env,
-          timeout: UV_INSTALL_TIMEOUT_MS,
-        }
-      );
-    }
-    await patchZiniaoNodriverSource(dataPath);
-    if (!(await pathExists(ziniaoPath))) {
-      throw new Error('ziniao command was not created after installation');
-    }
-    if (needsZiniaoInstall) {
-      const installProfilePath = getZiniaoInstallProfilePath(dataPath);
-      await fs.mkdir(path.dirname(installProfilePath), { recursive: true });
-      await fs.writeFile(installProfilePath, `${ZINIAO_MCP_REQUIREMENT}\n`, 'utf8');
-    }
-    emitStatus(statusEmitter, 'ready', 'Ziniao MCP is ready');
     return { status: 'ready' };
   } catch (error) {
     const message = normalizeError(error);
-    emitStatus(statusEmitter, 'failed', message);
     return { status: 'failed', error: message };
   }
 }
 
-export function ensureZiniaoReadyOnce(options: EnsureZiniaoReadyOptions = {}): Promise<UvBootstrapResult> {
+export function ensureUvReadyOnce(options: EnsureUvReadyOptions = {}): Promise<UvBootstrapResult> {
   if (!startupPromise) {
-    startupPromise = ensureZiniaoReady(options);
+    startupPromise = ensureUvReady(options);
   }
   return startupPromise;
 }
 
-export async function ensureZiniaoReadyOnStartup(options: EnsureZiniaoReadyOptions = {}): Promise<UvBootstrapResult> {
-  const result = await ensureZiniaoReadyOnce(options);
+export async function ensureUvReadyOnStartup(options: EnsureUvReadyOptions = {}): Promise<UvBootstrapResult> {
+  const result = await ensureUvReadyOnce(options);
   if (result.status === 'ready') {
-    console.info('[Ziniao] managed uv and MCP command are ready');
+    console.info('[uv] managed runtime is ready');
   } else if (result.status === 'skipped') {
-    console.info('[Ziniao] startup bootstrap skipped');
+    console.info('[uv] startup bootstrap skipped');
   } else {
-    console.warn('[Ziniao] managed uv bootstrap failed:', result.error);
+    console.warn('[uv] managed runtime bootstrap failed:', result.error);
   }
   return result;
 }

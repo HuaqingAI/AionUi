@@ -41,7 +41,7 @@ import {
   type OpenCodeBootstrapResult,
   type OpenCodeManagedAgentHealthResult,
 } from './process/startup/opencodeStartup';
-import { addManagedUvBinsToPath, ensureZiniaoReadyOnStartup } from './process/startup/uvStartup';
+import { ensureUvReadyOnStartup } from './process/startup/uvStartup';
 import { installQuitCleanup } from './process/startup/quitCleanup';
 import { shouldRegisterBackendStartup } from './process/startup/singleInstanceGating';
 import { ProcessConfig } from './process/utils/initStorage';
@@ -271,8 +271,7 @@ ipcMain.handle('backend:recover-corrupted-database', async () => {
         const sysDir = getSystemDir();
         openCodeRuntimeDataPath = sysDir.workDir;
         addStartupManagedAcpToolBinsToPath(sysDir.workDir);
-        addManagedUvBinsToPath(sysDir.workDir);
-        await ensureZiniaoReadyOnStartup({ dataPath: sysDir.workDir });
+        await ensureUvReadyOnStartup({ dataPath: sysDir.workDir });
         return await backendManager.start(
           getDataPath(),
           sysDir.logDir,
@@ -863,8 +862,7 @@ const handleAppReady = async (): Promise<void> => {
         const sysDir = getSystemDir();
         openCodeRuntimeDataPath = sysDir.workDir;
         addStartupManagedAcpToolBinsToPath(sysDir.workDir);
-        addManagedUvBinsToPath(sysDir.workDir);
-        await ensureZiniaoReadyOnStartup({ dataPath: sysDir.workDir });
+        await ensureUvReadyOnStartup({ dataPath: sysDir.workDir });
         return backendManager.start(
           getDataPath(),
           sysDir.logDir,
