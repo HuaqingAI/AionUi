@@ -45,17 +45,23 @@ describe('release packaging configuration', () => {
     expect(winBlock).not.toContain('    - zip');
   });
 
-  it('keeps Chinese display branding while using an English packaged executable name', () => {
+  it('uses Chinese naming for the macOS app bundle while keeping other packaged names stable', () => {
     const config = readProjectFile('packages/desktop/electron-builder.yml');
     const packageJson = JSON.parse(readProjectFile('package.json')) as { version?: string };
+    const macBlock = yamlBlock(config, 'mac');
 
     expect(packageJson.version).toBe('1.0.0');
     expect(config).toContain(`productName: ${APP_DISPLAY_NAME}`);
     expect(config).toContain('executableName: HQBuddy');
+    expect(macBlock).toContain(`  executableName: ${APP_DISPLAY_NAME}`);
     expect(config).toContain('appId: com.hqbuddy.app');
     expect(config).toContain('      - hqbuddy');
     expect(config).toContain(`CFBundleName: ${APP_DISPLAY_NAME}`);
     expect(config).toContain(`CFBundleDisplayName: ${APP_DISPLAY_NAME}`);
+    expect(readProjectFile('scripts/packaged-launch.mjs')).toContain(`'${APP_DISPLAY_NAME}'`);
+    expect(readProjectFile('scripts/build-with-builder.js')).toContain(
+      '--config.mac.executableName=${macExecutableName}'
+    );
     expect(config).toContain(`copyright: Copyright © 2024 ${APP_DISPLAY_NAME}`);
     expect(config).toContain('shortcutName: ${productName}');
     expect(config).toContain('uninstallDisplayName: ${productName}');

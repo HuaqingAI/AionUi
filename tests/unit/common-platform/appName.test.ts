@@ -18,6 +18,7 @@ describe('development data directory naming', () => {
 
   it('uses the packaged executable name to separate production and packaged dev data', () => {
     expect(getAppFilesystemName(true, '/Applications/HQBuddy.app/Contents/MacOS/HQBuddy')).toBe('HQBuddy');
+    expect(getAppFilesystemName(true, '/Applications/华青智能助手.app/Contents/MacOS/华青智能助手')).toBe('HQBuddy');
     expect(getAppFilesystemName(true, '/Applications/HQBuddy-Dev.app/Contents/MacOS/HQBuddy-Dev')).toBe('HQBuddy-Dev');
     expect(getAppFilesystemName(true, 'C:\\Program Files\\HQBuddy.exe')).toBe('HQBuddy');
     expect(getAppFilesystemName(true, 'C:\\Program Files\\HQBuddy-Dev.exe')).toBe('HQBuddy-Dev');

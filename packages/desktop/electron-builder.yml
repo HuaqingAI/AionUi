@@ -134,7 +134,8 @@ mac:
     - dmg
     - zip
   icon: resources/app.icns
-  # Keep the bundle/executable path ASCII while exposing the Chinese app name in Finder and Launchpad.
+  # macOS uses the platform executable name for the .app bundle directory and its main executable.
+  executableName: 华青智能助手
   extendInfo:
     CFBundleName: 华青智能助手
     CFBundleDisplayName: 华青智能助手

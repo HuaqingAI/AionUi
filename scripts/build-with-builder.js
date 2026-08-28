@@ -14,7 +14,7 @@ const { execSync, spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { resolveExecutableName } = require('./appNaming');
+const { resolveExecutableName, resolveMacExecutableName } = require('./appNaming');
 
 // DMG retry logic for macOS: detects DMG creation failures by checking artifacts
 // (.app exists but .dmg missing) and retries only the DMG step using
@@ -542,7 +542,7 @@ function createMacArtifactsWithPrepackaged(appDir, targetArch, executableName) {
   const appPath = path.join(appDir, appName);
 
   execSync(
-    `bunx electron-builder --config packages/desktop/electron-builder.yml --mac dmg zip --${targetArch} --prepackaged "${appPath}" --config.executableName=${executableName} --publish=never`,
+    `bunx electron-builder --config packages/desktop/electron-builder.yml --mac dmg zip --${targetArch} --prepackaged "${appPath}" --config.executableName=${executableName} --config.mac.executableName=${resolveMacExecutableName()} --publish=never`,
     {
       stdio: 'inherit',
       shell: process.platform === 'win32',
@@ -710,6 +710,7 @@ if (forceBuild) console.log('⚡ --force: Force full rebuild');
 
 const packageJsonPath = path.resolve(__dirname, '../package.json');
 const executableName = resolveExecutableName();
+const macExecutableName = resolveMacExecutableName();
 const executableFilename = `${executableName}.exe`;
 let restorePackageVersionOverride = () => {};
 let buildFailed = false;
@@ -876,7 +877,7 @@ try {
     cleanupWindowsPackOutput();
   }
 
-  const builderCommand = `bunx electron-builder --config packages/desktop/electron-builder.yml --config.executableName=${executableName} ${builderArgs} ${archFlag} ${nsisInclude} ${publishArg}`;
+  const builderCommand = `bunx electron-builder --config packages/desktop/electron-builder.yml --config.executableName=${executableName} --config.mac.executableName=${macExecutableName} ${builderArgs} ${archFlag} ${nsisInclude} ${publishArg}`;
   try {
     buildWithDmgRetry(builderCommand, targetArch, executableName);
   } catch (error) {

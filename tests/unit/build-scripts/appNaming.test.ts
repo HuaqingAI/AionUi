@@ -2,10 +2,12 @@ import { createRequire } from 'node:module';
 import { describe, expect, it } from 'vitest';
 
 const require = createRequire(import.meta.url);
-const { resolveBuildFlavor, resolveExecutableName } = require('../../../scripts/appNaming.js') as {
-  resolveBuildFlavor: (env?: NodeJS.ProcessEnv) => string;
-  resolveExecutableName: (env?: NodeJS.ProcessEnv) => string;
-};
+const { resolveBuildFlavor, resolveExecutableName, resolveMacExecutableName } =
+  require('../../../scripts/appNaming.js') as {
+    resolveBuildFlavor: (env?: NodeJS.ProcessEnv) => string;
+    resolveExecutableName: (env?: NodeJS.ProcessEnv) => string;
+    resolveMacExecutableName: (env?: NodeJS.ProcessEnv) => string;
+  };
 
 describe('packaged filesystem naming', () => {
   it('uses HQBuddy for production builds by default', () => {
@@ -21,5 +23,10 @@ describe('packaged filesystem naming', () => {
   it('keeps builds production by default even on the dev branch', () => {
     expect(resolveExecutableName({ GITHUB_REF_NAME: 'dev' })).toBe('HQBuddy');
     expect(resolveExecutableName({ AIONUI_BUILD_FLAVOR: 'production', GITHUB_REF_NAME: 'dev' })).toBe('HQBuddy');
+  });
+
+  it('uses the Chinese app name only for production macOS bundles', () => {
+    expect(resolveMacExecutableName({})).toBe('华青智能助手');
+    expect(resolveMacExecutableName({ AIONUI_BUILD_FLAVOR: 'dev' })).toBe('HQBuddy-Dev');
   });
 });

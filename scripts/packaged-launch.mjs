@@ -14,7 +14,7 @@ function isWindows() {
   return process.platform === 'win32';
 }
 
-const packagedExecutableNames = ['HQBuddy', 'HQBuddy-Dev', 'AionUi', 'aionui'];
+const packagedExecutableNames = ['华青智能助手', 'HQBuddy', 'HQBuddy-Dev', 'AionUi', 'aionui'];
 
 function killProcessByName(name) {
   return new Promise((resolve) => {
