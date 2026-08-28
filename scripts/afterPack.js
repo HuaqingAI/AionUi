@@ -1,4 +1,5 @@
 const { Arch } = require('builder-util');
+const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -36,6 +37,17 @@ function verifyBundledResources(resourcesDir, electronPlatformName, targetArch) 
   }
 
   console.log(`   ✓ Bundled resources verified for ${result.runtimeKey} (${result.checked.length} checks)`);
+}
+
+function signAndVerifyMacApp(appOutDir, packager) {
+  const appName = packager?.appInfo?.productFilename || resolveExecutableName();
+  const appPath = path.join(appOutDir, `${appName}.app`);
+
+  console.log(`   Applying ad-hoc signature to ${appPath}`);
+  execFileSync('codesign', ['--force', '--deep', '--sign', '-', '--timestamp=none', appPath], { stdio: 'inherit' });
+
+  console.log(`   Verifying ad-hoc signature for ${appPath}`);
+  execFileSync('codesign', ['--verify', '--deep', '--strict', '--verbose=4', appPath], { stdio: 'inherit' });
 }
 
 module.exports = async function afterPack(context) {
@@ -80,6 +92,9 @@ module.exports = async function afterPack(context) {
 
   if (!isCrossCompile && !needsSameArchRebuild && !forceRebuild) {
     console.log(`   ✓ Same architecture, rebuild skipped (set FORCE_NATIVE_REBUILD=true to override)\n`);
+    if (electronPlatformName === 'darwin') {
+      signAndVerifyMacApp(appOutDir, packager);
+    }
     return;
   }
 
@@ -224,4 +239,7 @@ module.exports = async function afterPack(context) {
   }
 
   console.log(`✅ All native modules rebuilt successfully for ${targetArch}\n`);
+  if (electronPlatformName === 'darwin') {
+    signAndVerifyMacApp(appOutDir, packager);
+  }
 };

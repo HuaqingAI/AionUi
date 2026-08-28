@@ -130,6 +130,8 @@ nsis:
   differentialPackage: false
 
 mac:
+  # electron-builder must not select a Developer ID identity; afterPack applies the required ad-hoc signature.
+  identity: null
   target:
     - dmg
     - zip
@@ -166,7 +168,6 @@ dmg:
       path: /Applications
 
 afterPack: scripts/afterPack.js
-afterSign: scripts/afterSign.js
 
 linux:
   target:
