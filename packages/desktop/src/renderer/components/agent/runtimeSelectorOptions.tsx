@@ -127,7 +127,10 @@ export const RuntimeSelectorModelList: React.FC<{
         if (!disabled) onSelect(model.id);
       }}
     >
-      <RuntimeSelectorCheckedItem selected={model.id === currentModelId} description={model.description}>
+      <RuntimeSelectorCheckedItem
+        selected={model.id === currentModelId}
+        description={model.description || model.label || model.id}
+      >
         {model.label || model.id}
       </RuntimeSelectorCheckedItem>
     </Menu.Item>

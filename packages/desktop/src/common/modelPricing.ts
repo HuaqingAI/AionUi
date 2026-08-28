@@ -54,6 +54,12 @@ function formatMultiplier(value: number): string {
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1).replace(/0+$/, '');
 }
 
+function formatUsd(value: number): string {
+  const rounded = Math.round(value * 10_000) / 10_000;
+  const [integer, decimals] = rounded.toFixed(4).split('.');
+  return `${integer}.${(decimals || '').replace(/0+$/, '').padEnd(2, '0')}`;
+}
+
 /** Calculate weighted token costs and relative multipliers for runtime model IDs. */
 export function calculateModelPricing(
   modelIds: string[],
@@ -105,4 +111,13 @@ export function calculateModelPricing(
 /** Append a computed multiplier to a user-facing model label when available. */
 export function appendModelMultiplier(label: string, pricing?: ModelPricingDisplay): string {
   return pricing ? `${label} x${pricing.multiplier}` : label;
+}
+
+/** Format the token pricing summary rendered by the existing model option tooltip. */
+export function formatModelPricingDescription(pricing?: ModelPricingDisplay): string | undefined {
+  if (!pricing) return undefined;
+  return [
+    `输入 $${formatUsd(pricing.inputUsdPer1M)} / 百万 Token`,
+    `输出 $${formatUsd(pricing.outputUsdPer1M)} / 百万 Token`,
+  ].join('\n');
 }

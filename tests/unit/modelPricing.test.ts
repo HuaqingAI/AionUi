@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { appendModelMultiplier, calculateModelPricing } from '@/common/modelPricing';
+import { appendModelMultiplier, calculateModelPricing, formatModelPricingDescription } from '@/common/modelPricing';
 
 describe('model pricing calculation', () => {
   it('uses the lowest weighted token cost as x1 and combines input/output prices', () => {
@@ -20,6 +20,7 @@ describe('model pricing calculation', () => {
     });
     expect(result.get('expensive')?.multiplier).toBe('5');
     expect(appendModelMultiplier('CHEAP', result.get('cheap'))).toBe('CHEAP x1');
+    expect(formatModelPricingDescription(result.get('cheap'))).toBe('输入 $2.00 / 百万 Token\n输出 $2.00 / 百万 Token');
   });
 
   it('skips per-request, dynamic, unmatched, and invalid pricing entries', () => {

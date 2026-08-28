@@ -256,6 +256,9 @@ export function initApplicationBridge(): void {
     hthConfigSyncService.syncAgentConfigs(request, (event) => ipcBridge.hth.syncAgentConfigsProgress.emit(event))
   );
   ipcBridge.hth.injectProjectConfig.provider((request) => hthConfigSyncService.injectProjectConfig(request));
+  ipcBridge.hth.modelPricingDescriptions.provider((request) =>
+    hthConfigSyncService.getModelPricingDescriptions(request.modelIds)
+  );
   ipcBridge.hth.quotaSummary.provider(() => hthQuotaService.getSummary());
   ipcBridge.hth.refreshQuotaSummary.provider(() => hthQuotaService.refreshSummary());
 }

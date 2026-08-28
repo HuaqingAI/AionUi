@@ -269,6 +269,26 @@ describe('AcpModelSelector runtime options', () => {
     );
   });
 
+  it('shows the full model label in the tooltip when no description is provided', () => {
+    useAcpModelInfoMock.mockReturnValue(
+      makeResult({
+        model_info: {
+          current_model_id: 'gpt-5',
+          current_model_label: 'GPT-5 x5',
+          available_models: [{ id: 'gpt-5', label: 'GPT-5 x5' }],
+        },
+      })
+    );
+
+    render(<AcpModelSelector conversation_id='conversation-1' backend='codex' />);
+
+    const modelBody = screen.getAllByTestId('submenu-body')[0];
+    expect(within(modelBody).getByText('GPT-5 x5').closest('[data-tooltip-content]')).toHaveAttribute(
+      'data-tooltip-content',
+      'GPT-5 x5'
+    );
+  });
+
   it('shows thought level descriptions in option tooltips', () => {
     render(<AcpModelSelector conversation_id='conversation-1' backend='codex' />);
 

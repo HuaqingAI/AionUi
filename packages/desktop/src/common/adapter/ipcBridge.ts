@@ -54,6 +54,8 @@ import type {
   HTHExchangeLoginCodeRequest,
   HTHInjectProjectConfigRequest,
   HTHInjectProjectConfigResult,
+  HTHModelPricingDescriptionsRequest,
+  HTHModelPricingDescriptionsResult,
   HTHQuotaSummary,
   HTHStartLoginRequest,
   HTHStartLoginResult,
@@ -529,6 +531,9 @@ export const hth = {
   syncAgentConfigsProgress: bridge.buildEmitter<HTHSyncProgressEvent>('hth.sync-agent-configs.progress'),
   injectProjectConfig: bridge.buildProvider<HTHInjectProjectConfigResult, HTHInjectProjectConfigRequest>(
     'hth.inject-project-config'
+  ),
+  modelPricingDescriptions: bridge.buildProvider<HTHModelPricingDescriptionsResult, HTHModelPricingDescriptionsRequest>(
+    'hth.model-pricing-descriptions'
   ),
   quotaSummary: bridge.buildProvider<HTHQuotaSummary | null, void>('hth.quota-summary'),
   refreshQuotaSummary: bridge.buildProvider<HTHQuotaSummary, void>('hth.refresh-quota-summary'),

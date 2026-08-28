@@ -66,7 +66,7 @@ function normalizeInitialModel(info: AcpModelInfo, initialModelId?: string): Acp
 
 export const useAcpModelInfo = ({
   conversation_id,
-  backend: _backend,
+  backend,
   initialModelId,
   prepareRuntime,
   prepareSetRuntime,
@@ -83,6 +83,38 @@ export const useAcpModelInfo = ({
     enabled,
   });
   const [legacyModelInfo, setLegacyModelInfo] = useState<AcpModelInfo | null>(null);
+  const [hthPricingDescriptions, setHthPricingDescriptions] = useState<Record<string, string>>({});
+  const hthModelIds = useMemo(
+    () =>
+      backend === 'opencode'
+        ? (model?.options
+            .filter((item) => item.value.startsWith('hth/'))
+            .map((item) => item.value.slice('hth/'.length)) ?? [])
+        : [],
+    [backend, model]
+  );
+  const hthModelIdsKey = hthModelIds.join('\u0000');
+
+  useEffect(() => {
+    if (!hthModelIdsKey) {
+      setHthPricingDescriptions({});
+      return;
+    }
+
+    const modelIds = hthModelIdsKey.split('\u0000');
+    let cancelled = false;
+    void ipcBridge.hth.modelPricingDescriptions
+      .invoke({ modelIds })
+      .then((result) => {
+        if (!cancelled) setHthPricingDescriptions(result.descriptions);
+      })
+      .catch(() => {
+        if (!cancelled) setHthPricingDescriptions({});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [hthModelIdsKey]);
 
   const configModelInfo = useMemo<AcpModelInfo | null>(() => {
     if (!model) return null;
@@ -98,10 +130,12 @@ export const useAcpModelInfo = ({
       available_models: availableOptions.map((item) => ({
         id: item.value,
         label: item.label,
-        description: item.description ?? undefined,
+        description:
+          item.description ??
+          (item.value.startsWith('hth/') ? hthPricingDescriptions[item.value.slice('hth/'.length)] : undefined),
       })),
     };
-  }, [initialModelId, model]);
+  }, [hthPricingDescriptions, initialModelId, model]);
   const persistedModelInfo = useMemo<AcpModelInfo | null>(() => {
     if (!initialModelId) return null;
     return {

@@ -13,8 +13,14 @@ import type { AcpConfigOptionDto, AcpModelInfo } from '@/common/types/platform/a
 import { useAcpModelInfo } from '@/renderer/hooks/agent/useAcpModelInfo';
 import { resetEnsureConversationRuntimeStateForTests } from '@/renderer/pages/conversation/utils/ensureConversationRuntime';
 
-const { ensureRuntimeInvokeMock, setConfigOptionInvokeMock, responseStreamHandlers } = vi.hoisted(() => ({
+const {
+  ensureRuntimeInvokeMock,
+  modelPricingDescriptionsInvokeMock,
+  setConfigOptionInvokeMock,
+  responseStreamHandlers,
+} = vi.hoisted(() => ({
   ensureRuntimeInvokeMock: vi.fn(),
+  modelPricingDescriptionsInvokeMock: vi.fn(),
   setConfigOptionInvokeMock: vi.fn(),
   responseStreamHandlers: [] as Array<(message: IResponseMessage) => void>,
 }));
@@ -35,6 +41,9 @@ vi.mock('@/common', () => ({
           };
         }),
       },
+    },
+    hth: {
+      modelPricingDescriptions: { invoke: modelPricingDescriptionsInvokeMock },
     },
   },
 }));
@@ -116,8 +125,10 @@ describe('useAcpModelInfo', () => {
     responseStreamHandlers.length = 0;
     resetEnsureConversationRuntimeStateForTests();
     ensureRuntimeInvokeMock.mockReset();
+    modelPricingDescriptionsInvokeMock.mockReset();
     setConfigOptionInvokeMock.mockReset();
     ensureRuntimeInvokeMock.mockResolvedValue({ recovered: true, config_options: buildConfigOptions(), runtime: null });
+    modelPricingDescriptionsInvokeMock.mockResolvedValue({ descriptions: {} });
     setConfigOptionInvokeMock.mockResolvedValue({
       confirmation: 'observed',
       config_options: buildConfigOptions('opus-4'),
@@ -434,6 +445,62 @@ describe('useAcpModelInfo', () => {
       'HTH/gpt-5.3-codex',
       'HTH/gpt-5.6-terra',
     ]);
+  });
+
+  it('adds HTH model prices to OpenCode option descriptions without replacing native descriptions', async () => {
+    ensureRuntimeInvokeMock.mockResolvedValue({
+      recovered: true,
+      config_options: [
+        {
+          id: 'model',
+          category: 'model',
+          type: 'select',
+          current_value: 'hth/gpt-5.6-terra',
+          options: [
+            { value: 'hth/gpt-5.6-terra', label: 'HTH/GPT-5.6-TERRA x2.5' },
+            {
+              value: 'hth/deepseek-v4-flash',
+              label: 'HTH/DEEPSEEK-V4-FLASH x1',
+              description: 'OpenCode supplied description',
+            },
+            { value: 'openai/gpt-5', label: 'OpenAI/GPT-5' },
+          ],
+        },
+      ],
+      runtime: null,
+    });
+    modelPricingDescriptionsInvokeMock.mockResolvedValue({
+      descriptions: {
+        'gpt-5.6-terra': '输入 $4.00 / 百万 Token\n输出 $8.00 / 百万 Token',
+        'deepseek-v4-flash': '输入 $2.00 / 百万 Token\n输出 $2.00 / 百万 Token',
+      },
+    });
+
+    const { result } = renderUseAcpModelInfo({
+      conversation_id: 'conv-1',
+      backend: 'opencode',
+    });
+
+    await waitFor(() => {
+      expect(modelPricingDescriptionsInvokeMock).toHaveBeenCalledWith({
+        modelIds: ['gpt-5.6-terra', 'deepseek-v4-flash'],
+      });
+    });
+    await waitFor(() => {
+      expect(result.current.model_info?.available_models).toEqual([
+        {
+          id: 'hth/gpt-5.6-terra',
+          label: 'HTH/GPT-5.6-TERRA x2.5',
+          description: '输入 $4.00 / 百万 Token\n输出 $8.00 / 百万 Token',
+        },
+        {
+          id: 'hth/deepseek-v4-flash',
+          label: 'HTH/DEEPSEEK-V4-FLASH x1',
+          description: 'OpenCode supplied description',
+        },
+        { id: 'openai/gpt-5', label: 'OpenAI/GPT-5' },
+      ]);
+    });
   });
 
   it('filters OpenCode Zen provider models from legacy model info updates', async () => {

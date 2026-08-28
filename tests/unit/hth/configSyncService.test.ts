@@ -989,10 +989,12 @@ describe('HTHConfigSyncService auth handling', () => {
     expect(Object.keys(models)).toEqual(['gpt-5.6-terra', 'deepseek-v4-flash', 'custom-text-model']);
     expect(models['gpt-5.6-terra']).toMatchObject({
       name: 'GPT-5.6-TERRA x5',
+      description: '输入 $10.00 / 百万 Token\n输出 $10.00 / 百万 Token',
       modalities: { input: ['text', 'image'], output: ['text', 'image'] },
     });
     expect(models['deepseek-v4-flash']).toMatchObject({
       name: 'DEEPSEEK-V4-FLASH x1',
+      description: '输入 $2.00 / 百万 Token\n输出 $2.00 / 百万 Token',
       modalities: { input: ['text'], output: ['text'] },
     });
     expect(models['gpt-5.6-terra']).not.toHaveProperty('variants');
@@ -1201,7 +1203,7 @@ describe('HTHConfigSyncService auth handling', () => {
     expect(catalog.models[2]).toMatchObject({
       slug: 'grok-4.5',
       display_name: 'GROK-4.5 x2.4',
-      description: 'GROK-4.5 x2.4',
+      description: '输入 $4.00 / 百万 Token\n输出 $8.00 / 百万 Token',
       visibility: 'list',
       supported_in_api: true,
     });
@@ -1392,6 +1394,42 @@ describe('HTHConfigSyncService auth handling', () => {
     });
     expect(reinjection).toEqual({ injected: false, files: [] });
     await expect(fs.readFile(path.join(workspace, 'opencode.jsonc'), 'utf8')).resolves.toBe('{"keep":true}\n');
+  });
+
+  it('returns descriptions only for requested token-priced HTH models', async () => {
+    await writeStoredAuth(authFile);
+    const fetchMock = vi.fn(async (input: string | URL) => {
+      expect(String(input)).toBe('http://127.0.0.1:3001/api/pricing');
+      return new Response(
+        JSON.stringify({
+          data: [
+            { model_name: 'deepseek-v4-flash', quota_type: 0, model_ratio: 1, completion_ratio: 1 },
+            { model_name: 'gpt-5.6-terra', quota_type: 0, model_ratio: 2, completion_ratio: 2 },
+            { model_name: 'per-request', quota_type: 1, model_price: 0.01 },
+          ],
+          group_ratio: { default: 1 },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const service = new HTHConfigSyncService(new HTHAuthService(authFile));
+
+    await expect(
+      service.getModelPricingDescriptions([
+        'deepseek-v4-flash',
+        'gpt-5.6-terra',
+        'per-request',
+        'missing-model',
+        'deepseek-v4-flash',
+      ])
+    ).resolves.toEqual({
+      descriptions: {
+        'deepseek-v4-flash': '输入 $2.00 / 百万 Token\n输出 $2.00 / 百万 Token',
+        'gpt-5.6-terra': '输入 $4.00 / 百万 Token\n输出 $8.00 / 百万 Token',
+      },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
 

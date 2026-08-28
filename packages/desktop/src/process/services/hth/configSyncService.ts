@@ -39,6 +39,7 @@ import codexModelCatalogTemplate from './codexModelCatalogTemplate.json';
 import {
   appendModelMultiplier,
   calculateModelPricing,
+  formatModelPricingDescription,
   type ModelPricingDisplay,
   type ModelPricingSnapshot,
 } from '@/common/modelPricing';
@@ -355,6 +356,43 @@ export class HTHConfigSyncService {
       deleted: deleteResult.deleted,
       packages: packageResults,
       lastSyncedAt: Date.now(),
+    };
+  }
+
+  async getModelPricingDescriptions(modelIds: string[]): Promise<{ descriptions: Record<string, string> }> {
+    if (!Array.isArray(modelIds)) return { descriptions: {} };
+
+    const uniqueModelIds: string[] = [];
+    const seen = new Set<string>();
+    for (const candidate of modelIds) {
+      if (typeof candidate !== 'string') continue;
+      const id = candidate.trim();
+      if (
+        !id ||
+        id.length > MAX_HTH_MODEL_ID_LENGTH ||
+        this.hasAsciiControlCharacters(id) ||
+        seen.has(id) ||
+        uniqueModelIds.length >= MAX_HTH_MODELS
+      ) {
+        continue;
+      }
+      seen.add(id);
+      uniqueModelIds.push(id);
+    }
+    if (uniqueModelIds.length === 0) return { descriptions: {} };
+
+    const access = await this.getAccessOrLogout();
+    if (!access) return { descriptions: {} };
+
+    const pricing = await this.getHTHModelPricing(access);
+    const pricingByModel = this.calculatePricing(uniqueModelIds, pricing);
+    return {
+      descriptions: Object.fromEntries(
+        uniqueModelIds.flatMap((id) => {
+          const description = formatModelPricingDescription(pricingByModel.get(id));
+          return description ? [[id, description]] : [];
+        })
+      ),
     };
   }
 
@@ -743,7 +781,9 @@ export class HTHConfigSyncService {
           Object.assign({}, template, {
             slug: id,
             display_name: appendModelMultiplier(id.toUpperCase(), pricingByModel.get(id)),
-            description: appendModelMultiplier(id.toUpperCase(), pricingByModel.get(id)),
+            description:
+              formatModelPricingDescription(pricingByModel.get(id)) ||
+              appendModelMultiplier(id.toUpperCase(), pricingByModel.get(id)),
             input_modalities: id.toLowerCase().startsWith('deepseek') ? ['text'] : template.input_modalities,
           })
         ),
@@ -808,6 +848,7 @@ export class HTHConfigSyncService {
           ? { input: ['text', 'image'], output: ['text', 'image'] }
           : { input: ['text'], output: ['text'] },
         name: appendModelMultiplier(id.toUpperCase(), pricingByModel.get(id)),
+        description: formatModelPricingDescription(pricingByModel.get(id)),
         reasoning: true,
         temperature: false,
         tool_call: true,

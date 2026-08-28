@@ -117,6 +117,14 @@ export type HTHInjectProjectConfigResult = {
     | 'assistantRuntimeUnsupported';
 };
 
+export type HTHModelPricingDescriptionsRequest = {
+  modelIds: string[];
+};
+
+export type HTHModelPricingDescriptionsResult = {
+  descriptions: Record<string, string>;
+};
+
 export type HTHQuotaWalletSummary = {
   remain_quota: number;
   used_quota: number;

@@ -61,6 +61,10 @@ html body .arco-popconfirm-inner-content {
   color: var(--aion-overlay-text) !important;
 }
 
+html body .arco-tooltip-content-inner {
+  white-space: pre-line;
+}
+
 html body .arco-trigger-arrow.arco-tooltip-arrow,
 html body .arco-popover-arrow.arco-trigger-arrow,
 html body .arco-popconfirm-arrow.arco-trigger-arrow {
