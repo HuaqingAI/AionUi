@@ -18,6 +18,7 @@ import {
 } from '@/renderer/utils/model/agentRuntimeCatalog';
 import type { SlashCommandItem } from '@/common/chat/slash/types';
 import { useManagedAgentRuntimeCatalog } from '@/renderer/hooks/agent/useManagedAgents';
+import { useHthModelPricingDescriptions } from '@/renderer/hooks/agent/useHthModelPricingDescriptions';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useCustomAgentsLoader } from './useCustomAgentsLoader';
 
@@ -246,6 +247,16 @@ export const useGuidAssistantSelection = ({
   }, [selectedAgentRuntimeThoughtLevelOption, selectedThoughtLevelValue]);
   const currentAgentModeOptions = selectedAgentRuntimeModeState.options;
 
+  const pricingModelIds = useMemo(() => {
+    const models = selectedAgentRuntimeModelInfo?.available_models ?? selectedAssistantModels.map((id) => ({ id }));
+    if (selectedAssistantBackend === 'codex') return models.map((model) => model.id);
+    if (selectedAssistantBackend !== 'opencode') return [];
+    return models
+      .filter((model) => model.id.toLowerCase().startsWith('hth/'))
+      .map((model) => model.id.slice('hth/'.length));
+  }, [selectedAgentRuntimeModelInfo?.available_models, selectedAssistantBackend, selectedAssistantModels]);
+  const hthPricingDescriptions = useHthModelPricingDescriptions(pricingModelIds);
+
   const selectedAssistantAvailable = useMemo(() => {
     return selectedAssistant?.agent_status === 'online';
   }, [selectedAssistant]);
@@ -310,12 +321,24 @@ export const useGuidAssistantSelection = ({
   }, [selectedAgentRuntimeThoughtLevelOption, selectedAssistantId]);
 
   const currentAcpCachedModelInfo = useMemo(() => {
-    if (selectedAgentRuntimeModelInfo) {
-      return selectedAgentRuntimeModelInfo;
-    }
+    const modelInfo = selectedAgentRuntimeModelInfo ?? buildAssistantModelInfo(selectedAssistantModels);
+    if (!modelInfo) return null;
 
-    return buildAssistantModelInfo(selectedAssistantModels);
-  }, [selectedAssistantModels, selectedAgentRuntimeModelInfo]);
+    return {
+      ...modelInfo,
+      available_models: modelInfo.available_models.map((model) => {
+        if (model.description) return model;
+        const pricingModelId = model.id.toLowerCase().startsWith('hth/')
+          ? model.id.slice('hth/'.length)
+          : selectedAssistantBackend === 'codex'
+            ? model.id
+            : null;
+        if (!pricingModelId) return model;
+        const description = hthPricingDescriptions[pricingModelId];
+        return description ? Object.assign({}, model, { description }) : model;
+      }),
+    };
+  }, [hthPricingDescriptions, selectedAssistantBackend, selectedAssistantModels, selectedAgentRuntimeModelInfo]);
 
   const defaultAssistantId = useMemo(() => pickDefaultAssistantSelectionKey(assistants), [assistants]);
 

@@ -881,7 +881,7 @@ export class HTHConfigSyncService {
 
   private async fetchHTHModelPricing(access: HTHAccess, cacheKey: string): Promise<ModelPricingSnapshot | null> {
     try {
-      const response = await fetch(new URL('/api/pricing', access.baseUrl), {
+      const response = await fetch(new URL('/api/aionui/pricing', access.baseUrl), {
         method: 'GET',
         headers: {
           Accept: 'application/json',

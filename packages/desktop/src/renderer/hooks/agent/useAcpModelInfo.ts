@@ -7,6 +7,7 @@
 import { ipcBridge } from '@/common';
 import type { IResponseMessage } from '@/common/adapter/ipcBridge';
 import type { AcpConfigOptionDto, AcpModelInfo } from '@/common/types/platform/acpTypes';
+import { useHthModelPricingDescriptions } from './useHthModelPricingDescriptions';
 import {
   type AcpConfigOptionsLoader,
   type AcpConfigSetStatus,
@@ -83,7 +84,6 @@ export const useAcpModelInfo = ({
     enabled,
   });
   const [legacyModelInfo, setLegacyModelInfo] = useState<AcpModelInfo | null>(null);
-  const [hthPricingDescriptions, setHthPricingDescriptions] = useState<Record<string, string>>({});
   const hthModelIds = useMemo(
     () =>
       backend === 'opencode'
@@ -93,28 +93,7 @@ export const useAcpModelInfo = ({
         : [],
     [backend, model]
   );
-  const hthModelIdsKey = hthModelIds.join('\u0000');
-
-  useEffect(() => {
-    if (!hthModelIdsKey) {
-      setHthPricingDescriptions({});
-      return;
-    }
-
-    const modelIds = hthModelIdsKey.split('\u0000');
-    let cancelled = false;
-    void ipcBridge.hth.modelPricingDescriptions
-      .invoke({ modelIds })
-      .then((result) => {
-        if (!cancelled) setHthPricingDescriptions(result.descriptions);
-      })
-      .catch(() => {
-        if (!cancelled) setHthPricingDescriptions({});
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [hthModelIdsKey]);
+  const hthPricingDescriptions = useHthModelPricingDescriptions(hthModelIds, backend === 'opencode');
 
   const configModelInfo = useMemo<AcpModelInfo | null>(() => {
     if (!model) return null;
