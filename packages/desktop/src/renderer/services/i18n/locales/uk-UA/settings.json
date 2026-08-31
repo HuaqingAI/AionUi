@@ -1187,7 +1187,8 @@
     "node": "the managed Node runtime",
     "acpTool": "the managed ACP tool",
     "codexAcp": "the Codex ACP runtime component",
-    "claudeAgentAcp": "the Claude ACP runtime component"
+    "claudeAgentAcp": "the Claude ACP runtime component",
+    "python": "кероване середовище Python 3.14"
   },
   "updateReadyInstall": "{{version}} готова, установити зараз",
   "assistantAgentUnavailable": "Потрібний агент зараз недоступний.",

@@ -5,16 +5,24 @@
  */
 
 import { execFile } from 'node:child_process';
+import { constants as fsConstants, lstatSync, realpathSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import yauzl from 'yauzl';
+import type { IRuntimeStatusEvent } from '@/common/adapter/ipcBridge';
 import { getDataPath } from '../utils/utils';
 
 export type UvBootstrapStatus = 'ready' | 'skipped' | 'failed';
+export type ManagedPythonBootstrapStatus = UvBootstrapStatus;
 
 export type UvBootstrapResult = {
   status: UvBootstrapStatus;
+  error?: string;
+};
+
+export type ManagedPythonBootstrapResult = {
+  status: ManagedPythonBootstrapStatus;
   error?: string;
 };
 
@@ -24,6 +32,12 @@ type UvStartupEnv = {
   AIONUI_E2E_TEST?: string;
 };
 
+export type ManagedPythonCommandRunner = (
+  file: string,
+  args: string[],
+  options: { cwd?: string; env?: NodeJS.ProcessEnv; timeout?: number }
+) => Promise<{ stderr?: string; stdout?: string }>;
+
 export type EnsureUvReadyOptions = {
   bundledArtifactPath?: string;
   copyArtifact?: CopyArtifact;
@@ -32,11 +46,33 @@ export type EnsureUvReadyOptions = {
   extractArtifact?: ExtractArtifact;
 };
 
+export type EnsureManagedPythonOptions = {
+  commandRunner?: ManagedPythonCommandRunner;
+  dataPath?: string;
+  emitStatus?: (event: IRuntimeStatusEvent) => void;
+  env?: UvStartupEnv & NodeJS.ProcessEnv;
+};
+
 const UV_VERSION = '0.11.31';
 const UV_INSTALL_TIMEOUT_MS = 180000;
+const MANAGED_PYTHON_VERSION = '3.14';
+const MANAGED_PYTHON_SCOPE = {
+  kind: 'custom_agent' as const,
+  id: 'startup-python',
+};
+const MANAGED_PYTHON_RESOURCE_ID = 'python-3.14';
 const execFileAsync = promisify(execFile);
 
 let startupPromise: Promise<UvBootstrapResult> | null = null;
+let managedPythonPromise: Promise<ManagedPythonBootstrapResult> | null = null;
+let latestManagedPythonStatus: IRuntimeStatusEvent | null = null;
+
+class ManagedPythonFindCommandError extends Error {
+  constructor(cause: unknown) {
+    super(normalizeError(cause));
+    this.name = 'ManagedPythonFindCommandError';
+  }
+}
 
 function normalizeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -98,6 +134,14 @@ function getUvToolBinDirectory(dataPath = getDataPath()): string {
   return path.join(dataPath, 'runtime', 'uv-tool-bin');
 }
 
+function getManagedPythonInstallDirectory(dataPath = getDataPath()): string {
+  return path.join(dataPath, 'runtime', 'uv-python');
+}
+
+export function getManagedPythonCommandDirectory(dataPath = getDataPath()): string {
+  return path.join(dataPath, 'runtime', 'uv-python-bin');
+}
+
 function getUvExecutablePath(dataPath = getDataPath(), command: 'uv' | 'uvx' = 'uv'): string {
   return path.join(getUvRuntimeDirectory(dataPath), `${command}${getUvTarget().executableExtension}`);
 }
@@ -126,15 +170,47 @@ function prependPathEntry(entry: string, env: NodeJS.ProcessEnv): void {
   }
 }
 
+function isPathInside(parentPath: string, childPath: string): boolean {
+  const relative = path.relative(parentPath, childPath);
+  return relative !== '' && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+}
+
+function isManagedPythonCommandDirectorySafe(dataPath: string): boolean {
+  const commandDirectory = getManagedPythonCommandDirectory(dataPath);
+  const managedInstallDirectory = path.resolve(getManagedPythonInstallDirectory(dataPath));
+
+  try {
+    const commandDirectoryStats = lstatSync(commandDirectory);
+    if (process.platform === 'win32') {
+      return (
+        commandDirectoryStats.isSymbolicLink() &&
+        isPathInside(managedInstallDirectory, realpathSync(commandDirectory))
+      );
+    }
+    if (!commandDirectoryStats.isDirectory() || commandDirectoryStats.isSymbolicLink()) {
+      return false;
+    }
+
+    const commandPath = path.join(commandDirectory, 'python');
+    return lstatSync(commandPath).isSymbolicLink() && isPathInside(managedInstallDirectory, realpathSync(commandPath));
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'ENOENT';
+  }
+}
+
 export function addManagedUvBinsToPath(dataPath = getDataPath(), env: NodeJS.ProcessEnv = process.env): void {
   const toolBin = getUvToolBinDirectory(dataPath);
   const uvBin = getUvRuntimeDirectory(dataPath);
+  const pythonBin = getManagedPythonCommandDirectory(dataPath);
   prependPathEntry(uvBin, env);
   prependPathEntry(toolBin, env);
+  if (isManagedPythonCommandDirectorySafe(dataPath)) {
+    prependPathEntry(pythonBin, env);
+  }
   env.UV_CACHE_DIR = path.join(dataPath, 'runtime', 'uv-cache');
   env.UV_TOOL_DIR = path.join(dataPath, 'runtime', 'uv-tools');
   env.UV_TOOL_BIN_DIR = toolBin;
-  env.UV_PYTHON_INSTALL_DIR = path.join(dataPath, 'runtime', 'uv-python');
+  env.UV_PYTHON_INSTALL_DIR = getManagedPythonInstallDirectory(dataPath);
   env.UV_MANAGED_PYTHON = '1';
   env.UV_NO_PROGRESS = '1';
 }
@@ -154,6 +230,154 @@ async function runCommand(
     stderr: typeof stderr === 'string' ? stderr : undefined,
     stdout: typeof stdout === 'string' ? stdout : undefined,
   };
+}
+
+async function validateManagedPythonExecutable(
+  dataPath: string,
+  candidatePath: string,
+  env: NodeJS.ProcessEnv,
+  commandRunner: ManagedPythonCommandRunner
+): Promise<string> {
+  const trimmedPath = candidatePath.trim();
+  if (!trimmedPath || !path.isAbsolute(trimmedPath)) {
+    throw new Error('uv did not report an absolute managed Python executable path');
+  }
+
+  const managedInstallDirectory = path.resolve(getManagedPythonInstallDirectory(dataPath));
+  const declaredExecutablePath = path.resolve(trimmedPath);
+  if (!isPathInside(managedInstallDirectory, declaredExecutablePath)) {
+    throw new Error('uv reported a Python executable outside the managed runtime directory');
+  }
+
+  const installStats = await fs.lstat(managedInstallDirectory);
+  if (installStats.isSymbolicLink()) {
+    throw new Error('managed Python installation directory must not be a symlink');
+  }
+
+  const installDirectory = await fs.realpath(managedInstallDirectory);
+  const executablePath = await fs.realpath(trimmedPath);
+  if (!isPathInside(installDirectory, executablePath)) {
+    throw new Error('uv reported a Python executable outside the managed runtime directory');
+  }
+
+  const executableStats = await fs.stat(executablePath);
+  if (!executableStats.isFile()) {
+    throw new Error('uv reported a managed Python path that is not a file');
+  }
+
+  const executableName = path.basename(executablePath).toLowerCase();
+  const expectedName =
+    process.platform === 'win32' ? executableName === 'python.exe' : /^python(?:\d+(?:\.\d+)*)?$/.test(executableName);
+  if (!expectedName) {
+    throw new Error('uv reported a managed runtime file that is not a Python executable');
+  }
+
+  if (process.platform !== 'win32') {
+    await fs.access(executablePath, fsConstants.X_OK);
+  }
+
+  const versionResult = await commandRunner(executablePath, ['--version'], {
+    cwd: dataPath,
+    env,
+    timeout: UV_INSTALL_TIMEOUT_MS,
+  });
+  const versionOutput = `${versionResult.stdout ?? ''}\n${versionResult.stderr ?? ''}`.trim();
+  if (!/^Python 3\.14(?:\.\d+)?(?:[a-z0-9._-]*)?(?:\s|$)/im.test(versionOutput)) {
+    throw new Error('uv reported a managed runtime file that is not Python 3.14');
+  }
+
+  return executablePath;
+}
+
+async function refreshManagedPythonCommandDirectory(dataPath: string, executablePath: string): Promise<void> {
+  const commandDirectory = getManagedPythonCommandDirectory(dataPath);
+
+  if (process.platform === 'win32') {
+    const executableDirectory = path.dirname(executablePath);
+    let existingStats: Awaited<ReturnType<typeof fs.lstat>> | null = null;
+    try {
+      existingStats = await fs.lstat(commandDirectory);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw error;
+      }
+    }
+
+    if (existingStats) {
+      if (!existingStats.isSymbolicLink()) {
+        throw new Error('managed Python command directory is not an application-owned junction');
+      }
+      try {
+        const existingTarget = await fs.realpath(commandDirectory);
+        if (path.resolve(existingTarget).toLowerCase() === path.resolve(executableDirectory).toLowerCase()) {
+          return;
+        }
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+          throw error;
+        }
+      }
+      await fs.rm(commandDirectory, { force: false, recursive: true });
+    }
+
+    await fs.symlink(executableDirectory, commandDirectory, 'junction');
+    return;
+  }
+
+  await fs.mkdir(commandDirectory, { recursive: true });
+  const commandPath = path.join(commandDirectory, 'python');
+  try {
+    const existingStats = await fs.lstat(commandPath);
+    if (!existingStats.isSymbolicLink()) {
+      throw new Error('managed Python command is not an application-owned symlink');
+    }
+    await fs.unlink(commandPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw error;
+    }
+  }
+  await fs.symlink(executablePath, commandPath);
+}
+
+function emitManagedPythonStatus(
+  emitStatus: EnsureManagedPythonOptions['emitStatus'],
+  phase: IRuntimeStatusEvent['phase'],
+  failureKind?: IRuntimeStatusEvent['failure_kind'],
+  message?: string
+): void {
+  const event: IRuntimeStatusEvent = {
+    resource: 'python',
+    resource_id: MANAGED_PYTHON_RESOURCE_ID,
+    scope: MANAGED_PYTHON_SCOPE,
+    phase,
+    ...(failureKind ? { failure_kind: failureKind } : {}),
+    ...(message ? { message } : {}),
+  };
+  latestManagedPythonStatus = event;
+  emitStatus?.(event);
+}
+
+export function getLatestManagedPythonStatus(): IRuntimeStatusEvent | null {
+  return latestManagedPythonStatus;
+}
+
+async function findManagedPython(
+  dataPath: string,
+  env: NodeJS.ProcessEnv,
+  commandRunner: ManagedPythonCommandRunner
+): Promise<string> {
+  let result: { stderr?: string; stdout?: string };
+  try {
+    result = await commandRunner(getUvExecutablePath(dataPath), ['python', 'find', MANAGED_PYTHON_VERSION], {
+      cwd: dataPath,
+      env,
+      timeout: UV_INSTALL_TIMEOUT_MS,
+    });
+  } catch (error) {
+    throw new ManagedPythonFindCommandError(error);
+  }
+  return validateManagedPythonExecutable(dataPath, result.stdout ?? '', env, commandRunner);
 }
 
 async function extractWindowsZip(archivePath: string, destination: string): Promise<void> {
@@ -261,6 +485,98 @@ export function isUvBootstrapEnabled(env: UvStartupEnv = process.env): boolean {
   return shouldEnsureUvOnStartup(env);
 }
 
+export async function ensureManagedPython(
+  options: EnsureManagedPythonOptions = {}
+): Promise<ManagedPythonBootstrapResult> {
+  const env = options.env ?? process.env;
+  if (!shouldEnsureUvOnStartup(env)) {
+    return { status: 'skipped' };
+  }
+
+  const dataPath = options.dataPath ?? getDataPath();
+  const commandRunner = options.commandRunner ?? runCommand;
+
+  try {
+    const uvResult = await ensureUvReady({ dataPath, env });
+    if (uvResult.status !== 'ready') {
+      const message = uvResult.error ?? 'managed uv runtime is not ready';
+      emitManagedPythonStatus(options.emitStatus, 'failed', 'validation_failed', message);
+      return { status: 'failed', error: message };
+    }
+
+    emitManagedPythonStatus(options.emitStatus, 'validating');
+    let executablePath: string;
+    try {
+      executablePath = await findManagedPython(dataPath, env, commandRunner);
+    } catch (findError) {
+      if (!(findError instanceof ManagedPythonFindCommandError)) {
+        throw findError;
+      }
+
+      emitManagedPythonStatus(options.emitStatus, 'downloading');
+      try {
+        await commandRunner(getUvExecutablePath(dataPath), ['python', 'install', MANAGED_PYTHON_VERSION], {
+          cwd: dataPath,
+          env,
+          timeout: UV_INSTALL_TIMEOUT_MS,
+        });
+      } catch (installError) {
+        const message = normalizeError(installError);
+        emitManagedPythonStatus(options.emitStatus, 'failed', 'download_failed', message);
+        return { status: 'failed', error: message };
+      }
+
+      emitManagedPythonStatus(options.emitStatus, 'validating');
+      try {
+        executablePath = await findManagedPython(dataPath, env, commandRunner);
+      } catch (validationError) {
+        const message = normalizeError(validationError);
+        emitManagedPythonStatus(options.emitStatus, 'failed', 'validation_failed', message);
+        return { status: 'failed', error: message };
+      }
+    }
+
+    await refreshManagedPythonCommandDirectory(dataPath, executablePath);
+    prependPathEntry(getManagedPythonCommandDirectory(dataPath), env);
+    prependPathEntry(path.dirname(executablePath), env);
+    emitManagedPythonStatus(options.emitStatus, 'ready');
+    return { status: 'ready' };
+  } catch (error) {
+    const message = normalizeError(error);
+    emitManagedPythonStatus(options.emitStatus, 'failed', 'validation_failed', message);
+    return { status: 'failed', error: message };
+  }
+}
+
+export function ensureManagedPythonOnce(
+  options: EnsureManagedPythonOptions = {}
+): Promise<ManagedPythonBootstrapResult> {
+  if (managedPythonPromise) {
+    return managedPythonPromise;
+  }
+
+  const bootstrapPromise = ensureManagedPython(options);
+  managedPythonPromise = bootstrapPromise;
+  void bootstrapPromise.finally(() => {
+    if (managedPythonPromise === bootstrapPromise) {
+      managedPythonPromise = null;
+    }
+  });
+  return bootstrapPromise;
+}
+
+export async function ensureManagedPythonOnStartup(
+  options: EnsureManagedPythonOptions = {}
+): Promise<ManagedPythonBootstrapResult> {
+  const result = await ensureManagedPythonOnce(options);
+  if (result.status === 'ready') {
+    console.info('[uv] managed Python 3.14 runtime is ready');
+  } else if (result.status === 'failed') {
+    console.warn('[uv] managed Python 3.14 runtime bootstrap failed:', result.error);
+  }
+  return result;
+}
+
 async function ensureUvInstalled(options: {
   bundledArtifactPath?: string;
   copyArtifact: CopyArtifact;
@@ -310,7 +626,7 @@ export async function ensureUvReady(options: EnsureUvReadyOptions = {}): Promise
   const extractArtifact = options.extractArtifact ?? extractBundledArtifact;
 
   try {
-    addManagedUvBinsToPath(dataPath);
+    addManagedUvBinsToPath(dataPath, env);
     await ensureUvInstalled({
       bundledArtifactPath: options.bundledArtifactPath,
       copyArtifact,

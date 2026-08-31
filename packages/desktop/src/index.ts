@@ -42,7 +42,7 @@ import {
   type OpenCodeBootstrapResult,
   type OpenCodeManagedAgentHealthResult,
 } from './process/startup/opencodeStartup';
-import { ensureUvReadyOnStartup } from './process/startup/uvStartup';
+import { ensureManagedPythonOnStartup, ensureUvReadyOnStartup } from './process/startup/uvStartup';
 import { installQuitCleanup } from './process/startup/quitCleanup';
 import { shouldRegisterBackendStartup } from './process/startup/singleInstanceGating';
 import { ProcessConfig } from './process/utils/initStorage';
@@ -242,6 +242,7 @@ let codexManagedAgentHealthPromise: Promise<OpenCodeManagedAgentHealthResult> | 
 let dwsManagedAgentHealthPromise: Promise<OpenCodeManagedAgentHealthResult> | null = null;
 let officeCliManagedAgentHealthPromise: Promise<OpenCodeManagedAgentHealthResult> | null = null;
 let rendererReadyForRuntimeStatus = false;
+let managedPythonBootstrapScheduled = false;
 
 ipcMain.on('get-backend-port', (event) => {
   event.returnValue = backendManager.port;
@@ -582,6 +583,25 @@ function scheduleOpenCodeManagedAgentHealthAfterRendererReady(backendPort: numbe
     });
 }
 
+function scheduleManagedPythonAfterStartup(): void {
+  if (
+    managedPythonBootstrapScheduled ||
+    !backendStartedOk ||
+    (!rendererReadyForRuntimeStatus && !isWebUIMode) ||
+    !openCodeRuntimeDataPath
+  ) {
+    return;
+  }
+
+  managedPythonBootstrapScheduled = true;
+  void ensureManagedPythonOnStartup({
+    dataPath: openCodeRuntimeDataPath,
+    emitStatus: ipcBridge.runtime.localStatusChanged.emit,
+  }).catch((error) => {
+    console.warn('[HQBuddy] Managed Python bootstrap unexpectedly rejected:', error);
+  });
+}
+
 function markBackendReady(backendPort: number, source: string): void {
   if (backendStartedOk) return;
   console.log(`[HQBuddy] ${source} ready (port=${backendPort})`);
@@ -593,6 +613,7 @@ function markBackendReady(backendPort: number, source: string): void {
   (globalThis as typeof globalThis & { __backendStartupFailed?: boolean }).__backendStartupFailed = false;
   void ensureAdminUserOnce(backendPort);
   scheduleOpenCodeManagedAgentHealthAfterRendererReady(backendPort);
+  scheduleManagedPythonAfterStartup();
   scheduleBackendMigrations();
 }
 
@@ -702,6 +723,7 @@ const createWindow = ({ showOnReady = true }: { showOnReady?: boolean } = {}): v
     const backendPort = (globalThis as typeof globalThis & { __backendPort?: number }).__backendPort;
     if (backendStartedOk && backendPort) {
       scheduleOpenCodeManagedAgentHealthAfterRendererReady(backendPort);
+      scheduleManagedPythonAfterStartup();
     }
   });
 

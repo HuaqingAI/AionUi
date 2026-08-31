@@ -20,6 +20,7 @@ import { createOrUpdateTray, destroyTray, setCloseToTrayEnabled } from '@process
 import { readCloseToTraySetting, writeCloseToTraySetting } from '@process/utils/closeToTraySetting';
 import { DESKTOP_PET_FEATURE_ENABLED } from '@/common/config/constants';
 import { ensureManagedNodeEnvironmentMarker } from '@process/startup/opencodeStartup';
+import { ensureManagedPythonOnStartup, getLatestManagedPythonStatus } from '@process/startup/uvStartup';
 
 type LanguageChangeListener = () => void;
 let _languageChangeListener: LanguageChangeListener | null = null;
@@ -126,4 +127,13 @@ export function initSystemSettingsBridge(): void {
   ipcBridge.systemSettings.isManagedEnvironmentReady.provider(async () => {
     return ensureManagedNodeEnvironmentMarker({ dataPath: getSystemDir().workDir });
   });
+
+  ipcBridge.systemSettings.retryManagedPythonRuntime.provider(async () => {
+    return ensureManagedPythonOnStartup({
+      dataPath: getSystemDir().workDir,
+      emitStatus: ipcBridge.runtime.localStatusChanged.emit,
+    });
+  });
+
+  ipcBridge.systemSettings.getManagedPythonRuntimeStatus.provider(() => getLatestManagedPythonStatus());
 }

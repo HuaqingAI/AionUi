@@ -2069,6 +2069,7 @@ export type I18nKey =
   | 'settings.runtimeResource.claudeAgentAcp'
   | 'settings.runtimeResource.codexAcp'
   | 'settings.runtimeResource.node'
+  | 'settings.runtimeResource.python'
   | 'settings.runtimeScope.conversation'
   | 'settings.runtimeScope.customAgent'
   | 'settings.runtimeScope.mcp'

@@ -411,7 +411,7 @@ export interface ICdpConfig {
 }
 
 export type RuntimeStatusScopeKind = 'conversation' | 'mcp' | 'custom_agent';
-export type RuntimeResourceKind = 'node' | 'acp_tool';
+export type RuntimeResourceKind = 'node' | 'acp_tool' | 'python';
 export type RuntimeStatusPhase = 'waiting_for_lock' | 'downloading' | 'extracting' | 'validating' | 'ready' | 'failed';
 export type RuntimeFailureKind =
   | 'timeout'
@@ -438,6 +438,11 @@ export interface IRuntimeStatusEvent {
   message?: string;
   status_code?: number;
 }
+
+export type IManagedPythonBootstrapResult = {
+  status: 'ready' | 'skipped' | 'failed';
+  error?: string;
+};
 
 export interface IStartOnBootStatus {
   supported: boolean;
@@ -1283,6 +1288,12 @@ export const systemSettings = {
   getPetConfirmEnabled: bridge.buildProvider<boolean, void>('system-settings:get-pet-confirm-enabled'),
   setPetConfirmEnabled: bridge.buildProvider<void, { enabled: boolean }>('system-settings:set-pet-confirm-enabled'),
   isManagedEnvironmentReady: bridge.buildProvider<boolean, void>('system-settings:is-managed-environment-ready'),
+  retryManagedPythonRuntime: bridge.buildProvider<IManagedPythonBootstrapResult, void>(
+    'system-settings:retry-managed-python-runtime'
+  ),
+  getManagedPythonRuntimeStatus: bridge.buildProvider<IRuntimeStatusEvent | null, void>(
+    'system-settings:get-managed-python-runtime-status'
+  ),
   ensureNodeRuntime: httpPost<{ ready: boolean }, { scope: IRuntimeStatusScope }>('/api/system/ensure-node-runtime'),
 };
 

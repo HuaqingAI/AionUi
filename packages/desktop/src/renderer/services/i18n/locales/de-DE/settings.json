@@ -1236,7 +1236,8 @@
     "node": "die verwaltete Node-Laufzeit",
     "acpTool": "das verwaltete ACP-Tool",
     "codexAcp": "die Codex ACP-Laufzeitkomponente",
-    "claudeAgentAcp": "die Claude ACP-Laufzeitkomponente"
+    "claudeAgentAcp": "die Claude ACP-Laufzeitkomponente",
+    "python": "die verwaltete Python-3.14-Laufzeit"
   },
   "runtimeScope": {
     "conversation": "Unterhaltung",

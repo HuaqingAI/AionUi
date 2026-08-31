@@ -1273,7 +1273,8 @@
     "node": "the managed Node runtime",
     "acpTool": "the managed ACP tool",
     "codexAcp": "the Codex ACP runtime component",
-    "claudeAgentAcp": "the Claude ACP runtime component"
+    "claudeAgentAcp": "the Claude ACP runtime component",
+    "python": "yönetilen Python 3.14 çalışma zamanı"
   },
   "updateReadyInstall": "{{version}} hazır, şimdi yükle",
   "assistantAgentUnavailable": "Gereken aracı şu anda kullanılamıyor.",

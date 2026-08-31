@@ -1268,7 +1268,8 @@
     "node": "زمان اجرای مدیریت‌شده Node",
     "acpTool": "ابزار مدیریت‌شده ACP",
     "codexAcp": "جزء زمان اجرای Codex ACP",
-    "claudeAgentAcp": "جزء زمان اجرای Claude ACP"
+    "claudeAgentAcp": "جزء زمان اجرای Claude ACP",
+    "python": "زمان اجرای مدیریت‌شده Python 3.14"
   },
   "runtimeScope": {
     "conversation": "مکالمه",

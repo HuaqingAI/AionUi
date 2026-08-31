@@ -1275,7 +1275,8 @@
     "node": "the managed Node runtime",
     "acpTool": "the managed ACP tool",
     "codexAcp": "the Codex ACP runtime component",
-    "claudeAgentAcp": "the Claude ACP runtime component"
+    "claudeAgentAcp": "the Claude ACP runtime component",
+    "python": "관리되는 Python 3.14 런타임"
   },
   "updateReadyInstall": "{{version}} 준비 완료, 지금 설치",
   "assistantAgentUnavailable": "필요한 에이전트를 현재 사용할 수 없습니다.",

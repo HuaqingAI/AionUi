@@ -1234,7 +1234,8 @@
     "node": "el runtime de Node administrado",
     "acpTool": "la herramienta ACP administrada",
     "codexAcp": "el componente de runtime ACP de Codex",
-    "claudeAgentAcp": "el componente de runtime ACP de Claude"
+    "claudeAgentAcp": "el componente de runtime ACP de Claude",
+    "python": "el runtime de Python 3.14 administrado"
   },
   "runtimeScope": {
     "conversation": "Conversación",

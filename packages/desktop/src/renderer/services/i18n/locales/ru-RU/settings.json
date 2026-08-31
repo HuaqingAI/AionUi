@@ -1273,7 +1273,8 @@
     "node": "управляемая среда Node",
     "acpTool": "управляемый ACP-инструмент",
     "codexAcp": "компонент среды выполнения Codex ACP",
-    "claudeAgentAcp": "компонент среды выполнения Claude ACP"
+    "claudeAgentAcp": "компонент среды выполнения Claude ACP",
+    "python": "управляемая среда Python 3.14"
   },
   "updateReadyInstall": "{{version}} готова, установить сейчас",
   "assistantAgentUnavailable": "Требуемый агент сейчас недоступен.",

@@ -51,7 +51,7 @@ import { ThemeProvider } from './hooks/context/ThemeContext';
 import { PreviewProvider } from './pages/conversation/Preview/context/PreviewContext';
 
 // Arco Design
-import { ConfigProvider, Modal, Spin, Typography } from '@arco-design/web-react';
+import { Button, ConfigProvider, Modal, Spin, Typography } from '@arco-design/web-react';
 // Configure Arco Design to use React 18's createRoot, fixing Message component's CopyReactDOM.render error
 import '@arco-design/web-react/es/_util/react-19-adapter';
 import '@arco-design/web-react/dist/css/arco.css';
@@ -231,8 +231,15 @@ function resolveStartupRuntimeToolLabel(event: IRuntimeStatusEvent): string | nu
   return toolId ? (STARTUP_RUNTIME_TOOL_LABELS[toolId] ?? null) : null;
 }
 
+function resolveStartupRuntimeResourceLabel(event: IRuntimeStatusEvent, t: TFunction): string | null {
+  if (event.resource === 'python' && event.scope.kind === 'custom_agent' && event.scope.id === 'startup-python') {
+    return t('settings.runtimeResource.python');
+  }
+  return resolveStartupRuntimeToolLabel(event);
+}
+
 function getStartupRuntimeStatusMessage(event: IRuntimeStatusEvent, t: TFunction): string | null {
-  const resource = resolveStartupRuntimeToolLabel(event);
+  const resource = resolveStartupRuntimeResourceLabel(event, t);
   if (!resource) {
     return null;
   }
@@ -256,8 +263,11 @@ const GlobalStartupRuntimeStatusMessage: React.FC = () => {
   const [status, setStatus] = useState<{
     phase: IRuntimeStatusEvent['phase'];
     message: string;
+    retryable: boolean;
   } | null>(null);
+  const [retrying, setRetrying] = useState(false);
   const dismissTimerRef = useRef<number | null>(null);
+  const receivedLivePythonStatusRef = useRef(false);
 
   useEffect(() => {
     const handleRuntimeStatus = (event: IRuntimeStatusEvent) => {
@@ -272,7 +282,12 @@ const GlobalStartupRuntimeStatusMessage: React.FC = () => {
       setStatus({
         phase: event.phase,
         message: content,
+        retryable:
+          event.resource === 'python' && event.scope.kind === 'custom_agent' && event.scope.id === 'startup-python',
       });
+      if (event.phase !== 'failed') {
+        setRetrying(false);
+      }
       if (event.phase === 'ready') {
         dismissTimerRef.current = window.setTimeout(() => {
           setStatus(null);
@@ -281,8 +296,22 @@ const GlobalStartupRuntimeStatusMessage: React.FC = () => {
       }
     };
 
-    const unsubscribeBackendStatus = ipcBridge.runtime.statusChanged.on(handleRuntimeStatus);
-    const unsubscribeLocalStatus = ipcBridge.runtime.localStatusChanged.on(handleRuntimeStatus);
+    const handleLiveRuntimeStatus = (event: IRuntimeStatusEvent) => {
+      if (event.resource === 'python' && event.scope.kind === 'custom_agent' && event.scope.id === 'startup-python') {
+        receivedLivePythonStatusRef.current = true;
+      }
+      handleRuntimeStatus(event);
+    };
+    const unsubscribeBackendStatus = ipcBridge.runtime.statusChanged.on(handleLiveRuntimeStatus);
+    const unsubscribeLocalStatus = ipcBridge.runtime.localStatusChanged.on(handleLiveRuntimeStatus);
+    void ipcBridge.systemSettings.getManagedPythonRuntimeStatus
+      .invoke()
+      .then((event) => {
+        if (event && !receivedLivePythonStatusRef.current) {
+          handleRuntimeStatus(event);
+        }
+      })
+      .catch(() => {});
     return () => {
       if (dismissTimerRef.current) {
         window.clearTimeout(dismissTimerRef.current);
@@ -304,9 +333,14 @@ const GlobalStartupRuntimeStatusMessage: React.FC = () => {
         ? 'border-success-5 bg-success-light-1 text-success-7 shadow-[0_12px_36px_rgba(var(--success-6),0.2)]'
         : 'border-primary-5 bg-primary-light-1 text-primary-7 shadow-[0_12px_36px_rgba(var(--primary-6),0.22)]';
 
+  const retryManagedPython = () => {
+    setRetrying(true);
+    void ipcBridge.systemSettings.retryManagedPythonRuntime.invoke().finally(() => setRetrying(false));
+  };
+
   return (
     <div
-      className={`pointer-events-none fixed left-50% top-14px z-10002 flex min-h-44px max-w-[calc(100vw-32px)] translate-x--50% items-center gap-10px rounded-12px border border-solid px-16px py-10px text-13px font-500 leading-20px backdrop-blur-sm md:max-w-520px ${toneClass}`}
+      className={`${status.phase === 'failed' && status.retryable ? 'pointer-events-auto' : 'pointer-events-none'} fixed left-50% top-14px z-10002 flex min-h-44px max-w-[calc(100vw-32px)] translate-x--50% items-center gap-10px rounded-12px border border-solid px-16px py-10px text-13px font-500 leading-20px backdrop-blur-sm md:max-w-520px ${toneClass}`}
       role='status'
       aria-live='polite'
       data-testid='startup-runtime-status'
@@ -318,6 +352,18 @@ const GlobalStartupRuntimeStatusMessage: React.FC = () => {
         <Spin size={14} />
       ) : null}
       <span className='min-w-0 truncate'>{status.message}</span>
+      {status.phase === 'failed' && status.retryable ? (
+        <Button
+          size='mini'
+          type='text'
+          loading={retrying}
+          disabled={retrying}
+          onClick={retryManagedPython}
+          className='shrink-0'
+        >
+          {t('settings.retry')}
+        </Button>
+      ) : null}
     </div>
   );
 };
