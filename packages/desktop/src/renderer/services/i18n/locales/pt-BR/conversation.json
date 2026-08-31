@@ -563,7 +563,8 @@
     "selected": "MCP selecionado"
   },
   "runtimePreparing": {
-    "sendboxHint": "Preparando o ambiente de execução. A primeira inicialização pode demorar um pouco mais."
+    "sendboxHint": "Preparando o ambiente de execução. A primeira inicialização pode demorar um pouco mais.",
+    "notReady": "O ambiente ainda está sendo inicializado. Tente novamente mais tarde."
   },
   "sendbox": {
     "hint": "Digite / para comandos, @ para referenciar arquivos, ↑/↓ para o histórico de mensagens"

@@ -46,6 +46,7 @@ import { iconColors } from '@/renderer/styles/colors';
 import { emitter, useAddEventListener } from '@/renderer/utils/emitter';
 import { mergeFileSelectionItems } from '@/renderer/utils/file/fileSelection';
 import { buildDisplayMessage, collectSelectedFiles } from '@/renderer/utils/file/messageFiles';
+import { assertManagedEnvironmentReady, ManagedEnvironmentNotReadyError } from '@/renderer/utils/managedEnvironment';
 import type { AgentModeOption } from '@/renderer/utils/model/agentTypes';
 import { Message, Tag } from '@arco-design/web-react';
 import { Brain, MagicHat, Shield } from '@icon-park/react';
@@ -284,6 +285,17 @@ const AionrsSendBox: React.FC<{
 
   const executeCommand = useCallback(
     async ({ input, files }: Pick<ConversationCommandQueueItem, 'input' | 'files'>) => {
+      try {
+        await assertManagedEnvironmentReady();
+      } catch (error) {
+        if (error instanceof ManagedEnvironmentNotReadyError) {
+          Message.warning(t('conversation.runtimePreparing.notReady'));
+          markSendFailed({ kind: 'ordinary', reason: t('conversation.runtimePreparing.notReady') });
+          return;
+        }
+        throw error;
+      }
+
       if (teamPermission) await teamPermission.warmupSession();
       if (!current_model?.use_model) {
         Message.warning(t('conversation.chat.noModelSelected'));

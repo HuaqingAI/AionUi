@@ -556,7 +556,8 @@
     }
   },
   "runtimePreparing": {
-    "sendboxHint": "Préparation de l'environnement d'exécution. Le premier démarrage peut prendre un peu plus de temps."
+    "sendboxHint": "Préparation de l'environnement d'exécution. Le premier démarrage peut prendre un peu plus de temps.",
+    "notReady": "L'environnement est encore en cours d'initialisation. Réessayez plus tard."
   },
   "sendbox": {
     "hint": "Tapez / pour les commandes, @ pour référencer des fichiers, ↑/↓ pour l'historique des messages"

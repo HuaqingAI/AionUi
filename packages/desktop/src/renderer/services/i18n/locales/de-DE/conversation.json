@@ -558,7 +558,8 @@
     "selected": "Ausgewählte MCP"
   },
   "runtimePreparing": {
-    "sendboxHint": "Laufzeit-Umgebung wird vorbereitet. Der erste Start kann etwas länger dauern."
+    "sendboxHint": "Laufzeit-Umgebung wird vorbereitet. Der erste Start kann etwas länger dauern.",
+    "notReady": "Die Umgebung wird noch initialisiert. Bitte versuchen Sie es später erneut."
   },
   "sendbox": {
     "hint": "Tippe / für Befehle, @ um Dateien zu referenzieren, ↑/↓ für den Nachrichtenverlauf"

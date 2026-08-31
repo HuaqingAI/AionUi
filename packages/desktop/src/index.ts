@@ -35,6 +35,7 @@ import {
   ensureGoogleWorkspaceCliReadyOnStartup,
   ensureNoxinfluencerCliReadyOnStartup,
   ensureOfficeCliReadyOnStartup,
+  ensureManagedNodeEnvironmentMarker,
   ensureOpenCodeReadyOnStartup,
   ensureShopifyCliReadyOnStartup,
   ensureZiniaoOpenReadyOnStartup,
@@ -498,37 +499,87 @@ function scheduleOpenCodeManagedAgentHealthAfterRendererReady(backendPort: numbe
   if (!rendererReadyForRuntimeStatus || !mainWindow || mainWindow.isDestroyed()) {
     return;
   }
-  void checkOpenCodeManagedAgentHealthOnce(backendPort).then((healthResult) => {
+  const managedEnvironmentDataPath = openCodeRuntimeDataPath ?? undefined;
+  void ensureManagedNodeEnvironmentMarker({ dataPath: managedEnvironmentDataPath })
+    .then((ready) => {
+      console.log(`[HQBuddy:ready] managedEnvironment:initial-${ready ? 'ready' : 'pending'}`);
+    })
+    .catch((error) => {
+      console.warn('[HQBuddy] Failed to check managed environment marker:', error);
+    });
+  const opencodeBootstrap = checkOpenCodeManagedAgentHealthOnce(backendPort).then((healthResult) => {
     console.log(
       `[HQBuddy:ready] opencodeHealth:${healthResult.checked ? healthResult.status || 'checked' : 'skipped'}`
     );
+    return openCodeBootstrapResult;
   });
-  void checkCodexManagedAgentHealthOnce(backendPort).then((healthResult) => {
+  const codexBootstrap = checkCodexManagedAgentHealthOnce(backendPort).then((healthResult) => {
     console.log(`[HQBuddy:ready] codexHealth:${healthResult.checked ? healthResult.status || 'checked' : 'skipped'}`);
+    return codexBootstrapResult;
   });
-  void checkDwsManagedAgentHealthOnce(backendPort).then((healthResult) => {
+  const dwsBootstrap = checkDwsManagedAgentHealthOnce(backendPort).then((healthResult) => {
     console.log(`[HQBuddy:ready] dwsHealth:${healthResult.checked ? healthResult.status || 'checked' : 'skipped'}`);
+    return dwsBootstrapResult;
   });
-  void checkOfficeCliManagedAgentHealthOnce(backendPort).then((healthResult) => {
+  const officeCliBootstrap = checkOfficeCliManagedAgentHealthOnce(backendPort).then((healthResult) => {
     console.log(
       `[HQBuddy:ready] officecliHealth:${healthResult.checked ? healthResult.status || 'checked' : 'skipped'}`
     );
+    return officeCliBootstrapResult;
   });
-  void ensureZiniaoOpenReadyOnStartup({ dataPath: openCodeRuntimeDataPath ?? undefined }).then((result) => {
-    console.log(`[HQBuddy:ready] ziniaoOpen:${result.status}`);
-  });
-  void ensureShopifyCliReadyOnStartup({ dataPath: openCodeRuntimeDataPath ?? undefined }).then((result) => {
-    console.log(`[HQBuddy:ready] shopifyCli:${result.status}`);
-  });
-  void ensureBeisenCliReadyOnStartup({ dataPath: openCodeRuntimeDataPath ?? undefined }).then((result) => {
-    console.log(`[HQBuddy:ready] beisenCli:${result.status}`);
-  });
-  void ensureGoogleWorkspaceCliReadyOnStartup({ dataPath: openCodeRuntimeDataPath ?? undefined }).then((result) => {
+  const ziniaoBootstrap = ensureZiniaoOpenReadyOnStartup({ dataPath: openCodeRuntimeDataPath ?? undefined }).then(
+    (result) => {
+      console.log(`[HQBuddy:ready] ziniaoOpen:${result.status}`);
+      return result;
+    }
+  );
+  const shopifyBootstrap = ensureShopifyCliReadyOnStartup({ dataPath: openCodeRuntimeDataPath ?? undefined }).then(
+    (result) => {
+      console.log(`[HQBuddy:ready] shopifyCli:${result.status}`);
+      return result;
+    }
+  );
+  const beisenBootstrap = ensureBeisenCliReadyOnStartup({ dataPath: openCodeRuntimeDataPath ?? undefined }).then(
+    (result) => {
+      console.log(`[HQBuddy:ready] beisenCli:${result.status}`);
+      return result;
+    }
+  );
+  const googleWorkspaceBootstrap = ensureGoogleWorkspaceCliReadyOnStartup({
+    dataPath: openCodeRuntimeDataPath ?? undefined,
+  }).then((result) => {
     console.log(`[HQBuddy:ready] googleWorkspaceCli:${result.status}`);
+    return result;
   });
-  void ensureNoxinfluencerCliReadyOnStartup({ dataPath: openCodeRuntimeDataPath ?? undefined }).then((result) => {
+  const noxinfluencerBootstrap = ensureNoxinfluencerCliReadyOnStartup({
+    dataPath: openCodeRuntimeDataPath ?? undefined,
+  }).then((result) => {
     console.log(`[HQBuddy:ready] noxinfluencerCli:${result.status}`);
+    return result;
   });
+
+  void Promise.allSettled([
+    opencodeBootstrap,
+    codexBootstrap,
+    dwsBootstrap,
+    officeCliBootstrap,
+    ziniaoBootstrap,
+    shopifyBootstrap,
+    beisenBootstrap,
+    googleWorkspaceBootstrap,
+    noxinfluencerBootstrap,
+  ])
+    .then(async (results) => {
+      const rejected = results.filter((result) => result.status === 'rejected');
+      if (rejected.length > 0) {
+        console.warn(`[HQBuddy] ${rejected.length} managed environment bootstrap task(s) rejected`);
+      }
+      const ready = await ensureManagedNodeEnvironmentMarker({ dataPath: managedEnvironmentDataPath });
+      console.log(`[HQBuddy:ready] managedEnvironment:${ready ? 'ready' : 'pending'}`);
+    })
+    .catch((error) => {
+      console.warn('[HQBuddy] Failed to persist managed environment marker:', error);
+    });
 }
 
 function markBackendReady(backendPort: number, source: string): void {

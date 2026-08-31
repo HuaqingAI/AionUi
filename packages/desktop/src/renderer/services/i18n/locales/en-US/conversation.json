@@ -561,7 +561,8 @@
     "selected": "Selected MCP"
   },
   "runtimePreparing": {
-    "sendboxHint": "Preparing the runtime environment. First startup can take a little longer."
+    "sendboxHint": "Preparing the runtime environment. First startup can take a little longer.",
+    "notReady": "The environment is still initializing. Please try again later."
   },
   "sendbox": {
     "hint": "Type / for commands, @ to reference files, ↑/↓ for message history"

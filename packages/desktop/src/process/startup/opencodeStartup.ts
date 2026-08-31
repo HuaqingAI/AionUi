@@ -190,6 +190,7 @@ const ZINIAO_OPEN_STARTUP_SCOPE: IRuntimeStatusScope = {
 };
 const HEALTH_CHECK_TIMEOUT_MS = 30000;
 const OPENCODE_INSTALL_TIMEOUT_MS = 180000;
+export const MANAGED_NODE_ENVIRONMENT_MARKER = '.hqbuddy-environment-ready';
 const MANAGED_NPM_REGISTRY = 'https://registry.npmmirror.com';
 const MANAGED_NODE_LAUNCHER_MARKER = 'AionUi managed Node launcher';
 const MANAGED_DIRECT_LAUNCHER_MARKER = 'AionUi managed direct launcher';
@@ -564,6 +565,66 @@ async function findManagedNodeExecutable(dataPath = getDataPath()): Promise<stri
     }))
   );
   return candidateChecks.find((check) => check.exists)?.candidate ?? null;
+}
+
+function getManagedNodeEnvironmentMarkerPath(dataPath: string): string {
+  return path.join(dataPath, 'runtime', MANAGED_NODE_ENVIRONMENT_MARKER);
+}
+
+export async function isManagedNodeEnvironmentReady(dataPath = getDataPath()): Promise<boolean> {
+  return pathExists(getManagedNodeEnvironmentMarkerPath(dataPath));
+}
+
+export async function ensureManagedNodeEnvironmentMarker(
+  options: {
+    dataPath?: string;
+    env?: OpenCodeStartupEnv;
+  } = {}
+): Promise<boolean> {
+  const dataPath = options.dataPath ?? getDataPath();
+  const env = options.env ?? process.env;
+  if (env.AIONUI_E2E_TEST === '1') {
+    return true;
+  }
+  if (await isManagedNodeEnvironmentReady(dataPath)) {
+    return true;
+  }
+
+  const requiredTools = STARTUP_TOOLS.filter((tool) => shouldEnsureManagedToolOnStartup(tool, env));
+  if (requiredTools.length === 0) {
+    return false;
+  }
+
+  const nodeExecutable = await findManagedNodeExecutable(dataPath);
+  if (!nodeExecutable) {
+    return false;
+  }
+
+  const toolReadiness = await Promise.all(
+    requiredTools.map(async (tool) => {
+      if (!(await pathExists(getManagedToolCommandPath(tool, dataPath)))) {
+        return false;
+      }
+      if (tool.toolId === DWS_TOOL_ID) {
+        const prefix = getManagedToolNpmPrefix(tool, dataPath);
+        return pathExists(getDwsBinaryPath(prefix));
+      }
+      return true;
+    })
+  );
+  if (!toolReadiness.every(Boolean)) {
+    return false;
+  }
+
+  const markerPath = getManagedNodeEnvironmentMarkerPath(dataPath);
+  try {
+    await fs.writeFile(markerPath, 'ready\n', { flag: 'wx' });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+      throw error;
+    }
+  }
+  return true;
 }
 
 function getNpmCliPath(nodeExecutable: string): string {

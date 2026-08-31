@@ -13,12 +13,13 @@
  */
 
 import { ipcBridge } from '@/common';
-import { ProcessConfig } from '@process/utils/initStorage';
+import { getSystemDir, ProcessConfig } from '@process/utils/initStorage';
 import { changeLanguage } from '@process/services/i18n';
 import type { PetSize } from '@process/pet/petTypes';
 import { createOrUpdateTray, destroyTray, setCloseToTrayEnabled } from '@process/utils/tray';
 import { readCloseToTraySetting, writeCloseToTraySetting } from '@process/utils/closeToTraySetting';
 import { DESKTOP_PET_FEATURE_ENABLED } from '@/common/config/constants';
+import { ensureManagedNodeEnvironmentMarker } from '@process/startup/opencodeStartup';
 
 type LanguageChangeListener = () => void;
 let _languageChangeListener: LanguageChangeListener | null = null;
@@ -120,5 +121,9 @@ export function initSystemSettingsBridge(): void {
     await ProcessConfig.set('pet.confirmEnabled', enabled);
     const { setPetConfirmEnabled } = await import('@process/pet/petManager');
     setPetConfirmEnabled(enabled);
+  });
+
+  ipcBridge.systemSettings.isManagedEnvironmentReady.provider(async () => {
+    return ensureManagedNodeEnvironmentMarker({ dataPath: getSystemDir().workDir });
   });
 }

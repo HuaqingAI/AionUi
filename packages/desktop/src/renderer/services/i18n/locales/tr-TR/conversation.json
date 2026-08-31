@@ -559,7 +559,8 @@
     "selected": "Seçili MCP"
   },
   "runtimePreparing": {
-    "sendboxHint": "Çalışma ortamı hazırlanıyor. İlk başlatma biraz daha uzun sürebilir."
+    "sendboxHint": "Çalışma ortamı hazırlanıyor. İlk başlatma biraz daha uzun sürebilir.",
+    "notReady": "Ortam başlatılıyor. Lütfen daha sonra tekrar deneyin."
   },
   "sendbox": {
     "hint": "Komutlar için /, dosya için @ yazın, ↑/↓ ile mesaj geçmişi"

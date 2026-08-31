@@ -8,8 +8,10 @@ import { ipcBridge } from '@/common';
 import type { TMessage } from '@/common/chat/chatLib';
 import type { TConversationRuntimeSummary } from '@/common/config/storage';
 import { parseError, uuid } from '@/common/utils';
+import { Message } from '@arco-design/web-react';
 import { emitter } from '@/renderer/utils/emitter';
 import { buildDisplayMessage } from '@/renderer/utils/file/messageFiles';
+import { assertManagedEnvironmentReady, ManagedEnvironmentNotReadyError } from '@/renderer/utils/managedEnvironment';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getConversationRuntimeWorkspaceErrorMessage } from '../../utils/conversationCreateError';
@@ -66,6 +68,7 @@ export const useAcpInitialMessage = ({
         const files = Array.isArray(initialMessage.files) ? initialMessage.files : [];
         const displayMessage = buildDisplayMessage(input, files, workspacePath || '');
 
+        await assertManagedEnvironmentReady();
         markSendStarted?.();
         setAiProcessing(true);
 
@@ -81,6 +84,14 @@ export const useAcpInitialMessage = ({
         // Initial message sent successfully
         emitter.emit('chat.history.refresh');
       } catch (error) {
+        if (error instanceof ManagedEnvironmentNotReadyError) {
+          const message = t('conversation.runtimePreparing.notReady');
+          Message.warning(message);
+          markSendFailed?.({ kind: 'ordinary', reason: message });
+          resetState();
+          setAiProcessing(false);
+          return;
+        }
         const errorMessageText =
           getConversationRuntimeWorkspaceErrorMessage(error, t) || parseError(error) || t('common.unknownError');
         const busyError = classifyConversationBusyError(error);

@@ -42,6 +42,7 @@ import { iconColors } from '@/renderer/styles/colors';
 import { emitter, useAddEventListener } from '@/renderer/utils/emitter';
 import { mergeFileSelectionItems } from '@/renderer/utils/file/fileSelection';
 import { buildDisplayMessage } from '@/renderer/utils/file/messageFiles';
+import { assertManagedEnvironmentReady, ManagedEnvironmentNotReadyError } from '@/renderer/utils/managedEnvironment';
 import { Message, Tag } from '@arco-design/web-react';
 import { Brain, MagicHat, Shield } from '@icon-park/react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -281,6 +282,7 @@ const AcpSendBox: React.FC<{
       const displayMessage = buildDisplayMessage(input, files, workspacePath || '');
 
       try {
+        await assertManagedEnvironmentReady();
         if (teamPermission) await teamPermission.warmupSession();
         await injectHTHProjectConfig();
         void checkAndUpdateTitle(conversation_id, input);
@@ -303,6 +305,13 @@ const AcpSendBox: React.FC<{
         markSendAccepted(result.turn_id, result.runtime, result.msg_id);
         emitter.emit('chat.history.refresh');
       } catch (error: unknown) {
+        if (error instanceof ManagedEnvironmentNotReadyError) {
+          Message.warning(t('conversation.runtimePreparing.notReady'));
+          markSendFailed({ kind: 'ordinary', reason: t('conversation.runtimePreparing.notReady') });
+          resetState();
+          setAiProcessing(false);
+          return;
+        }
         const errorMsg =
           getConversationRuntimeWorkspaceErrorMessage(error, t) || parseError(error) || t('common.unknownError');
         const busyError = classifyConversationBusyError(error);

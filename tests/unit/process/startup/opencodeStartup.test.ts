@@ -31,6 +31,9 @@ import {
   ensureNoxinfluencerCliReady,
   ensureOfficeCliReady,
   ensureOpenCodeReady,
+  ensureManagedNodeEnvironmentMarker,
+  isManagedNodeEnvironmentReady,
+  MANAGED_NODE_ENVIRONMENT_MARKER,
   ensureShopifyCliReady,
   ensureZiniaoOpenReady,
   shouldEnsureCodexOnStartup,
@@ -208,6 +211,55 @@ describe('opencode startup bootstrap', () => {
     );
     const commandEnv = commandRunner.mock.calls[0]?.[2].env;
     expect(commandEnv?.PATH?.split(path.delimiter)).toContain(path.dirname(fixture.nodeExecutable));
+  });
+
+  it('writes the environment marker after all enabled managed tools are present', async () => {
+    const fixture = await createManagedNodeFixture();
+    await mkdir(path.dirname(fixture.commandPath), { recursive: true });
+    await writeFile(fixture.commandPath, '');
+
+    const env = {
+      AIONUI_BEISEN_CLI_BOOTSTRAP: '0',
+      AIONUI_CODEX_BOOTSTRAP: '0',
+      AIONUI_DWS_BOOTSTRAP: '0',
+      AIONUI_GOOGLEWORKSPACE_CLI_BOOTSTRAP: '0',
+      AIONUI_NOXINFLUENCER_CLI_BOOTSTRAP: '0',
+      AIONUI_OFFICECLI_BOOTSTRAP: '0',
+      AIONUI_SHOPIFY_CLI_BOOTSTRAP: '0',
+      AIONUI_ZINIAO_OPEN_BOOTSTRAP: '0',
+    };
+
+    expect(await isManagedNodeEnvironmentReady(fixture.dataPath)).toBe(false);
+    expect(await ensureManagedNodeEnvironmentMarker({ dataPath: fixture.dataPath, env })).toBe(true);
+    expect(await isManagedNodeEnvironmentReady(fixture.dataPath)).toBe(true);
+    await expect(
+      readFile(path.join(fixture.dataPath, 'runtime', MANAGED_NODE_ENVIRONMENT_MARKER), 'utf8')
+    ).resolves.toBe('ready\n');
+  });
+
+  it('does not write the environment marker while an enabled tool is missing', async () => {
+    const fixture = await createManagedNodeFixture();
+    const env = {
+      AIONUI_BEISEN_CLI_BOOTSTRAP: '0',
+      AIONUI_CODEX_BOOTSTRAP: '0',
+      AIONUI_DWS_BOOTSTRAP: '0',
+      AIONUI_GOOGLEWORKSPACE_CLI_BOOTSTRAP: '0',
+      AIONUI_NOXINFLUENCER_CLI_BOOTSTRAP: '0',
+      AIONUI_OFFICECLI_BOOTSTRAP: '0',
+      AIONUI_SHOPIFY_CLI_BOOTSTRAP: '0',
+      AIONUI_ZINIAO_OPEN_BOOTSTRAP: '0',
+    };
+
+    expect(await ensureManagedNodeEnvironmentMarker({ dataPath: fixture.dataPath, env })).toBe(false);
+    expect(await isManagedNodeEnvironmentReady(fixture.dataPath)).toBe(false);
+  });
+
+  it('allows E2E mode to bypass managed environment installation checks', async () => {
+    const fixture = await createManagedNodeFixture();
+
+    await expect(
+      ensureManagedNodeEnvironmentMarker({ dataPath: fixture.dataPath, env: { AIONUI_E2E_TEST: '1' } })
+    ).resolves.toBe(true);
   });
 
   it('uses managed Node npm to install Beisen CLI into npm-global', async () => {

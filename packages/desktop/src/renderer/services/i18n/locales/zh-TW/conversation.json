@@ -557,7 +557,8 @@
     "selected": "已選 MCP"
   },
   "runtimePreparing": {
-    "sendboxHint": "正在準備執行環境。首次啟動可能會稍慢一些。"
+    "sendboxHint": "正在準備執行環境。首次啟動可能會稍慢一些。",
+    "notReady": "環境正在初始化，請稍後再試。"
   },
   "sendbox": {
     "hint": "輸入 / 喚起命令，@ 引用檔案，↑/↓ 切換歷史訊息"
