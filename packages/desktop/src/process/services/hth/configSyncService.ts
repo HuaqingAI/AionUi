@@ -949,6 +949,13 @@ export class HTHConfigSyncService {
   }
 
   private async ensureCodexTrustedWorkspace(workspace: string): Promise<void> {
+    await this.ensureCodexTrustedWorkspaces([workspace]);
+  }
+
+  private async ensureCodexTrustedWorkspaces(workspaces: string[]): Promise<void> {
+    if (workspaces.length === 0) {
+      return;
+    }
     const codexHome = this.codexHomeDir();
     const configPath = path.join(codexHome, 'config.toml');
     await fs.mkdir(codexHome, { recursive: true });
@@ -958,9 +965,42 @@ export class HTHConfigSyncService {
     } catch {
       content = '';
     }
-    const nextContent = this.upsertCodexTrustedWorkspace(content, workspace);
+    let nextContent = content;
+    for (const workspace of workspaces) {
+      nextContent = this.upsertCodexTrustedWorkspace(nextContent, workspace);
+    }
     if (nextContent !== content) {
-      await fs.writeFile(configPath, nextContent, 'utf8');
+      await this.writeFileAtomically(configPath, nextContent);
+    }
+  }
+
+  private async readCodexTrustedWorkspaces(): Promise<string[]> {
+    const configPath = path.join(this.codexHomeDir(), CODEX_CONFIG_FILE_NAME);
+    let content: string;
+    try {
+      content = await fs.readFile(configPath, 'utf8');
+    } catch {
+      return [];
+    }
+
+    try {
+      const parsed = parseToml(content);
+      if (!this.isRecord(parsed) || !this.isRecord(parsed.projects)) {
+        return [];
+      }
+      return Object.entries(parsed.projects).flatMap(([workspace, project]) => {
+        if (
+          !workspace.trim() ||
+          this.hasAsciiControlCharacters(workspace) ||
+          !this.isRecord(project) ||
+          project.trust_level !== 'trusted'
+        ) {
+          return [];
+        }
+        return [workspace];
+      });
+    } catch {
+      return [];
     }
   }
 
@@ -1036,8 +1076,10 @@ export class HTHConfigSyncService {
     const projectFiles = entries.filter((entry) => entry.section === 'project').map((entry) => entry.relativePath);
     const globalTarget = this.globalTargetForCliType(params.cliType);
     const globalConfigDir = this.globalConfigDirForCliType(params.cliType);
+    const trustedCodexWorkspaces = params.cliType === 'codex' ? await this.readCodexTrustedWorkspaces() : [];
     const copiedGlobalFiles = await copyManagedSection(extractDir, 'global', globalConfigDir, params.agent.version);
     await this.replaceRuntimePlaceholdersInFiles(globalConfigDir, copiedGlobalFiles, params.access);
+    await this.ensureCodexTrustedWorkspaces(trustedCodexWorkspaces);
 
     const nextManifest: HTHPackageManifest = {
       packageId: params.packageId,

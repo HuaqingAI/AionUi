@@ -887,6 +887,96 @@ describe('HTHConfigSyncService auth handling', () => {
     expect(syncManifest.files).toBeUndefined();
   });
 
+  it('preserves trusted Codex workspaces when HTH sync replaces the global config', async () => {
+    await writeStoredAuth(authFile);
+    (globalThis as typeof globalThis & { __backendPort?: number }).__backendPort = 18181;
+    const firstWorkspace = path.join(tempDir, 'codex-workspace-first');
+    const secondWorkspace = path.join(tempDir, 'codex-workspace-second');
+    const sourceZip = path.join(tempDir, 'codex.zip');
+    await writeStoredZip(sourceZip, {
+      'global/config.toml': 'model_provider = "hth"\n',
+    });
+    const sourceZipData = await fs.readFile(sourceZip);
+    const codexHome = path.join(tempDir, 'aionui', 'runtime', 'codex-home');
+    await fs.mkdir(codexHome, { recursive: true });
+    await fs.writeFile(
+      path.join(codexHome, 'config.toml'),
+      [
+        'model = "gpt-5.6-terra"',
+        '',
+        `[projects.${JSON.stringify(firstWorkspace)}]`,
+        'trust_level = "trusted"',
+        '',
+        `[projects.${JSON.stringify(secondWorkspace)}]`,
+        'trust_level = "trusted"',
+        '',
+        '[projects."untrusted-workspace"]',
+        'trust_level = "untrusted"',
+        '',
+      ].join('\n'),
+      'utf8'
+    );
+    const packageStore = new HTHPackageStore(path.join(tempDir, 'packages'));
+    const agent = {
+      id: 'agent-codex',
+      cli_type: 'codex' as const,
+      artifact_key: 'oss://bucket/agent-packages/codex/agent-codex/1.0.0/codex.zip',
+      url: 'https://oss.test/codex.zip?sig=1',
+      url_type: 'https' as const,
+      version: '1.0.0',
+      name: 'Codex Agent',
+      description: '',
+      size: sourceZipData.byteLength,
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ agents: [agent] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(sourceZipData, {
+          status: 200,
+          headers: { 'Content-Type': 'application/zip' },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+      .mockResolvedValueOnce(emptyMcpCatalogResponse())
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ imported: 1, skipped: 0, failed: 0, errors: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await new HTHConfigSyncService(
+      new HTHAuthService(authFile),
+      packageStore,
+      () => codexHome
+    ).syncAgentConfigs({ force: true });
+
+    expect(result).toMatchObject({ success: true, imported: 1 });
+    const config = await fs.readFile(path.join(codexHome, 'config.toml'), 'utf8');
+    expect(config).toContain('model_provider = "hth"');
+    expect(config).toContain(`[projects.${JSON.stringify(path.resolve(firstWorkspace))}]\ntrust_level = "trusted"`);
+    expect(config).toContain(`[projects.${JSON.stringify(path.resolve(secondWorkspace))}]\ntrust_level = "trusted"`);
+    expect(config).not.toContain('untrusted-workspace');
+  });
+
   it('replaces user context placeholders after injecting project config', async () => {
     await writeStoredAuth(authFile, {
       displayName: '张三',
