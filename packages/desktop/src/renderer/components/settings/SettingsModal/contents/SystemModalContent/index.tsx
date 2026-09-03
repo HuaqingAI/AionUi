@@ -46,7 +46,7 @@ const SystemModalContent: React.FC = () => {
     isPackaged: false,
     platform: 'web',
   });
-  const [closeToTray, setCloseToTray] = useState(false);
+  const [closeToTray, setCloseToTray] = useState(true);
   const [gpuStatus, setGpuStatus] = useState<IGpuStatus | null>(null);
   const [notificationEnabled, setNotificationEnabled] = useState(true);
   const [cronNotificationEnabled, setCronNotificationEnabled] = useState(false);
@@ -80,7 +80,7 @@ const SystemModalContent: React.FC = () => {
   }, [isDesktop]);
 
   useEffect(() => {
-    setCloseToTray(configService.get('system.closeToTray') ?? false);
+    setCloseToTray(configService.get('system.closeToTray') ?? true);
     if (isDesktop) {
       ipcBridge.systemSettings.getCloseToTray
         .invoke()

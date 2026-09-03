@@ -11,19 +11,27 @@ import userEvent from '@testing-library/user-event';
 import { ConfigProvider } from '@arco-design/web-react';
 import { SWRConfig } from 'swr';
 
-const { systemInfoMock, updateSystemInfoMock, restartMock, showOpenMock, messageInfoMock, configServiceMock } =
-  vi.hoisted(() => ({
-    systemInfoMock: vi.fn(),
-    updateSystemInfoMock: vi.fn(),
-    restartMock: vi.fn(),
-    showOpenMock: vi.fn(),
-    messageInfoMock: vi.fn(),
-    configServiceMock: {
-      get: vi.fn(() => undefined),
-      set: vi.fn(() => Promise.resolve()),
-      setLocal: vi.fn(),
-    },
-  }));
+const {
+  systemInfoMock,
+  updateSystemInfoMock,
+  restartMock,
+  showOpenMock,
+  messageInfoMock,
+  configServiceMock,
+  getCloseToTrayMock,
+} = vi.hoisted(() => ({
+  systemInfoMock: vi.fn(),
+  updateSystemInfoMock: vi.fn(),
+  restartMock: vi.fn(),
+  showOpenMock: vi.fn(),
+  messageInfoMock: vi.fn(),
+  configServiceMock: {
+    get: vi.fn(() => undefined),
+    set: vi.fn(() => Promise.resolve()),
+    setLocal: vi.fn(),
+  },
+  getCloseToTrayMock: vi.fn(() => Promise.resolve(true)),
+}));
 const clientBusinessSettingsMocks = vi.hoisted(() => ({
   getClientBusinessSetting: vi.fn(),
   setClientBusinessSetting: vi.fn(() => Promise.resolve()),
@@ -73,7 +81,7 @@ vi.mock('@/common', () => ({
       getGpuStatus: { invoke: vi.fn(() => Promise.resolve({ success: false })) },
     },
     systemSettings: {
-      getCloseToTray: { invoke: vi.fn(() => Promise.resolve(false)) },
+      getCloseToTray: { invoke: getCloseToTrayMock },
       setCloseToTray: { invoke: vi.fn(() => Promise.resolve()) },
     },
     dialog: {
@@ -132,6 +140,7 @@ describe('SystemModalContent directory settings', () => {
     vi.clearAllMocks();
     configServiceMock.get.mockImplementation(() => undefined);
     configServiceMock.set.mockResolvedValue(undefined);
+    getCloseToTrayMock.mockResolvedValue(true);
     clientBusinessSettingsMocks.getClientBusinessSetting.mockImplementation(async (key: string) => {
       if (key === 'acp.promptTimeout') return undefined;
       if (key === 'acp.agentIdleTimeout') return undefined;
@@ -260,6 +269,16 @@ describe('SystemModalContent directory settings', () => {
     await user.unhover(workDirButton);
     await user.hover(logDirButton);
     expect(await screen.findByText('settings.changeLogDir')).toBeInTheDocument();
+  });
+
+  it('enables close to tray by default when no local setting exists', async () => {
+    getCloseToTrayMock.mockImplementation(() => new Promise<boolean>(() => {}));
+    renderContent();
+
+    const label = await screen.findByText('settings.closeToTray');
+    const preferenceRow = label.parentElement?.parentElement;
+    expect(preferenceRow).not.toBeNull();
+    expect(within(preferenceRow as HTMLElement).getByRole('switch')).toHaveAttribute('aria-checked', 'true');
   });
 
   it('loads ACP timeouts from backend client settings', async () => {

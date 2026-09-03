@@ -17,7 +17,7 @@ import i18n from '@process/services/i18n';
 import { DESKTOP_PET_FEATURE_ENABLED } from '@/common/config/constants';
 
 let tray: TrayInstance | null = null;
-let closeToTrayEnabled = false;
+let closeToTrayEnabled = true;
 let isQuitting = false;
 let mainWindowRef: BrowserWindow | null = null;
 let cachedActiveCount = 0;

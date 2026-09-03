@@ -28,7 +28,7 @@ const readBackendBoolean = async (key: string): Promise<boolean | undefined> => 
 };
 
 export const readCloseToTraySetting = async (): Promise<boolean> => {
-  const localValue = await ProcessConfig.get(CLOSE_TO_TRAY_CONFIG_KEY);
+  const localValue = await ProcessConfig.get(CLOSE_TO_TRAY_CONFIG_KEY).catch((): undefined => undefined);
   if (typeof localValue === 'boolean') {
     return localValue;
   }
@@ -46,7 +46,7 @@ export const readCloseToTraySetting = async (): Promise<boolean> => {
     return backendValue;
   }
 
-  return false;
+  return true;
 };
 
 export const writeCloseToTraySetting = async (enabled: boolean): Promise<void> => {
