@@ -140,6 +140,7 @@ const BEISEN_CLI_STARTUP_SCOPE: IRuntimeStatusScope = {
 };
 const CODEX_TOOL_ID = 'codex';
 const CODEX_PACKAGE_NAME = '@openai/codex';
+const CODEX_PACKAGE_SPEC = '@openai/codex@0.152.0';
 const CODEX_AGENT_MATCH = 'codex';
 const CODEX_STARTUP_SCOPE: IRuntimeStatusScope = {
   kind: 'custom_agent',
@@ -229,6 +230,7 @@ const CODEX_TOOL: ManagedAcpTool = {
   envDisabledKey: 'AIONUI_CODEX_BOOTSTRAP',
   match: CODEX_AGENT_MATCH,
   packageName: CODEX_PACKAGE_NAME,
+  packageSpec: CODEX_PACKAGE_SPEC,
   scope: CODEX_STARTUP_SCOPE,
   toolId: CODEX_TOOL_ID,
 };

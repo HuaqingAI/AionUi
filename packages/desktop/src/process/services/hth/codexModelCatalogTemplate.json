@@ -19,6 +19,7 @@
           "description": "Greater reasoning depth for complex problems"
         }
       ],
+      "supports_reasoning_summaries": true,
       "shell_type": "shell_command",
       "visibility": "list",
       "supported_in_api": true,

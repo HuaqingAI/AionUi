@@ -333,7 +333,7 @@ describe('opencode startup bootstrap', () => {
     );
   });
 
-  it('uses managed Node npm to install Codex into npm-global', async () => {
+  it('uses managed Node npm to install the pinned Codex version into npm-global', async () => {
     const fixture = await createManagedNodeFixture();
     const commandRunner = vi.fn(async () => {
       await mkdir(path.dirname(fixture.codexCommandPath), { recursive: true });
@@ -356,7 +356,7 @@ describe('opencode startup bootstrap', () => {
         fixture.npmCliPath,
         'install',
         '--global',
-        '@openai/codex',
+        '@openai/codex@0.152.0',
         '--prefix',
         fixture.codexPrefix,
         '--registry',

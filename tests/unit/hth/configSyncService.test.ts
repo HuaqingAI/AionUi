@@ -1300,6 +1300,9 @@ describe('HTHConfigSyncService auth handling', () => {
     });
     expect(catalog.models[0].input_modalities).toEqual(['text']);
     expect(catalog.models[1].input_modalities).toEqual(['text', 'image']);
+    expect(
+      catalog.models.every((model: { supports_reasoning_summaries: boolean }) => model.supports_reasoning_summaries)
+    ).toBe(true);
     expect(createHash('sha256').update(catalog.models[0].base_instructions).digest('hex')).toBe(
       'cbefa6b0bede0e332d957fca70ccacf9f12f4c0ecdf81b819e5cbe1a3b16e265'
     );
