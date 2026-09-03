@@ -281,6 +281,14 @@ describe('SystemModalContent directory settings', () => {
     expect(within(preferenceRow as HTMLElement).getByRole('switch')).toHaveAttribute('aria-checked', 'true');
   });
 
+  it('does not render speech-to-text settings', async () => {
+    renderContent();
+
+    await screen.findByText('settings.workDir');
+
+    expect(screen.queryByText('settings.speechToText')).not.toBeInTheDocument();
+  });
+
   it('loads ACP timeouts from backend client settings', async () => {
     clientBusinessSettingsMocks.getClientBusinessSetting.mockImplementation(async (key: string) => {
       if (key === 'acp.promptTimeout') return 640;
