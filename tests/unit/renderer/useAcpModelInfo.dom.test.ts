@@ -164,13 +164,13 @@ describe('useAcpModelInfo', () => {
           id: 'model',
           category: 'model',
           option_type: 'select',
-          current_value: 'gpt-5.6-terra',
+          current_value: 'hth/gpt-5.6-terra',
           options: [
-            { value: 'gpt-5.6-terra', label: 'GPT-5.6-TERRA 39x' },
-            { value: 'deepseek-v4-flash', label: 'DEEPSEEK-V4-FLASH 1x' },
-            { value: 'gpt-5.6-sol', label: 'GPT-5.6-SOL 78x' },
-            { value: 'deepseek-v4-pro', label: 'DEEPSEEK-V4-PRO 3x' },
-            { value: 'gpt-5.5', label: 'GPT-5.6-LUNA 16x' },
+            { value: 'hth/gpt-5.6-terra', label: 'GPT-5.6-TERRA 39x' },
+            { value: 'hth/deepseek-v4-flash', label: 'DEEPSEEK-V4-FLASH 1x' },
+            { value: 'hth/gpt-5.6-sol', label: 'GPT-5.6-SOL 78x' },
+            { value: 'hth/deepseek-v4-pro', label: 'DEEPSEEK-V4-PRO 3x' },
+            { value: 'hth/gpt-5.5', label: 'GPT-5.6-LUNA 16x' },
           ],
         },
       ],
@@ -183,14 +183,14 @@ describe('useAcpModelInfo', () => {
     });
 
     await waitFor(() => {
-      expect(result.current.model_info?.current_model_id).toBe('gpt-5.6-terra');
+      expect(result.current.model_info?.current_model_id).toBe('hth/gpt-5.6-terra');
     });
     expect(result.current.model_info?.available_models.map((model) => model.id)).toEqual([
-      'gpt-5.6-terra',
-      'deepseek-v4-flash',
-      'gpt-5.6-sol',
-      'deepseek-v4-pro',
-      'gpt-5.5',
+      'hth/gpt-5.6-terra',
+      'hth/deepseek-v4-flash',
+      'hth/gpt-5.6-sol',
+      'hth/deepseek-v4-pro',
+      'hth/gpt-5.5',
     ]);
   });
 
@@ -498,12 +498,11 @@ describe('useAcpModelInfo', () => {
           label: 'HTH/DEEPSEEK-V4-FLASH x1',
           description: 'OpenCode supplied description',
         },
-        { id: 'openai/gpt-5', label: 'OpenAI/GPT-5' },
       ]);
     });
   });
 
-  it('filters OpenCode Zen provider models from legacy model info updates', async () => {
+  it('whitelists HTH models from legacy model info updates for OpenCode', async () => {
     ensureRuntimeInvokeMock.mockResolvedValue({ recovered: true, config_options: [], runtime: null });
 
     const { result } = renderUseAcpModelInfo({
@@ -520,18 +519,89 @@ describe('useAcpModelInfo', () => {
         type: 'acp_model_info',
         conversation_id: 'conv-1',
         data: buildLegacyModelInfo({
-          current_model_id: 'hth/gpt-5.6-terra',
-          current_model_label: 'HTH/gpt-5.6-terra',
+          current_model_id: 'openai/gpt-5',
+          current_model_label: 'OpenAI/GPT-5',
           available_models: [
             { id: 'opencode-zen/mimo-v2.5-free', label: 'OpenCode Zen/MiMo V2.5 Free' },
             { id: 'hth/gpt-5.6-terra', label: 'HTH/gpt-5.6-terra' },
+            { id: 'openai/gpt-5', label: 'OpenAI/GPT-5' },
           ],
         }),
       } as unknown as IResponseMessage);
     });
 
     await waitFor(() => {
-      expect(result.current.model_info?.available_models.map((model) => model.label)).toEqual(['HTH/gpt-5.6-terra']);
+      expect(result.current.model_info).toEqual({
+        current_model_id: 'hth/gpt-5.6-terra',
+        current_model_label: 'HTH/gpt-5.6-terra',
+        available_models: [{ id: 'hth/gpt-5.6-terra', label: 'HTH/gpt-5.6-terra' }],
+      });
+    });
+  });
+
+  it('clears the selected model when OpenCode returns no HTH models', async () => {
+    ensureRuntimeInvokeMock.mockResolvedValue({ recovered: true, config_options: [], runtime: null });
+
+    const { result } = renderUseAcpModelInfo({
+      conversation_id: 'conv-1',
+      backend: 'opencode',
+    });
+
+    await waitFor(() => {
+      expect(responseStreamHandlers.length).toBeGreaterThan(0);
+    });
+
+    act(() => {
+      emitStream({
+        type: 'acp_model_info',
+        conversation_id: 'conv-1',
+        data: buildLegacyModelInfo({
+          current_model_id: 'opencode-zen/mimo-v2.5-free',
+          current_model_label: 'OpenCode Zen/MiMo V2.5 Free',
+          available_models: [{ id: 'opencode-zen/mimo-v2.5-free', label: 'OpenCode Zen/MiMo V2.5 Free' }],
+        }),
+      } as unknown as IResponseMessage);
+    });
+
+    await waitFor(() => {
+      expect(result.current.model_info).toEqual({
+        current_model_id: null,
+        current_model_label: null,
+        available_models: [],
+      });
+    });
+  });
+
+  it('keeps non-HTH models for non-OpenCode runtimes', async () => {
+    ensureRuntimeInvokeMock.mockResolvedValue({ recovered: true, config_options: [], runtime: null });
+
+    const { result } = renderUseAcpModelInfo({
+      conversation_id: 'conv-1',
+      backend: 'claude',
+    });
+
+    await waitFor(() => {
+      expect(responseStreamHandlers.length).toBeGreaterThan(0);
+    });
+
+    const available_models = [
+      { id: 'hth/gpt-5.6-terra', label: 'HTH/gpt-5.6-terra' },
+      { id: 'claude/sonnet-4', label: 'Claude/Sonnet 4' },
+    ];
+    act(() => {
+      emitStream({
+        type: 'acp_model_info',
+        conversation_id: 'conv-1',
+        data: buildLegacyModelInfo({
+          current_model_id: 'claude/sonnet-4',
+          current_model_label: 'Claude/Sonnet 4',
+          available_models,
+        }),
+      } as unknown as IResponseMessage);
+    });
+
+    await waitFor(() => {
+      expect(result.current.model_info?.available_models).toEqual(available_models);
     });
   });
 

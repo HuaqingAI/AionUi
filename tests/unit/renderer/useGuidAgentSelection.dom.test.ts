@@ -686,6 +686,24 @@ describe('assistant model helpers', () => {
     });
   });
 
+  it('whitelists HTH models only for the OpenCode runtime', () => {
+    const agent = {
+      available_models: {
+        current_model_id: 'hth/gpt-5.6-terra',
+        available_models: [
+          { id: 'hth/gpt-5.6-terra', label: 'HTH GPT-5.6 Terra' },
+          { id: 'opencode-zen/mimo-v2.5-free', label: 'OpenCode Zen MiMo' },
+          { id: 'openai/gpt-5', label: 'OpenAI GPT-5' },
+        ],
+      },
+    };
+
+    expect(buildAgentRuntimeModelInfo(agent, 'opencode')?.available_models).toEqual([
+      { id: 'hth/gpt-5.6-terra', label: 'HTH GPT-5.6 Terra', description: undefined },
+    ]);
+    expect(buildAgentRuntimeModelInfo(agent, 'claude')?.available_models).toHaveLength(3);
+  });
+
   it('prefers mode config_options before falling back to available_modes', () => {
     const agent = {
       config_options: {

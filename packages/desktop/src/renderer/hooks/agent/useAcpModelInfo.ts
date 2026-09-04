@@ -14,7 +14,7 @@ import {
   type AcpDerivedOption,
   useAcpConfigOptions,
 } from './useAcpConfigOptions';
-import { filterOpenCodeZenModels } from '@/renderer/utils/model/agentRuntimeCatalog';
+import { filterOpenCodeModels, isOpenCodeRuntime } from '@/renderer/utils/model/agentRuntimeCatalog';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 type UseAcpModelInfoArgs = {
@@ -97,7 +97,7 @@ export const useAcpModelInfo = ({
 
   const configModelInfo = useMemo<AcpModelInfo | null>(() => {
     if (!model) return null;
-    const availableOptions = filterOpenCodeZenModels(model.options);
+    const availableOptions = filterOpenCodeModels(model.options, backend);
     const requestedCurrentModelId = model.currentValue || initialModelId || null;
     const currentModelId = availableOptions.some((item) => item.value === requestedCurrentModelId)
       ? requestedCurrentModelId
@@ -114,7 +114,7 @@ export const useAcpModelInfo = ({
           (item.value.startsWith('hth/') ? hthPricingDescriptions[item.value.slice('hth/'.length)] : undefined),
       })),
     };
-  }, [hthPricingDescriptions, initialModelId, model]);
+  }, [backend, hthPricingDescriptions, initialModelId, model]);
   const persistedModelInfo = useMemo<AcpModelInfo | null>(() => {
     if (!initialModelId) return null;
     return {
@@ -136,9 +136,16 @@ export const useAcpModelInfo = ({
       if (message.conversation_id !== conversation_id) return;
       if (message.type === 'acp_model_info' && message.data) {
         const incoming = normalizeInitialModel(message.data as AcpModelInfo, initialModelId);
+        const available_models = filterOpenCodeModels(incoming.available_models, backend);
+        const isOpenCode = isOpenCodeRuntime(backend);
+        const selectedModel = isOpenCode
+          ? (available_models.find((candidate) => candidate.id === incoming.current_model_id) ?? available_models[0])
+          : undefined;
         const filteredIncoming = {
           ...incoming,
-          available_models: filterOpenCodeZenModels(incoming.available_models),
+          current_model_id: isOpenCode ? (selectedModel?.id ?? null) : incoming.current_model_id,
+          current_model_label: isOpenCode ? (selectedModel?.label ?? null) : incoming.current_model_label,
+          available_models,
         };
         setLegacyModelInfo((previous) => (sameModelInfo(previous, filteredIncoming) ? previous : filteredIncoming));
       } else if (message.type === 'codex_model_info' && message.data) {
@@ -153,7 +160,7 @@ export const useAcpModelInfo = ({
       }
     };
     return ipcBridge.acpConversation.responseStream.on(handler);
-  }, [conversation_id, enabled, initialModelId]);
+  }, [backend, conversation_id, enabled, initialModelId]);
 
   const model_info = configModelInfo ?? legacyModelInfo ?? persistedModelInfo;
 

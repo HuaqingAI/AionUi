@@ -223,8 +223,8 @@ export const useGuidAssistantSelection = ({
     [managedAgentRuntimeCatalog, selectedAssistant?.agent_id]
   );
   const selectedAgentRuntimeModelInfo = useMemo(
-    () => buildAgentRuntimeModelInfo(selectedManagedAgentRuntimeCatalog),
-    [selectedManagedAgentRuntimeCatalog]
+    () => buildAgentRuntimeModelInfo(selectedManagedAgentRuntimeCatalog, selectedAssistantBackend),
+    [selectedAssistantBackend, selectedManagedAgentRuntimeCatalog]
   );
   const currentAgentAvailableCommands = useMemo(
     () => buildAgentRuntimeSlashCommands(selectedManagedAgentRuntimeCatalog),

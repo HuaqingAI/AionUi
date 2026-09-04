@@ -32,21 +32,18 @@ export type AgentRuntimeDerivedOption = {
   options: AgentRuntimeSelectOption[];
 };
 
-type OpenCodeZenModelCandidate = {
+type RuntimeModelCandidate = {
   id?: string | null;
   value?: string | null;
-  name?: string | null;
-  label?: string | null;
 };
 
-function isOpenCodeZenModel(model: OpenCodeZenModelCandidate): boolean {
-  return [model.label, model.name, model.value, model.id].some((value) => {
-    return typeof value === 'string' && /^opencode[\s-]+zen\//i.test(value.trim());
-  });
+export function isOpenCodeRuntime(runtimeKey?: string): boolean {
+  return runtimeKey?.trim().toLowerCase() === 'opencode';
 }
 
-export function filterOpenCodeZenModels<T extends OpenCodeZenModelCandidate>(models: T[]): T[] {
-  return models.filter((model) => !isOpenCodeZenModel(model));
+export function filterOpenCodeModels<T extends RuntimeModelCandidate>(models: T[], runtimeKey?: string): T[] {
+  if (!isOpenCodeRuntime(runtimeKey)) return models;
+  return models.filter((model) => (model.id ?? model.value)?.startsWith('hth/'));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -89,14 +86,15 @@ function normalizeModelOption(value: unknown): { id: string; label: string; desc
   return { id, label, description };
 }
 
-function buildModelInfoFromPayload(value: unknown): AcpModelInfo | null {
+function buildModelInfoFromPayload(value: unknown, runtimeKey?: string): AcpModelInfo | null {
   const payload = parseJsonPayload(value);
   if (!isRecord(payload) || !Array.isArray(payload.available_models)) {
     return null;
   }
 
-  const available_models = filterOpenCodeZenModels(
-    payload.available_models.map(normalizeModelOption).filter((item) => item !== null)
+  const available_models = filterOpenCodeModels(
+    payload.available_models.map(normalizeModelOption).filter((item) => item !== null),
+    runtimeKey
   );
   if (available_models.length === 0) return null;
 
@@ -159,16 +157,20 @@ function buildSelectOptionFromConfigOptions(
   };
 }
 
-function buildModelInfoFromConfigOptions(configOptions: AcpSessionConfigOption[]): AcpModelInfo | null {
+function buildModelInfoFromConfigOptions(
+  configOptions: AcpSessionConfigOption[],
+  runtimeKey?: string
+): AcpModelInfo | null {
   const modelOption = configOptions.find((option) => option.category === 'model' && option.type === 'select');
   if (!modelOption?.options || modelOption.options.length === 0) return null;
 
-  const available_models = filterOpenCodeZenModels(
+  const available_models = filterOpenCodeModels(
     modelOption.options.map((option) => ({
       id: option.value,
       label: option.label || option.name || option.value,
       description: option.description || undefined,
-    }))
+    })),
+    runtimeKey
   );
   if (available_models.length === 0) return null;
 
@@ -185,12 +187,15 @@ function buildModelInfoFromConfigOptions(configOptions: AcpSessionConfigOption[]
   };
 }
 
-export function buildAgentRuntimeModelInfo(agent: AgentRuntimeCatalog | null | undefined): AcpModelInfo | null {
+export function buildAgentRuntimeModelInfo(
+  agent: AgentRuntimeCatalog | null | undefined,
+  runtimeKey?: string
+): AcpModelInfo | null {
   if (!agent) return null;
 
   return (
-    buildModelInfoFromConfigOptions(normalizeConfigOptions(agent.config_options)) ??
-    buildModelInfoFromPayload(agent.available_models)
+    buildModelInfoFromConfigOptions(normalizeConfigOptions(agent.config_options), runtimeKey) ??
+    buildModelInfoFromPayload(agent.available_models, runtimeKey)
   );
 }
 

@@ -135,8 +135,8 @@ const AssistantEditorSections: React.FC<AssistantEditorSectionsProps> = ({ edito
     [currentBackend, managedAgentRuntimeCatalog]
   );
   const currentAgentRuntimeModelInfo = useMemo(
-    () => buildAgentRuntimeModelInfo(currentAgentRuntimeCatalog),
-    [currentAgentRuntimeCatalog]
+    () => buildAgentRuntimeModelInfo(currentAgentRuntimeCatalog, editAgentRuntimeKey),
+    [currentAgentRuntimeCatalog, editAgentRuntimeKey]
   );
   const modelOptions = useMemo(() => {
     if (editAgentRuntimeKey === 'aionrs') {
