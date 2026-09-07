@@ -8,10 +8,8 @@ import { ipcBridge } from '@/common';
 import type { TMessage } from '@/common/chat/chatLib';
 import type { TConversationRuntimeSummary } from '@/common/config/storage';
 import { parseError, uuid } from '@/common/utils';
-import { Message } from '@arco-design/web-react';
 import { emitter } from '@/renderer/utils/emitter';
-import { buildDisplayMessage } from '@/renderer/utils/file/messageFiles';
-import { assertManagedEnvironmentReady, ManagedEnvironmentNotReadyError } from '@/renderer/utils/managedEnvironment';
+import { type ChatFileRef, isChatFileRef, uploadFileRef } from '@/common/types/chatFile';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getConversationRuntimeWorkspaceErrorMessage } from '../../utils/conversationCreateError';
@@ -22,7 +20,6 @@ import { buildSendFailureError } from './buildSendFailureError';
 type UseAcpInitialMessageParams = {
   conversation_id: string;
   backend: string;
-  workspacePath?: string;
   setAiProcessing: (value: boolean) => void;
   resetState: () => void;
   markSendStarted?: () => void;
@@ -30,7 +27,6 @@ type UseAcpInitialMessageParams = {
   markSendFailed?: (failure: ConversationRuntimeSendFailure) => void;
   checkAndUpdateTitle: (conversation_id: string, input: string) => void;
   addOrUpdateMessage: (message: TMessage, prepend?: boolean) => void;
-  beforeSend?: () => Promise<void>;
 };
 
 /**
@@ -40,7 +36,6 @@ type UseAcpInitialMessageParams = {
 export const useAcpInitialMessage = ({
   conversation_id,
   backend,
-  workspacePath,
   setAiProcessing,
   resetState,
   markSendStarted,
@@ -48,7 +43,6 @@ export const useAcpInitialMessage = ({
   markSendFailed,
   checkAndUpdateTitle,
   addOrUpdateMessage,
-  beforeSend,
 }: UseAcpInitialMessageParams): void => {
   const { t } = useTranslation();
 
@@ -65,17 +59,23 @@ export const useAcpInitialMessage = ({
       try {
         const initialMessage = JSON.parse(storedMessage);
         const input = typeof initialMessage.input === 'string' ? initialMessage.input : '';
-        const files = Array.isArray(initialMessage.files) ? initialMessage.files : [];
-        const displayMessage = buildDisplayMessage(input, files, workspacePath || '');
+        // Guid-page initial files are source-tagged ChatFileRefs (`local` for
+        // backend-machine picks, `upload` for device uploads). Body stays plain
+        // text; the backend resolves each ref and injects the [[AION_FILES]]
+        // marker at the send edge. Legacy string[] entries (a stale pre-upgrade
+        // session) coerce to upload refs for back-compat.
+        const files: ChatFileRef[] = Array.isArray(initialMessage.files)
+          ? initialMessage.files
+              .map((f: unknown) => (typeof f === 'string' ? uploadFileRef(f) : f))
+              .filter(isChatFileRef)
+          : [];
 
-        await assertManagedEnvironmentReady();
         markSendStarted?.();
         setAiProcessing(true);
 
-        await beforeSend?.();
         void checkAndUpdateTitle(conversation_id, input);
         const result = await ipcBridge.acpConversation.sendMessage.invoke({
-          input: displayMessage,
+          input,
           conversation_id: conversation_id,
           files,
         });
@@ -84,14 +84,6 @@ export const useAcpInitialMessage = ({
         // Initial message sent successfully
         emitter.emit('chat.history.refresh');
       } catch (error) {
-        if (error instanceof ManagedEnvironmentNotReadyError) {
-          const message = t('conversation.runtimePreparing.notReady');
-          Message.warning(message);
-          markSendFailed?.({ kind: 'ordinary', reason: message });
-          resetState();
-          setAiProcessing(false);
-          return;
-        }
         const errorMessageText =
           getConversationRuntimeWorkspaceErrorMessage(error, t) || parseError(error) || t('common.unknownError');
         const busyError = classifyConversationBusyError(error);
@@ -145,7 +137,6 @@ export const useAcpInitialMessage = ({
   }, [
     addOrUpdateMessage,
     backend,
-    beforeSend,
     checkAndUpdateTitle,
     conversation_id,
     markSendAccepted,
@@ -154,6 +145,5 @@ export const useAcpInitialMessage = ({
     resetState,
     setAiProcessing,
     t,
-    workspacePath,
   ]);
 };

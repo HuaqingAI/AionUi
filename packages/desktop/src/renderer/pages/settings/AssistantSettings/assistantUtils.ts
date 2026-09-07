@@ -155,6 +155,15 @@ export const groupMyAssistants = (assistants: AssistantListItem[]) => {
   };
 };
 
+/** Filter the locally allowed editor backends without changing their order. */
+export const filterAssistantEditorBackends = (backends: AvailableBackend[], query: string): AvailableBackend[] => {
+  const keyword = query.trim().toLowerCase();
+  if (!keyword) return backends;
+  return backends.filter((option) =>
+    [option.name, option.id, option.runtimeKey].some((field) => field?.toLowerCase().includes(keyword))
+  );
+};
+
 export type AssistantCategoryGroup = {
   code: AssistantCategoryCode;
   assistants: AssistantListItem[];

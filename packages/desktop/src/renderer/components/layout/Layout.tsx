@@ -21,7 +21,6 @@ import { NavigationHistoryProvider } from '@renderer/hooks/context/NavigationHis
 import { useNotificationClick } from '@renderer/hooks/system/notification/useNotificationClick';
 import { useBrowserNotification } from '@renderer/hooks/system/notification/useBrowserNotification';
 import { useDesktopTurnNotification } from '@renderer/hooks/system/notification/useDesktopTurnNotification';
-import { useDirectorySelection } from '@renderer/hooks/file/useDirectorySelection';
 import { cleanupSiderTooltips } from '@renderer/utils/ui/siderTooltip';
 import { useConversationShortcuts } from '@renderer/hooks/ui/useConversationShortcuts';
 import { isElectronDesktop } from '@renderer/utils/platform';
@@ -111,7 +110,6 @@ const Layout: React.FC<{
     typeof window === 'undefined' ? 390 : window.innerWidth
   );
   const { onClick } = useDebug();
-  const { contextHolder: directorySelectionContextHolder } = useDirectorySelection();
   useNotificationClick();
   useBrowserNotification();
   useDesktopTurnNotification();
@@ -453,7 +451,6 @@ const Layout: React.FC<{
               }
             >
               <Outlet />
-              {directorySelectionContextHolder}
               <PwaPullToRefresh />
               <Suspense fallback={null}>
                 <UpdateModal />

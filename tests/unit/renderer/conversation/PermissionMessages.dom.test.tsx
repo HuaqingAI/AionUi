@@ -95,10 +95,8 @@ describe('permission message adapters', () => {
     const message = makeGenericMessage();
     render(<MessagePermission message={message} />);
 
-    const once = within(screen.getByTestId('message-permission-option-proceed_once')).getByRole('radio');
-    expect(once).toBeChecked();
     expect(screen.getByText('execute')).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('message-permission-confirm'));
+    fireEvent.click(screen.getByTestId('message-permission-option-proceed_once'));
 
     expect(genericInvoke).toHaveBeenCalledTimes(1);
     expect(genericInvoke).toHaveBeenCalledWith({
@@ -120,9 +118,7 @@ describe('permission message adapters', () => {
     message.content.options = [{ label: value, value }];
     const { unmount } = render(<MessagePermission message={message} />);
 
-    const option = within(screen.getByTestId(`message-permission-option-${value}`)).getByRole('radio');
-    fireEvent.click(option);
-    fireEvent.click(screen.getByTestId('message-permission-confirm'));
+    fireEvent.click(screen.getByTestId(`message-permission-option-${value}`));
 
     expect(genericInvoke).toHaveBeenLastCalledWith({
       conversation_id: 'conversation-1',
@@ -138,10 +134,8 @@ describe('permission message adapters', () => {
   it('keeps the ACP payload exact and defaults confirmation to allow_once', async () => {
     render(<MessageAcpPermission message={makeAcpMessage()} />);
 
-    const once = within(screen.getByTestId('message-acp-permission-option-allow-once-id')).getByRole('radio');
-    expect(once).toBeChecked();
     expect(screen.getByText('edit')).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('message-acp-permission-confirm'));
+    fireEvent.click(screen.getByTestId('message-acp-permission-option-allow-once-id'));
 
     expect(acpInvoke).toHaveBeenCalledTimes(1);
     expect(acpInvoke).toHaveBeenCalledWith({
@@ -164,10 +158,7 @@ describe('permission message adapters', () => {
     render(<MessageAcpPermission message={message} />);
 
     expect(screen.getByText('Fetch package metadata')).toBeInTheDocument();
-    const option = within(screen.getByTestId('message-acp-permission-option-option_0')).getByRole('radio');
-    expect(option).not.toBeChecked();
-    fireEvent.click(option);
-    fireEvent.click(screen.getByTestId('message-acp-permission-confirm'));
+    fireEvent.click(screen.getByTestId('message-acp-permission-option-option_0'));
 
     expect(acpInvoke).toHaveBeenCalledWith({
       confirm_key: 'option_0',
@@ -178,12 +169,29 @@ describe('permission message adapters', () => {
     expect(await screen.findByTestId('message-acp-permission-status')).toBeInTheDocument();
   });
 
-  it('uses the ACP title as operation detail when no raw command is available', () => {
+  it('shows the title once and no detail block when no raw command is available', () => {
+    // Fallback A (2026-08-04 spec): the old behavior echoed the title into the
+    // detail block ("命令: AskUserQuestion" class of cards). With no raw_input
+    // there is nothing to show — the title must appear exactly once.
     const message = makeAcpMessage();
     message.content.tool_call.raw_input = undefined;
     render(<MessageAcpPermission message={message} />);
 
-    expect(screen.getAllByText('Edit package.json')).toHaveLength(2);
+    expect(screen.getAllByText('Edit package.json')).toHaveLength(1);
+  });
+
+  it('renders raw_input as readable JSON when it carries no command', () => {
+    // Fallback A: an agent that smuggles a structured payload through the
+    // permission channel (kimi/qwen style) gets its payload rendered readable
+    // instead of the title being echoed — no per-agent sniffing.
+    const message = makeAcpMessage();
+    message.content.tool_call.raw_input = {
+      questions: [{ question: 'Which style?', options: [{ label: 'Tabs' }] }],
+    } as never;
+    render(<MessageAcpPermission message={message} />);
+
+    expect(screen.getAllByText('Edit package.json')).toHaveLength(1);
+    expect(screen.getByText(/Which style\?/)).toBeInTheDocument();
   });
 
   it('uses the localized ACP fallback title when title and description are absent', () => {
@@ -205,14 +213,14 @@ describe('permission message adapters', () => {
     );
 
     const cards = screen.getAllByTestId('message-permission-card');
-    fireEvent.click(within(cards[1]).getByTestId('message-permission-confirm'));
+    fireEvent.click(within(cards[1]).getByTestId('message-permission-option-proceed_once'));
 
     expect(genericInvoke).toHaveBeenCalledTimes(1);
     expect(genericInvoke).toHaveBeenCalledWith(
       expect.objectContaining({ call_id: 'call-generic-message-2', msg_id: 'db-generic-message-2' })
     );
     expect(await within(cards[1]).findByTestId('message-permission-status')).toBeInTheDocument();
-    expect(within(cards[0]).getByTestId('message-permission-confirm')).toBeEnabled();
+    expect(within(cards[0]).getByTestId('message-permission-option-proceed_once')).toBeEnabled();
     expect(addEventListener.mock.calls.some(([type]) => type === 'keydown')).toBe(false);
     addEventListener.mockRestore();
   });
@@ -221,9 +229,9 @@ describe('permission message adapters', () => {
     genericInvoke.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(undefined);
     render(<MessagePermission message={makeGenericMessage()} />);
 
-    fireEvent.click(screen.getByTestId('message-permission-confirm'));
+    fireEvent.click(screen.getByTestId('message-permission-option-proceed_once'));
     expect(await screen.findByTestId('message-permission-error')).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('message-permission-confirm'));
+    fireEvent.click(screen.getByTestId('message-permission-option-proceed_once'));
 
     expect(await screen.findByTestId('message-permission-status')).toBeInTheDocument();
     expect(genericInvoke).toHaveBeenCalledTimes(2);
@@ -241,9 +249,7 @@ describe('permission message adapters', () => {
 
     expect(screen.getByText('messages.permissionRequest')).toBeInTheDocument();
     expect(screen.getByText('tool')).toBeInTheDocument();
-    const option = within(screen.getByTestId('message-permission-option-option_0')).getByRole('radio');
-    fireEvent.click(option);
-    fireEvent.click(screen.getByTestId('message-permission-confirm'));
+    fireEvent.click(screen.getByTestId('message-permission-option-option_0'));
 
     expect(genericInvoke).toHaveBeenCalledWith({
       conversation_id: 'conversation-1',
@@ -265,9 +271,7 @@ describe('permission message adapters', () => {
     ] as unknown as IMessagePermission['content']['options'];
     render(<MessagePermission message={message} />);
 
-    const option = within(screen.getByTestId(`message-permission-option-${token}`)).getByRole('radio');
-    fireEvent.click(option);
-    fireEvent.click(screen.getByTestId('message-permission-confirm'));
+    fireEvent.click(screen.getByTestId(`message-permission-option-${token}`));
 
     expect(genericInvoke).toHaveBeenCalledWith(
       expect.objectContaining({ data: { value: token }, always_allow: false })
@@ -292,7 +296,7 @@ describe('permission message adapters', () => {
 
     expect(screen.getByText('messages.permissionRequest')).toBeInTheDocument();
     expect(screen.getByText('messages.noOptionsAvailable')).toBeInTheDocument();
-    expect(screen.getByTestId('message-permission-confirm')).toBeDisabled();
+    expect(screen.queryByTestId('message-permission-options')).not.toBeInTheDocument();
 
     const malformedMessage = {
       ...message,
@@ -303,7 +307,7 @@ describe('permission message adapters', () => {
     };
     rerender(<MessagePermission message={malformedMessage} />);
     expect(screen.getByText('messages.option 1')).toBeInTheDocument();
-    expect(within(screen.getByTestId('message-permission-option-option_0')).getByRole('radio')).not.toBeChecked();
+    expect(screen.getByTestId('message-permission-option-option_0')).toBeInTheDocument();
   });
 
   it('treats a non-array generic options payload as empty', () => {
@@ -312,7 +316,7 @@ describe('permission message adapters', () => {
     render(<MessagePermission message={message} />);
 
     expect(screen.getByText('messages.noOptionsAvailable')).toBeInTheDocument();
-    expect(screen.getByTestId('message-permission-confirm')).toBeDisabled();
+    expect(screen.queryByTestId('message-permission-options')).not.toBeInTheDocument();
   });
 
   it('does not render an ACP action when the tool call is missing', () => {
@@ -336,7 +340,7 @@ describe('permission message adapters', () => {
     nextMessage.content.options = null as unknown as IMessageAcpPermission['content']['options'];
     rerender(<MessageAcpPermission message={nextMessage} />);
     expect(screen.getByText('messages.noOptionsAvailable')).toBeInTheDocument();
-    expect(screen.getByTestId('message-acp-permission-confirm')).toBeDisabled();
+    expect(screen.queryByTestId('message-acp-permission-options')).not.toBeInTheDocument();
   });
 
   it('renders a localized ACP fallback for an option without display metadata', () => {
@@ -345,6 +349,6 @@ describe('permission message adapters', () => {
     render(<MessageAcpPermission message={message} />);
 
     expect(screen.getByText('messages.option 1')).toBeInTheDocument();
-    expect(within(screen.getByTestId('message-acp-permission-option-option_0')).getByRole('radio')).not.toBeChecked();
+    expect(screen.getByTestId('message-acp-permission-option-option_0')).toBeInTheDocument();
   });
 });

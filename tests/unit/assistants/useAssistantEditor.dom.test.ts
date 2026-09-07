@@ -381,7 +381,6 @@ describe('useAssistantEditor', () => {
     expect(loadAssistantsMock).toHaveBeenCalled();
     expect(setActiveAssistantIdMock).toHaveBeenCalledWith('new-id');
     expect(swrMutate).toHaveBeenCalledWith('assistants.list');
-    expect(swrMutate).toHaveBeenCalledWith('assistants');
     expect(result.current.editVisible).toBe(false);
   });
 
@@ -422,7 +421,6 @@ describe('useAssistantEditor', () => {
     expect(mockMessage.success).toHaveBeenCalled();
     expect(loadAssistantsMock).toHaveBeenCalled();
     expect(swrMutate).toHaveBeenCalledWith('assistants.list');
-    expect(swrMutate).toHaveBeenCalledWith('assistants');
     expect(swrMutate).toHaveBeenCalledWith('guid.assistant.detail.a1.en');
   });
 
@@ -603,7 +601,6 @@ describe('useAssistantEditor', () => {
     expect(swrMutate).toHaveBeenNthCalledWith(1, 'assistants.list', expect.any(Function), { revalidate: false });
     expect(ipcBridge.assistants.setState.invoke).toHaveBeenCalledWith({ id: 'builtin-1', enabled: false });
     expect(loadAssistantsMock).toHaveBeenCalled();
-    expect(swrMutate).toHaveBeenCalledWith('assistants');
     expect(swrMutate).toHaveBeenCalledWith('guid.assistant.detail.builtin-1.en');
   });
 
@@ -669,7 +666,6 @@ describe('useAssistantEditor', () => {
     expect(consoleErrorSpy).toHaveBeenCalled();
     expect(mockMessage.error).toHaveBeenCalled();
     expect(swrMutate).toHaveBeenNthCalledWith(1, 'assistants.list', expect.any(Function), { revalidate: false });
-    expect(swrMutate).toHaveBeenCalledWith('assistants');
 
     consoleErrorSpy.mockRestore();
   });

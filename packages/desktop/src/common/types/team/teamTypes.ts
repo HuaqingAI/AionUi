@@ -2,6 +2,8 @@
 // Shared team types used by both main process and renderer.
 // Renderer code should import from here instead of @process/team/types.
 
+import type { ChatFileRef } from '@/common/types/chatFile';
+
 /** Role of a teammate within a team */
 export type TeammateRole = 'leader' | 'teammate';
 
@@ -13,6 +15,28 @@ export type TeammateStatus = 'pending' | 'idle' | 'active' | 'completed' | 'fail
 
 /** Workspace sharing strategy for the team */
 export type WorkspaceMode = 'shared' | 'isolated';
+
+export type TeamContextResetAvailability =
+  | 'ready'
+  | 'initializing'
+  | 'busy'
+  | 'dormant'
+  | 'failed'
+  | 'removing'
+  | 'session_stopped'
+  | 'unsupported'
+  | 'leader_not_targetable';
+
+export type TeamContextResetCapability = {
+  supported: boolean;
+  availability: TeamContextResetAvailability;
+};
+
+export type TeamContextResetResponse = {
+  reset_status: 'completed' | 'not_applied';
+  runtime_status: 'ready' | 'failed';
+  preserved_unread_count: number;
+};
 
 /** Persisted assistant configuration within a team */
 export type TeamAssistant = {
@@ -27,6 +51,7 @@ export type TeamAssistant = {
   assistant_id?: string;
   model?: string;
   pending_confirmations?: number;
+  context_reset: TeamContextResetCapability;
 };
 
 /** Persisted team record (stored in SQLite `teams` table) */
@@ -51,11 +76,18 @@ export type TTeam = {
 export type ISendTeamMessageParams = {
   team_id: string;
   input: string;
-  files?: string[];
+  /** Source-tagged file refs; the backend resolves each to an absolute path and
+   *  injects it into the message. See {@link ChatFileRef}. */
+  files?: ChatFileRef[];
 };
 
 export type ISendTeamAgentMessageParams = ISendTeamMessageParams & {
   slot_id: string;
+};
+
+export type IInterruptTeamAgentParams = ISendTeamAgentMessageParams & {
+  reason?: string;
+  queued_policy?: 'retain' | 'discard';
 };
 
 export type TeamRunTargetRole = 'lead' | 'teammate';
@@ -83,6 +115,13 @@ export type ITeamRunAck = {
   enqueue_status: TeamMessageEnqueueStatus;
   message_id: string;
   run: ITeamRunEvent;
+};
+
+export type ITeamInterruptAgentResponse = {
+  outcome: 'interrupted' | 'queued_no_active_turn' | 'completed_race';
+  interrupted_turn_id?: string;
+  message_id: string;
+  target: ITeamSlotWork;
 };
 
 export type ICancelTeamRunParams = {
@@ -114,9 +153,9 @@ export type ITeamRunEvent = {
 };
 
 export type ITeamRunStateResponse = {
-  session_generation: string | null;
+  session_generation?: string | null;
   active_run: ITeamRunEvent | null;
-  slot_work: ITeamSlotWork[];
+  slot_work?: ITeamSlotWork[];
 };
 
 export type ITeamChildTurnEvent = {
@@ -127,6 +166,8 @@ export type ITeamChildTurnEvent = {
   conversation_id: string;
   turn_id: string;
   status: TeamRunStatus;
+  reason?: string;
+  replacement_message_id?: string;
 };
 
 /**
@@ -237,11 +278,63 @@ export type ITeamSessionStatusChangedEvent = {
   error?: string;
 };
 
-/** IPC event pushed when a Team task board item changes */
+/** Read-only mailbox message for the team activity view (matches backend TeamMailboxMessageResponse). */
+export type ITeamMailboxMessage = {
+  id: string;
+  team_id: string;
+  from_agent_id: string;
+  to_agent_id: string;
+  msg_type: string;
+  content: string;
+  summary?: string;
+  files: string[];
+  read: boolean;
+  created_at: number;
+};
+
+/** Read-only task for the team activity view (matches backend TeamTaskResponse; no metadata). */
+export type ITeamTaskItem = {
+  id: string;
+  team_id: string;
+  subject: string;
+  description?: string;
+  status: string;
+  owner?: string;
+  blocked_by: string[];
+  blocks: string[];
+  created_at: number;
+  updated_at: number;
+};
+
+/** One entry of the unified team activity feed (matches backend TeamActivityItemResponse). */
+export type ITeamActivityItem =
+  | { kind: 'message'; created_at: number; id: string; message: ITeamMailboxMessage }
+  | { kind: 'task'; created_at: number; id: string; task: ITeamTaskItem };
+
+/** One keyset-paginated page of the unified activity feed. */
+export type ITeamActivityPage = {
+  items: ITeamActivityItem[];
+  next_cursor?: { ts: number; id: string };
+  has_more: boolean;
+};
+
+/** IPC event pushed when a Team task board item changes.
+ *
+ * The `task`/`change` fields carry the full payload used by the activity view;
+ * the legacy `task_id`/`action` fields are kept optional for back-compat. */
 export type ITeamTaskChangedEvent = {
   team_id: string;
   task_id?: string;
   action?: string;
+  task?: ITeamTaskItem;
+  change?: 'created' | 'updated';
+};
+
+/** IPC event pushed when a Team mailbox message is written or marked read. */
+export type ITeamMailboxChangedEvent = {
+  team_id: string;
+  message: ITeamMailboxMessage;
+  change: 'created' | 'read';
 };
 
 /** IPC event pushed when Team session lifecycle changes */

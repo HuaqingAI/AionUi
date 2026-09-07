@@ -136,6 +136,8 @@
     "html-to-text": "^9.0.5",
     "https-proxy-agent": "^7.0.6",
     "i18next": "^23.7.16",
+    "js-yaml": "^4.1.0",
+    "json5": "^2.2.3",
     "jsonrepair": "^3.13.0",
     "jsonwebtoken": "^9.0.2",
     "katex": "^0.16.22",
@@ -144,6 +146,7 @@
     "multer": "^2.1.1",
     "officeparser": "^5.2.2",
     "openai": "^5.12.2",
+    "postcss": "^8.5.8",
     "pptx2json": "^0.0.10",
     "process": "^0.11.10",
     "qrcode-terminal": "^0.12.0",
@@ -157,6 +160,7 @@
     "react-virtuoso": "^4.18.1",
     "rehype-katex": "^7.0.1",
     "rehype-raw": "^7.0.0",
+    "rehype-sanitize": "^6.0.0",
     "remark-breaks": "^4.0.0",
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
@@ -170,6 +174,7 @@
     "tiny-csrf": "^1.1.6",
     "turndown": "^7.2.2",
     "turndown-plugin-gfm": "^1.0.2",
+    "wavedrom": "^3.6.2",
     "web-tree-sitter": "^0.25.10",
     "ws": "^8.18.3",
     "xlsx-republish": "^0.20.3",
@@ -190,6 +195,7 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/html-to-text": "^9.0.4",
+    "@types/js-yaml": "^4.0.9",
     "@types/multer": "^2.1.0",
     "@types/node": "^24.3.1",
     "@types/qrcode-terminal": "^0.12.0",
@@ -256,7 +262,7 @@
   "engines": {
     "node": ">=22 <25"
   },
-  "aioncoreVersion": "v0.1.52",
+  "aioncoreVersion": "v0.2.1",
   "electronRebuild": {
     "electronVersion": "^37.3.1"
   },

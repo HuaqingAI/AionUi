@@ -9,13 +9,15 @@ import type { IMessageAcpToolCall, IMessageToolCall, IMessageToolGroup, TMessage
 import { useConversationContextSafe } from '@/renderer/hooks/context/ConversationContext';
 import { useConversationRuntimeView } from '@/renderer/pages/conversation/runtime/useConversationRuntimeView';
 import { getChatSurfaceWidthClass } from '@/renderer/pages/conversation/utils/chatSurfaceWidth';
-import { useTeamPermission } from '@/renderer/pages/team/hooks/TeamPermissionContext';
 import { iconColors } from '@/renderer/styles/colors';
 import { CHAT_MESSAGE_JUMP_EVENT, type ChatMessageJumpDetail } from '@/renderer/utils/chat/chatMinimapEvents';
+import { collectAiCopyRows, type TurnCopyItem } from '@/renderer/utils/chat/turnCopy';
 import { Image } from '@arco-design/web-react';
 import { Down } from '@icon-park/react';
 import MessageAcpPermission from '@renderer/pages/conversation/Messages/acp/MessageAcpPermission';
+import MessageQuestion from './MessageQuestion';
 import MessagePermission from './components/MessagePermission';
+import MessageAcpTerminalOutput from '@renderer/pages/conversation/Messages/acp/MessageAcpTerminalOutput';
 import MessageAcpToolCall from '@renderer/pages/conversation/Messages/acp/MessageAcpToolCall';
 import classNames from 'classnames';
 import React, { createContext, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -27,6 +29,7 @@ import HOC from '@renderer/utils/ui/HOC';
 import type { FileChangeInfo } from './MessageFileChanges';
 import MessageFileChanges, { parseDiff } from './MessageFileChanges';
 import { useConversationArtifacts } from './artifacts';
+import { MessageAnchorRail } from './anchorRail';
 import {
   useLoadAnchorMessageWindow,
   useLoadPreviousMessagePage,
@@ -35,7 +38,6 @@ import {
   useMessagePaginationState,
 } from './hooks';
 import MessageAgentStatus from './components/MessageAgentStatus';
-import MessagePlan from './components/MessagePlan';
 import MessageTips from './components/MessageTips';
 import MessageToolCall from './components/MessageToolCall';
 import MessageToolGroup from './components/MessageToolGroup';
@@ -46,7 +48,6 @@ import MessageText from './components/MessageText';
 import MessageThinking from './components/MessageThinking';
 import type { WriteFileResult } from './types';
 import { useAutoScroll } from './useAutoScroll';
-import { useAutoPreviewOfficeFiles } from '@/renderer/hooks/file/useAutoPreviewOfficeFiles';
 import SelectionReplyButton from './components/SelectionReplyButton';
 
 type IMessageVO =
@@ -223,6 +224,9 @@ const MessageItem: React.FC<{
   highlighted?: boolean;
   rowWidthClass: string;
   showCopyRow?: boolean;
+  isLastMessage?: boolean;
+  hasForkAnchor?: boolean;
+  turnTexts?: string[];
 }> = React.memo(
   HOC((props) => {
     const { message, highlighted, rowWidthClass } = props as {
@@ -254,16 +258,30 @@ const MessageItem: React.FC<{
     ({
       message,
       showCopyRow,
+      isLastMessage,
+      hasForkAnchor,
+      turnTexts,
     }: {
       message: TMessage;
       highlighted?: boolean;
       rowWidthClass: string;
       showCopyRow?: boolean;
+      isLastMessage?: boolean;
+      hasForkAnchor?: boolean;
+      turnTexts?: string[];
     }) => {
       const { t } = useTranslation();
       switch (message.type) {
         case 'text':
-          return <MessageText message={message} showCopyRow={showCopyRow}></MessageText>;
+          return (
+            <MessageText
+              message={message}
+              showCopyRow={showCopyRow}
+              isLastMessage={isLastMessage}
+              hasForkAnchor={hasForkAnchor}
+              turnTexts={turnTexts}
+            ></MessageText>
+          );
         case 'tips':
           return <MessageTips message={message}></MessageTips>;
         case 'tool_call':
@@ -276,13 +294,20 @@ const MessageItem: React.FC<{
           return <MessagePermission message={message}></MessagePermission>;
         case 'acp_permission':
           return <MessageAcpPermission message={message}></MessageAcpPermission>;
+        case 'ask':
+          return <MessageQuestion message={message}></MessageQuestion>;
         case 'acp_tool_call':
           return <MessageAcpToolCall message={message}></MessageAcpToolCall>;
-        case 'plan':
-          return <MessagePlan message={message}></MessagePlan>;
+        case 'acp_terminal_output':
+          return <MessageAcpTerminalOutput message={message}></MessageAcpTerminalOutput>;
         case 'thinking':
           return <MessageThinking message={message}></MessageThinking>;
+        // Both are filtered out of `processedList` above and never reach this
+        // switch. These arms exist only to keep the `default` branch's
+        // exhaustiveness check (`getUnhandledMessageType`) satisfied — a plan
+        // renders in ConversationPlanBar, not as a stream row.
         case 'available_commands':
+        case 'plan':
           return null;
         default:
           return <div>{t('messages.unknownMessageType', { type: getUnhandledMessageType(message) })}</div>;
@@ -296,7 +321,14 @@ const MessageItem: React.FC<{
     prev.message.type === next.message.type &&
     prev.highlighted === next.highlighted &&
     prev.rowWidthClass === next.rowWidthClass &&
-    prev.showCopyRow === next.showCopyRow
+    prev.showCopyRow === next.showCopyRow &&
+    prev.isLastMessage === next.isLastMessage &&
+    prev.hasForkAnchor === next.hasForkAnchor &&
+    // Compare by content: the map is rebuilt per render, so reference equality
+    // would defeat the memo for the one row that carries the copy button.
+    (prev.turnTexts === next.turnTexts ||
+      (prev.turnTexts?.length === next.turnTexts?.length &&
+        (prev.turnTexts ?? []).every((segment, i) => segment === next.turnTexts?.[i])))
 );
 
 const MessageList: React.FC<{
@@ -309,11 +341,9 @@ const MessageList: React.FC<{
   const pagination = useMessagePaginationState();
   const artifacts = useConversationArtifacts();
   const conversationContext = useConversationContextSafe();
-  const teamPermission = useTeamPermission();
-  const rowWidthClass = getChatSurfaceWidthClass(Boolean(teamPermission));
+  const rowWidthClass = getChatSurfaceWidthClass();
   const loadPreviousMessagePage = useLoadPreviousMessagePage(conversationContext?.conversation_id);
   const loadAnchorMessageWindow = useLoadAnchorMessageWindow(conversationContext?.conversation_id);
-  useAutoPreviewOfficeFiles(conversationContext);
   // While the agent is still streaming, the in-progress turn's last text keeps
   // moving down, so we defer its copy/timestamp row until the turn finishes to
   // avoid the row flashing in and the layout reflowing mid-stream.
@@ -381,6 +411,9 @@ const MessageList: React.FC<{
       // Skip hidden and available_commands messages
       if (message.hidden) continue;
       if (message.type === 'available_commands') continue;
+      // A plan renders in ConversationPlanBar, never in the stream. Filtered
+      // here rather than rendered as null: a null row still occupies a slot.
+      if (message.type === 'plan') continue;
       if (message.type === 'tool_group') {
         const writeFileResults = message.content.flatMap((item) =>
           item.name === 'WriteFile' && isWriteFileResult(item.result_display) ? [item.result_display] : []
@@ -439,14 +472,35 @@ const MessageList: React.FC<{
   // by tool blocks. While the conversation is still streaming, the final turn's
   // row is withheld (it would otherwise appear then shift down as more text
   // streams in); earlier, already-finished turns always keep their row.
-  const aiCopyRowTextIds = useMemo(() => {
+  const { copyRowIds: aiCopyRowTextIds, turnTextsById: aiTurnTextsById } = useMemo(
+    () => collectAiCopyRows(processedList as TurnCopyItem[], isProcessing),
+    [processedList, isProcessing]
+  );
+
+  // The last REAL message in the visible timeline (pseudo entries like
+  // file/tool summaries don't count). HEAD-fork backends (claude/ACP) only
+  // show the fork entry point here — see `isForkEnabled`.
+  const lastMessageId = useMemo(() => {
+    for (let i = processedList.length - 1; i >= 0; i--) {
+      const item = processedList[i];
+      if (
+        'type' in item &&
+        (item.type === 'file_summary' || item.type === 'tool_summary' || item.type === 'artifact')
+      ) {
+        continue;
+      }
+      return (item as TMessage).id;
+    }
+    return undefined;
+  }, [processedList]);
+
+  // Mirror of the server's fork-anchor resolution ("nearest backend_turn_id at
+  // or before the message"): a message is mid-history forkable once ANY message
+  // at-or-before it carries a turn anchor. Legacy/copied rows before the first
+  // anchor stay un-forkable and their entry is hidden instead of 422-ing.
+  const forkAnchoredIds = useMemo(() => {
     const ids = new Set<string>();
-    let pendingTextId: string | undefined;
-    let lastTurnTextId: string | undefined;
-    const flush = () => {
-      if (pendingTextId) ids.add(pendingTextId);
-      pendingTextId = undefined;
-    };
+    let seenAnchor = false;
     for (const item of processedList) {
       if (
         'type' in item &&
@@ -455,20 +509,11 @@ const MessageList: React.FC<{
         continue;
       }
       const message = item as TMessage;
-      if (message.position === 'right') {
-        flush();
-        continue;
-      }
-      if (message.type === 'text') {
-        pendingTextId = message.id;
-      }
+      if (message.backend_turn_id) seenAnchor = true;
+      if (seenAnchor) ids.add(message.id);
     }
-    lastTurnTextId = pendingTextId;
-    flush();
-    // The final turn is the one that may still be streaming; hide its row until done.
-    if (isProcessing && lastTurnTextId) ids.delete(lastTurnTextId);
     return ids;
-  }, [processedList, isProcessing]);
+  }, [processedList]);
 
   // Use auto-scroll hook
   const {
@@ -677,6 +722,9 @@ const MessageList: React.FC<{
         highlighted={highlighted}
         rowWidthClass={rowWidthClass}
         showCopyRow={showCopyRow}
+        isLastMessage={message.id === lastMessageId}
+        hasForkAnchor={forkAnchoredIds.has(message.id)}
+        turnTexts={aiTurnTextsById.get(message.id)}
       ></MessageItem>
     );
   };
@@ -705,7 +753,15 @@ const MessageList: React.FC<{
             onScroll={handleMessageListScroll}
             onWheel={handleWheel}
           >
-            <div ref={setContentRef} data-testid='message-list-content' style={{ overflowAnchor: 'none' }}>
+            <div
+              ref={setContentRef}
+              data-testid='message-list-content'
+              style={{
+                overflowAnchor: 'none',
+                fontFamily: 'var(--chat-font-family, inherit)',
+                fontWeight: 'var(--chat-font-weight, inherit)',
+              }}
+            >
               <div className='h-10px' />
               {topSlot ? <div className={`${rowWidthClass} mx-auto pb-12px`}>{topSlot}</div> : null}
               {processedList.map((item, index) => (
@@ -720,7 +776,7 @@ const MessageList: React.FC<{
       {showScrollButton && (
         <>
           {/* Gradient mask */}
-          <div className='absolute bottom-0 left-0 right-0 h-100px pointer-events-none' />
+          <div className='absolute bottom-0 start-0 end-0 h-100px pointer-events-none' />
           {/* Scroll button */}
           <div className='absolute bottom-20px left-50% transform -translate-x-50% z-100'>
             <div
@@ -736,6 +792,8 @@ const MessageList: React.FC<{
       )}
 
       <SelectionReplyButton messages={list} />
+
+      <MessageAnchorRail />
     </div>
   );
 };
