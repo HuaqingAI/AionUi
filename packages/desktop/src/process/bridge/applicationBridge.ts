@@ -5,7 +5,7 @@
  */
 
 import type { BrowserWindow } from 'electron';
-import { app } from 'electron';
+import { app, shell } from 'electron';
 import { ipcBridge } from '@/common';
 import { ProcessConfig } from '@process/utils/initStorage';
 import { getZoomFactor, setZoomFactor } from '@process/utils/zoom';
@@ -250,6 +250,15 @@ export function initApplicationBridge(): void {
 
   ipcBridge.hth.authStatus.provider(() => hthAuthService.getStatus());
   ipcBridge.hth.startLogin.provider((request) => hthAuthService.startLogin(request));
+  ipcBridge.hth.openDefaultBrowserSettings.provider(async () => {
+    try {
+      await shell.openExternal('ms-settings:defaultapps');
+      return true;
+    } catch (error) {
+      console.error('[HTHAuth] Failed to open default apps settings:', error);
+      return false;
+    }
+  });
   ipcBridge.hth.exchangeLoginCode.provider((request) => hthAuthService.exchangeLoginCode(request));
   ipcBridge.hth.logout.provider(() => hthAuthService.logout());
   ipcBridge.hth.syncAgentConfigs.provider((request) =>

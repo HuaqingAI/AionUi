@@ -31,6 +31,9 @@
     "loginWithDingTalk": "Sign in with DingTalk",
     "browserOpened": "Sign-in page opened in your browser",
     "startFailed": "Unable to open HTH sign-in",
+    "defaultBrowserUnavailable": "Aucun navigateur par défaut disponible n’a été trouvé. Ouvrez Paramètres > Applications > Applications par défaut, définissez un navigateur par défaut, puis reconnectez-vous.",
+    "openDefaultBrowserSettings": "Ouvrir les paramètres des applications par défaut",
+    "openDefaultBrowserSettingsFailed": "Impossible d’ouvrir les paramètres des applications par défaut",
     "callbackMissing": "HTH sign-in callback is missing required data",
     "exchangeFailed": "HTH sign-in failed",
     "success": "HTH sign-in successful"

@@ -530,6 +530,7 @@ export const application = {
 export const hth = {
   authStatus: bridge.buildProvider<HTHAuthStatus, void>('hth.auth-status'),
   startLogin: bridge.buildProvider<HTHStartLoginResult, HTHStartLoginRequest>('hth.start-login'),
+  openDefaultBrowserSettings: bridge.buildProvider<boolean, void>('hth.open-default-browser-settings'),
   exchangeLoginCode: bridge.buildProvider<HTHAuthStatus, HTHExchangeLoginCodeRequest>('hth.exchange-login-code'),
   logout: bridge.buildProvider<HTHAuthStatus, void>('hth.logout'),
   syncAgentConfigs: bridge.buildProvider<HTHSyncResult, HTHSyncAgentConfigsRequest>('hth.sync-agent-configs'),

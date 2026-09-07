@@ -82,6 +82,44 @@ const REDIRECT_URI = 'hqbuddy://auth/hth-callback';
 const LOOPBACK_CALLBACK_PATH = '/hth/callback';
 const LOGIN_STATE_TTL_MS = 10 * 60 * 1000;
 const DESKTOP_TOKEN_GROUP = 'hthbuddy';
+const DEFAULT_BROWSER_UNAVAILABLE_ERROR_PATTERN = /(?:\b(?:0x800401f5|co_e_appnotfound|2147746293)\b|-2147221003)/i;
+
+type ShellOpenExternalError = {
+  message?: unknown;
+  code?: unknown;
+  errno?: unknown;
+  hresult?: unknown;
+  cause?: unknown;
+};
+
+const isDefaultBrowserUnavailableError = (error: unknown): boolean => {
+  if (typeof error === 'string') {
+    return DEFAULT_BROWSER_UNAVAILABLE_ERROR_PATTERN.test(error);
+  }
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+
+  const shellError = error as ShellOpenExternalError;
+  const cause =
+    typeof shellError.cause === 'object' && shellError.cause !== null
+      ? (shellError.cause as ShellOpenExternalError)
+      : undefined;
+  return [
+    shellError.message,
+    shellError.code,
+    shellError.errno,
+    shellError.hresult,
+    cause?.message,
+    cause?.code,
+    cause?.errno,
+    cause?.hresult,
+  ].some(
+    (value) =>
+      (typeof value === 'string' || typeof value === 'number') &&
+      DEFAULT_BROWSER_UNAVAILABLE_ERROR_PATTERN.test(String(value))
+  );
+};
 
 function escapeHtml(value: string): string {
   return value
@@ -178,8 +216,16 @@ export class HTHAuthService {
     const loginUrl = new URL('/api/aionui/desktop/login', baseUrl);
     loginUrl.searchParams.set('redirect_uri', redirectUri);
     loginUrl.searchParams.set('state', state);
-    await shell.openExternal(loginUrl.toString());
-    return { state, loginUrl: loginUrl.toString() };
+    try {
+      await shell.openExternal(loginUrl.toString());
+    } catch (error) {
+      if (isDefaultBrowserUnavailableError(error)) {
+        this.closePendingCallbackServer();
+        return { outcome: 'default-browser-unavailable' };
+      }
+      throw error;
+    }
+    return { outcome: 'started', state, loginUrl: loginUrl.toString() };
   }
 
   async exchangeLoginCode(request: HTHExchangeLoginCodeRequest): Promise<HTHAuthStatus> {

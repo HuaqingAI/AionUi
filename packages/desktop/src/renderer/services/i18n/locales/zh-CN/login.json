@@ -23,6 +23,9 @@
     "loginWithDingTalk": "使用钉钉登录",
     "browserOpened": "已在浏览器打开登录页",
     "startFailed": "无法打开 HTH 登录",
+    "defaultBrowserUnavailable": "未检测到可用的默认浏览器。请打开“设置 → 应用 → 默认应用”，设置默认浏览器后，重新登录。",
+    "openDefaultBrowserSettings": "打开默认应用设置",
+    "openDefaultBrowserSettingsFailed": "无法打开默认应用设置",
     "callbackMissing": "HTH 登录回调缺少必要参数",
     "exchangeFailed": "HTH 登录失败",
     "success": "HTH 登录成功"

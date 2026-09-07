@@ -10,7 +10,7 @@ import AppLoader from '@renderer/components/layout/AppLoader';
 import AppLogo from '@renderer/components/layout/AppLogo';
 import WindowControls from '@renderer/components/layout/WindowControls';
 import { isElectronDesktop, isMacOS } from '@renderer/utils/platform';
-import { Button, Input, Message, Typography } from '@arco-design/web-react';
+import { Button, Input, Message, Modal, Typography } from '@arco-design/web-react';
 import { Down, Right } from '@icon-park/react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -92,7 +92,22 @@ const HTHLogin: React.FC = () => {
   const handleLogin = useCallback(async () => {
     setLoading(true);
     try {
-      await ipcBridge.hth.startLogin.invoke({ baseUrl: baseUrl.trim() || undefined });
+      const login = await ipcBridge.hth.startLogin.invoke({ baseUrl: baseUrl.trim() || undefined });
+      if (login.outcome === 'default-browser-unavailable') {
+        Modal.confirm({
+          title: formatHTHText(t('login.hth.startFailed')),
+          content: t('login.hth.defaultBrowserUnavailable'),
+          okText: t('login.hth.openDefaultBrowserSettings'),
+          cancelText: t('common.cancel'),
+          onOk: async () => {
+            const opened = await ipcBridge.hth.openDefaultBrowserSettings.invoke();
+            if (!opened) {
+              Message.error(t('login.hth.openDefaultBrowserSettingsFailed'));
+            }
+          },
+        });
+        return;
+      }
       Message.info(formatHTHText(t('login.hth.browserOpened')));
       const loggedIn = await waitForAuthStatus();
       if (!loggedIn && !disposedRef.current) {

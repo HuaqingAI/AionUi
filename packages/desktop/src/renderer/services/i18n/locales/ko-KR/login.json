@@ -31,6 +31,9 @@
     "loginWithDingTalk": "Sign in with DingTalk",
     "browserOpened": "Sign-in page opened in your browser",
     "startFailed": "Unable to open HTH sign-in",
+    "defaultBrowserUnavailable": "사용 가능한 기본 브라우저를 찾을 수 없습니다. ‘설정 > 앱 > 기본 앱’을 열어 기본 브라우저를 설정한 후 다시 로그인하세요.",
+    "openDefaultBrowserSettings": "기본 앱 설정 열기",
+    "openDefaultBrowserSettingsFailed": "기본 앱 설정을 열 수 없습니다",
     "callbackMissing": "HTH sign-in callback is missing required data",
     "exchangeFailed": "HTH sign-in failed",
     "success": "HTH sign-in successful"

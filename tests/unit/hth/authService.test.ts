@@ -101,6 +101,10 @@ describe('HTHAuthService loopback callback', () => {
     const service = new HTHAuthService(authFile, { onLoginComplete });
 
     const login = await service.startLogin({ baseUrl: 'http://127.0.0.1:3001' });
+    expect(login.outcome).toBe('started');
+    if (login.outcome !== 'started') {
+      throw new Error('Expected the browser login to start');
+    }
     const loginUrl = new URL(login.loginUrl);
     const redirectUri = loginUrl.searchParams.get('redirect_uri');
     expect(redirectUri).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/hth\/callback$/);
@@ -136,6 +140,10 @@ describe('HTHAuthService loopback callback', () => {
     const service = new HTHAuthService(authFile, { onLoginComplete });
 
     const login = await service.startLogin({ baseUrl: 'http://127.0.0.1:3001' });
+    expect(login.outcome).toBe('started');
+    if (login.outcome !== 'started') {
+      throw new Error('Expected the browser login to start');
+    }
     const loginUrl = new URL(login.loginUrl);
     const callbackUrl = new URL(loginUrl.searchParams.get('redirect_uri') ?? '');
     callbackUrl.searchParams.set('code', 'code-1');
@@ -144,6 +152,36 @@ describe('HTHAuthService loopback callback', () => {
 
     expect(response.statusCode).toBe(400);
     expect(onLoginComplete).not.toHaveBeenCalled();
+    await service.logout();
+  });
+
+  it.each([
+    ['the HRESULT in the error message', new Error('Failed to open: Application not found (0x800401F5)')],
+    ['the symbolic code', Object.assign(new Error('Failed to open browser'), { code: 'CO_E_APPNOTFOUND' })],
+    ['the signed HRESULT error code', Object.assign(new Error('Failed to open browser'), { errno: -2147221003 })],
+    [
+      'a wrapped HRESULT error code',
+      Object.assign(new Error('Failed to open browser'), {
+        cause: Object.assign(new Error('Application not found'), { hresult: 2147746293 }),
+      }),
+    ],
+  ])('reports a missing default browser from $0 without leaving a login callback pending', async (_source, error) => {
+    electronMocks.openExternal.mockRejectedValueOnce(error);
+    const service = new HTHAuthService(path.join(tempDir, 'hth', 'auth.json'));
+
+    await expect(service.startLogin({ baseUrl: 'http://127.0.0.1:3001' })).resolves.toEqual({
+      outcome: 'default-browser-unavailable',
+    });
+    await expect(service.exchangeLoginCode({ code: 'code-1', state: 'state-1' })).rejects.toThrow(
+      'Invalid or expired hth login state'
+    );
+  });
+
+  it('preserves other browser launch failures', async () => {
+    electronMocks.openExternal.mockRejectedValueOnce(new Error('Access is denied'));
+    const service = new HTHAuthService(path.join(tempDir, 'hth', 'auth.json'));
+
+    await expect(service.startLogin({ baseUrl: 'http://127.0.0.1:3001' })).rejects.toThrow('Access is denied');
     await service.logout();
   });
 });

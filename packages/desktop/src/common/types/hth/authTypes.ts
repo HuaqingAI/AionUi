@@ -24,10 +24,15 @@ export type HTHStartLoginRequest = {
   baseUrl?: string;
 };
 
-export type HTHStartLoginResult = {
-  state: string;
-  loginUrl: string;
-};
+export type HTHStartLoginResult =
+  | {
+      outcome: 'started';
+      state: string;
+      loginUrl: string;
+    }
+  | {
+      outcome: 'default-browser-unavailable';
+    };
 
 export type HTHExchangeLoginCodeRequest = {
   code: string;

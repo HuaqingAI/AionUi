@@ -31,6 +31,9 @@
     "loginWithDingTalk": "Sign in with DingTalk",
     "browserOpened": "Sign-in page opened in your browser",
     "startFailed": "Unable to open HTH sign-in",
+    "defaultBrowserUnavailable": "مرورگر پیش‌فرض قابل استفاده‌ای یافت نشد. «تنظیمات > برنامه‌ها > برنامه‌های پیش‌فرض» را باز کنید، یک مرورگر پیش‌فرض تنظیم کنید و سپس دوباره وارد شوید.",
+    "openDefaultBrowserSettings": "باز کردن تنظیمات برنامه‌های پیش‌فرض",
+    "openDefaultBrowserSettingsFailed": "تنظیمات برنامه‌های پیش‌فرض باز نشد",
     "callbackMissing": "HTH sign-in callback is missing required data",
     "exchangeFailed": "HTH sign-in failed",
     "success": "HTH sign-in successful"

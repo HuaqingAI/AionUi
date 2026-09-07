@@ -31,6 +31,9 @@
     "loginWithDingTalk": "Sign in with DingTalk",
     "browserOpened": "Sign-in page opened in your browser",
     "startFailed": "Unable to open HTH sign-in",
+    "defaultBrowserUnavailable": "Не найден доступный браузер по умолчанию. Откройте «Параметры > Приложения > Приложения по умолчанию», выберите браузер по умолчанию и войдите снова.",
+    "openDefaultBrowserSettings": "Открыть параметры приложений по умолчанию",
+    "openDefaultBrowserSettingsFailed": "Не удалось открыть параметры приложений по умолчанию",
     "callbackMissing": "HTH sign-in callback is missing required data",
     "exchangeFailed": "HTH sign-in failed",
     "success": "HTH sign-in successful"

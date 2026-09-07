@@ -31,6 +31,9 @@
     "loginWithDingTalk": "Sign in with DingTalk",
     "browserOpened": "Sign-in page opened in your browser",
     "startFailed": "Unable to open HTH sign-in",
+    "defaultBrowserUnavailable": "利用可能な既定のブラウザーが見つかりません。「設定 > アプリ > 既定のアプリ」を開き、既定のブラウザーを設定してから、もう一度ログインしてください。",
+    "openDefaultBrowserSettings": "既定のアプリの設定を開く",
+    "openDefaultBrowserSettingsFailed": "既定のアプリの設定を開けません",
     "callbackMissing": "HTH sign-in callback is missing required data",
     "exchangeFailed": "HTH sign-in failed",
     "success": "HTH sign-in successful"

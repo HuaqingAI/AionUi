@@ -31,6 +31,9 @@
     "loginWithDingTalk": "Sign in with DingTalk",
     "browserOpened": "Sign-in page opened in your browser",
     "startFailed": "Unable to open HTH sign-in",
+    "defaultBrowserUnavailable": "Varsayılan bir tarayıcı bulunamadı. Ayarlar > Uygulamalar > Varsayılan uygulamalar bölümünü açın, varsayılan bir tarayıcı ayarlayın ve ardından tekrar oturum açın.",
+    "openDefaultBrowserSettings": "Varsayılan uygulama ayarlarını aç",
+    "openDefaultBrowserSettingsFailed": "Varsayılan uygulama ayarları açılamıyor",
     "callbackMissing": "HTH sign-in callback is missing required data",
     "exchangeFailed": "HTH sign-in failed",
     "success": "HTH sign-in successful"
