@@ -6,7 +6,6 @@
 
 import { bridge } from '@/common/platform/bridge';
 import { WEBUI_DEFAULT_PORT } from '@/common/config/constants';
-import { refreshSession } from './sessionRefresh';
 import type { ElectronBridgeAPI } from '@/common/types/platform/electron';
 
 interface CustomWindow extends Window {
@@ -82,10 +81,6 @@ if (win.electronAPI) {
 
   const BASE_RECONNECT_DELAY = 500;
   const MAX_RECONNECT_DELAY = 8000;
-  // A connection must hold this long before the backoff is considered recovered.
-  // A server that accepts the upgrade and drops it right away (rejected auth,
-  // backend restarting) still fires `open`, so resetting the delay there alone
-  // would keep the backoff pinned at its minimum forever.
   const STABLE_CONNECTION_MS = 5000;
 
   let socket: WebSocket | null = null;
@@ -122,22 +117,6 @@ if (win.electronAPI) {
       reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY);
       connect();
     }, reconnectDelay);
-  };
-
-  // 跳转到登录页（已在登录页则跳过，防止无限刷新循环）
-  // Redirect to the login page (skipped when already there to avoid a reload loop).
-  const redirectToLogin = () => {
-    if (window.location.pathname === '/login' || window.location.hash.includes('/login')) {
-      return;
-    }
-
-    // 短暂延迟以便展示 UI 反馈；用 hash 导航留在 SPA 内（HashRouter），
-    // 避免整页刷新落到空 hash 造成白屏
-    // Short delay to surface any UI feedback; hash navigation stays within the SPA
-    // (HashRouter) instead of a full reload that would land on an empty hash.
-    setTimeout(() => {
-      window.location.hash = '/login';
-    }, 1000);
   };
 
   // 3.建立 WebSocket 连接（或复用已有的 OPEN/CONNECTING 状态）
@@ -185,33 +164,36 @@ if (win.electronAPI) {
           return;
         }
 
-        // 处理认证过期 - 先静默续期，成功则重连，失败才跳转登录页
-        // Handle auth expiration - try a silent refresh first; reconnect on success,
-        // and only fall back to the login page when the refresh token is also dead.
+        // 处理认证过期 - 停止重连并跳转到登录页
+        // Handle auth expiration - stop reconnecting and redirect to login
         if (isRealtimeAuthTerminalError(payload)) {
-          console.warn('[WebSocket] Authentication expired, attempting silent refresh');
-
-          // 续期期间暂停自动重连，避免拿着失效 Cookie 空转（#4124 的重连风暴）
-          // Pause auto-reconnect while refreshing so the dead cookie can't loop
-          // (the #4124 reconnect storm).
+          console.warn('[WebSocket] Authentication expired, stopping reconnection');
           shouldReconnect = false;
+
+          // 清除所有待执行的重连定时器
+          // Clear any pending reconnection timer
           if (reconnectTimer !== null) {
             window.clearTimeout(reconnectTimer);
             reconnectTimer = null;
           }
+
+          // 关闭 socket 并跳转到登录页
+          // Close the socket and redirect to login page
           socket?.close();
 
-          void refreshSession().then((refreshed) => {
-            if (refreshed) {
-              // 新 Cookie 已就位，重连即可携带
-              // Fresh cookie is in place — the reconnect carries it.
-              shouldReconnect = true;
-              reconnectDelay = 500;
-              connect();
-              return;
-            }
-            redirectToLogin();
-          });
+          // 已在登录页则不再重定向，防止无限刷新循环
+          // Skip redirect if already on login page to prevent infinite reload loop
+          if (window.location.pathname === '/login' || window.location.hash.includes('/login')) {
+            return;
+          }
+
+          // 短暂延迟后跳转到登录页，以便显示 UI 反馈
+          // Redirect to login page after a short delay to show any UI feedback
+          // Use hash navigation to stay within the SPA (HashRouter), avoiding a full
+          // page reload that would land on an empty hash and cause a blank screen.
+          setTimeout(() => {
+            window.location.hash = '/login';
+          }, 1000);
 
           return;
         }
@@ -235,9 +217,6 @@ if (win.electronAPI) {
         socket = null;
       }
 
-      // Only credit the backoff if the connection actually held for a while.
-      // Otherwise an accept-then-immediately-drop server keeps the delay at its
-      // minimum and the client hammers it forever.
       if (connectedAt !== 0 && Date.now() - connectedAt >= STABLE_CONNECTION_MS) {
         reconnectDelay = BASE_RECONNECT_DELAY;
       }
@@ -253,17 +232,7 @@ if (win.electronAPI) {
 
   // 4.确保在发送/订阅前已经发起连接
   const ensureSocket = () => {
-    // 认证已终止时不得重连，否则 emit 会绕过上面的“停止重连”逻辑
-    // A terminal auth error deliberately stops reconnection; emit() must not restart it.
-    if (!shouldReconnect) {
-      return;
-    }
-
-    // 已有退避重连在排队时不要立即重拨，否则退避形同虚设
-    // A backoff reconnect is already queued — let it run. Dialling here instead
-    // would tie the reconnect rate to how often the app emits bridge events
-    // rather than to the backoff, turning a failing connection into a storm.
-    if (reconnectTimer !== null) {
+    if (!shouldReconnect || reconnectTimer !== null) {
       return;
     }
 
