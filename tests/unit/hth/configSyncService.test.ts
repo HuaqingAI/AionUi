@@ -119,6 +119,31 @@ describe('HTHConfigSyncService auth handling', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it('uses the injected Core fetcher for local agent management requests', async () => {
+    await writeStoredAuth(authFile);
+    (globalThis as typeof globalThis & { __backendPort?: number }).__backendPort = 18181;
+    const hthFetch = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ agents: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    );
+    const coreFetch = vi.fn(
+      async () => new Response(JSON.stringify([]), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    );
+    vi.stubGlobal('fetch', hthFetch);
+
+    const result = await new HTHConfigSyncService(
+      new HTHAuthService(authFile),
+      undefined,
+      undefined,
+      undefined,
+      coreFetch
+    ).syncAgentConfigs({ force: true });
+
+    expect(result).toMatchObject({ success: true, imported: 0, updated: 0 });
+    expect(coreFetch).toHaveBeenCalledWith('http://127.0.0.1:18181/api/agents/management');
+    expect(hthFetch).toHaveBeenCalledTimes(1);
+  });
+
   it('updates newly imported assistants after import so metadata is persisted', async () => {
     await writeStoredAuth(authFile);
     (globalThis as typeof globalThis & { __backendPort?: number }).__backendPort = 18181;

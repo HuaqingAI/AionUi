@@ -8,6 +8,8 @@ import { ipcBridge } from '@/common';
 import { TEAM_MODE_ENABLED } from '@/common/config/constants';
 import AppLogo from '@/renderer/components/layout/AppLogo';
 import PwaPullToRefresh from '@/renderer/components/layout/PwaPullToRefresh';
+import { ProjectPanelHost } from '@/renderer/components/layout/ProjectPanelHost';
+import { ProjectPanelMobileOverlay } from '@/renderer/components/layout/ProjectPanelMobileOverlay';
 import Titlebar from '@/renderer/components/layout/Titlebar';
 import { Layout as ArcoLayout, Tooltip } from '@arco-design/web-react';
 import classNames from 'classnames';
@@ -15,7 +17,11 @@ import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react
 import { useTranslation } from 'react-i18next';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { setGlobalNavigate } from '@/renderer/utils/navigation';
-import { usePreviewContext } from '@renderer/pages/conversation/Preview';
+import { PreviewPanel, usePreviewContext } from '@renderer/pages/conversation/Preview';
+import { setCurrentConversation } from '@renderer/pages/conversation/explorer/currentConversationStore';
+import { setCurrentProject, useCurrentProject } from '@renderer/pages/conversation/explorer/currentProjectStore';
+import { useContainerWidth } from '@renderer/pages/conversation/hooks/useContainerWidth';
+import { MIN_PREVIEW_PANEL_PX } from '@renderer/pages/conversation/utils/layoutCalc';
 import { LayoutContext } from '@renderer/hooks/context/LayoutContext';
 import { NavigationHistoryProvider } from '@renderer/hooks/context/NavigationHistoryContext';
 import { useNotificationClick } from '@renderer/hooks/system/notification/useNotificationClick';
@@ -23,7 +29,11 @@ import { useBrowserNotification } from '@renderer/hooks/system/notification/useB
 import { useDesktopTurnNotification } from '@renderer/hooks/system/notification/useDesktopTurnNotification';
 import { cleanupSiderTooltips } from '@renderer/utils/ui/siderTooltip';
 import { useConversationShortcuts } from '@renderer/hooks/ui/useConversationShortcuts';
+import { useProjectExplorerColumnWidth } from '@renderer/hooks/ui/useProjectExplorerColumnWidth';
+import { useProjectPanelCollapse } from '@renderer/hooks/ui/useProjectPanelCollapse';
+import { useProjectPreviewRegionWidth } from '@renderer/hooks/ui/useProjectPreviewRegionWidth';
 import { isElectronDesktop } from '@renderer/utils/platform';
+import { dispatchWorkspaceToggleEvent } from '@renderer/utils/workspace/workspaceEvents';
 import '@renderer/styles/layout.css';
 
 const SidebarIcon: React.FC<{ size?: number; strokeWidth?: number }> = ({ size = 18, strokeWidth = 4 }) => (
@@ -156,17 +166,42 @@ const Layout: React.FC<{
   // Use closePreview directly — closePreviewIfWorkspaceChanged skips the call
   // when lastWorkspaceRef is already null (e.g. on team routes where it was
   // never updated), which would leave the panel open.
-  const { closePreview: closePreviewOnRouteChange } = usePreviewContext();
+  const { closePreview: closePreviewOnRouteChange, isOpen: isPreviewOpen } = usePreviewContext();
+  const currentProject = useCurrentProject();
+  const { containerRef: mainRowRef, containerWidth: mainRowWidth } = useContainerWidth();
+  const explorerActive = Boolean(currentProject) && !isMobile;
+  const { widthPx: explorerWidthPx, createDragHandle: createExplorerDragHandle } = useProjectExplorerColumnWidth(
+    mainRowWidth,
+    isPreviewOpen,
+    explorerActive
+  );
+  const { collapsed: explorerCollapsed } = useProjectPanelCollapse({
+    projectId: currentProject,
+    isMobile,
+    active: Boolean(currentProject),
+  });
+  const toggleExplorer = useCallback(() => {
+    dispatchWorkspaceToggleEvent();
+  }, []);
+  const explorerMobileWidthPx = Math.min(420, Math.max(280, Math.round(viewportWidth * 0.85)));
+  const previewRegionActive = Boolean(currentProject) && !isMobile && isPreviewOpen;
+  const { widthPx: previewWidthPx, createDragHandle: createPreviewRegionDragHandle } = useProjectPreviewRegionWidth(
+    mainRowWidth,
+    explorerCollapsed ? 0 : explorerWidthPx,
+    previewRegionActive
+  );
   const routeLayoutMountedRef = useRef(false);
   useEffect(() => {
     if (!routeLayoutMountedRef.current) {
       routeLayoutMountedRef.current = true;
       return; // skip initial mount — preview starts closed, don't wipe persisted tabs
     }
-    if (!location.pathname.startsWith('/conversation/')) {
+    if (!workspaceAvailable) {
       closePreviewOnRouteChange();
+      setCurrentProject(null);
+      setCurrentConversation(null);
     }
-  }, [location.pathname, closePreviewOnRouteChange]);
+  }, [location.pathname, workspaceAvailable, closePreviewOnRouteChange]);
 
   const collapsedRef = useRef(collapsed);
   const dragStateRef = useRef<{ active: boolean; startX: number; startWidth: number }>({
@@ -437,25 +472,72 @@ const Layout: React.FC<{
               )}
             </ArcoLayout.Sider>
 
-            <ArcoLayout.Content
-              className={'bg-1 layout-content flex flex-col min-h-0'}
-              onClick={() => {
-                if (isMobile && !collapsed) setCollapsed(true);
-              }}
-              style={
-                isMobile
-                  ? {
-                      width: '100%',
-                    }
-                  : undefined
-              }
-            >
-              <Outlet />
-              <PwaPullToRefresh />
-              <Suspense fallback={null}>
-                <UpdateModal />
-              </Suspense>
-            </ArcoLayout.Content>
+            <div ref={mainRowRef} className='flex flex-1 min-h-0 overflow-hidden'>
+              <ArcoLayout.Content
+                className={'bg-1 layout-content flex flex-col min-h-0 flex-1'}
+                onClick={() => {
+                  if (isMobile && !collapsed) setCollapsed(true);
+                }}
+                style={
+                  isMobile
+                    ? {
+                        width: '100%',
+                      }
+                    : undefined
+                }
+              >
+                <Outlet />
+                <PwaPullToRefresh />
+                <Suspense fallback={null}>
+                  <UpdateModal />
+                </Suspense>
+              </ArcoLayout.Content>
+              {previewRegionActive && (
+                <div
+                  data-project-preview-region
+                  className='preview-panel flex flex-col relative overflow-visible rounded-[15px] mb-[12px] mr-[12px] ml-[8px]'
+                  style={{
+                    width: `${Math.round(previewWidthPx)}px`,
+                    flexGrow: 0,
+                    flexShrink: 0,
+                    border: '1px solid var(--bg-3)',
+                    minWidth: `${MIN_PREVIEW_PANEL_PX}px`,
+                    boxSizing: 'border-box',
+                  }}
+                >
+                  {createPreviewRegionDragHandle({
+                    className: 'absolute top-0 bottom-0 z-30',
+                    style: { width: '20px', left: '-20px' },
+                    reverse: true,
+                    linePlacement: 'end',
+                    lineClassName: 'opacity-30 group-hover:opacity-100 group-active:opacity-100',
+                    lineStyle: { width: '2px' },
+                  })}
+                  <div className='h-full w-full overflow-hidden rounded-[15px]'>
+                    <PreviewPanel />
+                  </div>
+                </div>
+              )}
+              {!isMobile && (
+                <ProjectPanelHost
+                  widthPx={explorerWidthPx}
+                  collapsed={explorerCollapsed}
+                  dragHandle={createExplorerDragHandle({
+                    className: 'absolute left-0 top-0 bottom-0 z-20',
+                    reverse: true,
+                  })}
+                />
+              )}
+            </div>
+
+            {isMobile && Boolean(currentProject) && (
+              <ProjectPanelMobileOverlay
+                projectId={currentProject as string}
+                collapsed={explorerCollapsed}
+                onCollapse={toggleExplorer}
+                widthPx={explorerMobileWidthPx}
+              />
+            )}
           </ArcoLayout>
         </div>
       </NavigationHistoryProvider>

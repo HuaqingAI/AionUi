@@ -14,6 +14,7 @@ initSentry();
 
 import './process/utils/configureConsoleLog';
 import { app, BrowserWindow, ipcMain, nativeImage, powerMonitor } from 'electron';
+import { randomBytes } from 'crypto';
 import fixPath from 'fix-path';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -202,6 +203,13 @@ const isWebUIMode = hasSwitch('webui');
 const isRemoteMode = hasSwitch('remote');
 const isResetPasswordMode = hasCommand('--resetpass');
 const isVersionMode = hasCommand('--version') || hasCommand('-v');
+const aioncoreBootstrapSecret = randomBytes(32).toString('base64url');
+const desktopCoreLaunchFlags =
+  isWebUIMode || isResetPasswordMode
+    ? {}
+    : { identityMode: 'aionpro' as const, bootstrapSecret: aioncoreBootstrapSecret };
+(globalThis as typeof globalThis & { __aioncoreBootstrapSecret?: string }).__aioncoreBootstrapSecret =
+  aioncoreBootstrapSecret;
 
 // Flag to distinguish intentional quit from unexpected exit in WebUI mode
 let isExplicitQuit = false;
@@ -297,7 +305,7 @@ ipcMain.handle('backend:recover-corrupted-database', async () => {
             },
           },
           undefined,
-          { recoverCorruptedDatabase: true }
+          { ...desktopCoreLaunchFlags, recoverCorruptedDatabase: true }
         );
       } catch (error) {
         markBackendStartupFailed(error);
@@ -957,7 +965,9 @@ const handleAppReady = async (): Promise<void> => {
             onReady: (backendPort) => {
               markBackendReady(backendPort, 'backendManager.lateReady');
             },
-          }
+          },
+          undefined,
+          desktopCoreLaunchFlags
         );
       },
       onStarted: (backendPort) => {
@@ -1170,7 +1180,6 @@ const handleAppReady = async (): Promise<void> => {
       });
     }
   }
-
 };
 
 // ============ Protocol Registration ============

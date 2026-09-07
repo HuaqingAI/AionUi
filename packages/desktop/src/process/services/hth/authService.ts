@@ -43,7 +43,19 @@ type PendingLogin = {
 };
 
 type HTHAuthServiceOptions = {
-  onLoginComplete?: () => void;
+  onLoginComplete?: () => Promise<void> | void;
+};
+
+export type HTHAuthAccess = {
+  baseUrl: string;
+  token: string;
+  email: string;
+  displayName?: string;
+  username?: string;
+  departments?: string[];
+  personalApiKey: string;
+  personalApiKeyName: string;
+  quotaApplyUrl?: string;
 };
 
 type TokenResponse = {
@@ -133,7 +145,7 @@ function escapeHtml(value: string): string {
 export class HTHAuthService {
   private pendingLogin: PendingLogin | null = null;
   private readonly authFile: string;
-  private readonly onLoginComplete?: () => void;
+  private readonly onLoginComplete?: () => Promise<void> | void;
 
   constructor(authFile = getHTHAuthFilePath(), options: HTHAuthServiceOptions = {}) {
     this.authFile = authFile;
@@ -167,17 +179,7 @@ export class HTHAuthService {
     };
   }
 
-  async getAccess(): Promise<{
-    baseUrl: string;
-    token: string;
-    email: string;
-    displayName?: string;
-    username?: string;
-    departments?: string[];
-    personalApiKey: string;
-    personalApiKeyName: string;
-    quotaApplyUrl?: string;
-  }> {
+  async getAccess(): Promise<HTHAuthAccess> {
     const auth = await this.readAuth();
     if (!auth || this.isExpired(auth)) {
       throw new Error('hth login required');
@@ -277,6 +279,7 @@ export class HTHAuthService {
     };
     await this.writeAuth(auth);
     this.closePendingCallbackServer();
+    await this.notifyLoginComplete();
     return this.getStatus();
   }
 
@@ -313,7 +316,6 @@ export class HTHAuthService {
         const state = requestUrl.searchParams.get('state') || '';
         void this.exchangeLoginCode({ code, state })
           .then(() => {
-            this.notifyLoginComplete();
             response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
             response.end(this.renderLoopbackPage('登录成功', '华青智能助手 已完成登录授权。', 10));
           })
@@ -350,11 +352,12 @@ export class HTHAuthService {
     });
   }
 
-  private notifyLoginComplete(): void {
+  private async notifyLoginComplete(): Promise<void> {
     try {
-      this.onLoginComplete?.();
+      await this.onLoginComplete?.();
     } catch (error) {
       console.warn('[HTHAuth] Login completion callback failed:', error);
+      throw error;
     }
   }
 

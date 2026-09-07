@@ -5,7 +5,7 @@
  */
 
 import type { BrowserWindow } from 'electron';
-import { app, shell } from 'electron';
+import { app, session, shell } from 'electron';
 import { ipcBridge } from '@/common';
 import { ProcessConfig } from '@process/utils/initStorage';
 import { getZoomFactor, setZoomFactor } from '@process/utils/zoom';
@@ -15,6 +15,7 @@ import { initApplicationBridgeCore } from './applicationBridgeCore';
 import type { IStartOnBootStatus } from '@/common/adapter/ipcBridge';
 import { restartApplication } from './restartApplication';
 import { HTHAuthService } from '@process/services/hth/authService';
+import { HTHCoreIdentityService } from '@process/services/hth/coreIdentityService';
 import { HTHConfigSyncService } from '@process/services/hth/configSyncService';
 import { HTHQuotaService } from '@process/services/hth/quotaService';
 
@@ -244,11 +245,46 @@ export function initApplicationBridge(): void {
     }
   });
 
-  const hthAuthService = new HTHAuthService(undefined, { onLoginComplete: showHTHLoginWindow });
-  const hthConfigSyncService = new HTHConfigSyncService(hthAuthService);
+  const coreIdentityService = new HTHCoreIdentityService({
+    getBackendPort: () => (globalThis as typeof globalThis & { __backendPort?: number }).__backendPort,
+    getBootstrapSecret: () =>
+      (globalThis as typeof globalThis & { __aioncoreBootstrapSecret?: string }).__aioncoreBootstrapSecret,
+    registerRequestHeadersInterceptor: (interceptor) => {
+      const register = () => {
+        session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
+          callback({ requestHeaders: interceptor(details.url, details.requestHeaders) });
+        });
+      };
+      if (app.isReady()) {
+        register();
+      } else {
+        app.once('ready', register);
+      }
+    },
+  });
+  let hthAuthService: HTHAuthService;
+  hthAuthService = new HTHAuthService(undefined, {
+    onLoginComplete: async () => {
+      await coreIdentityService.establish(await hthAuthService.getAccess());
+      showHTHLoginWindow();
+    },
+  });
+  const hthConfigSyncService = new HTHConfigSyncService(
+    hthAuthService,
+    undefined,
+    undefined,
+    undefined,
+    coreIdentityService.fetch.bind(coreIdentityService)
+  );
   const hthQuotaService = new HTHQuotaService(hthAuthService);
 
-  ipcBridge.hth.authStatus.provider(() => hthAuthService.getStatus());
+  ipcBridge.hth.authStatus.provider(async () => {
+    const status = await hthAuthService.getStatus();
+    if (status.loggedIn) {
+      await coreIdentityService.establish(await hthAuthService.getAccess());
+    }
+    return status;
+  });
   ipcBridge.hth.startLogin.provider((request) => hthAuthService.startLogin(request));
   ipcBridge.hth.openDefaultBrowserSettings.provider(async () => {
     try {
@@ -260,11 +296,26 @@ export function initApplicationBridge(): void {
     }
   });
   ipcBridge.hth.exchangeLoginCode.provider((request) => hthAuthService.exchangeLoginCode(request));
-  ipcBridge.hth.logout.provider(() => hthAuthService.logout());
-  ipcBridge.hth.syncAgentConfigs.provider((request) =>
-    hthConfigSyncService.syncAgentConfigs(request, (event) => ipcBridge.hth.syncAgentConfigsProgress.emit(event))
-  );
-  ipcBridge.hth.injectProjectConfig.provider((request) => hthConfigSyncService.injectProjectConfig(request));
+  ipcBridge.hth.logout.provider(async () => {
+    await coreIdentityService.clear();
+    return hthAuthService.logout();
+  });
+  ipcBridge.hth.syncAgentConfigs.provider(async (request) => {
+    const access = await hthAuthService.getAccess();
+    if (access) {
+      await coreIdentityService.establish(access);
+    }
+    return hthConfigSyncService.syncAgentConfigs(request, (event) =>
+      ipcBridge.hth.syncAgentConfigsProgress.emit(event)
+    );
+  });
+  ipcBridge.hth.injectProjectConfig.provider(async (request) => {
+    const access = await hthAuthService.getAccess();
+    if (access) {
+      await coreIdentityService.establish(access);
+    }
+    return hthConfigSyncService.injectProjectConfig(request);
+  });
   ipcBridge.hth.modelPricingDescriptions.provider((request) =>
     hthConfigSyncService.getModelPricingDescriptions(request.modelIds)
   );

@@ -78,6 +78,7 @@ type PreparedAssistantAvatar = {
 };
 
 type HTHSyncProgressReporter = (event: HTHSyncProgressEvent) => void;
+type HTHCoreFetch = (url: string, init?: RequestInit) => Promise<Response>;
 
 type ApiEnvelope<T> = {
   success?: boolean;
@@ -173,7 +174,8 @@ export class HTHConfigSyncService {
     private readonly authService: HTHAuthService,
     private readonly packageStore = new HTHPackageStore(),
     private readonly resolveCodexHomeDir = defaultCodexHomeDir,
-    private readonly resolveOpenCodeConfigDir = defaultOpenCodeConfigDir
+    private readonly resolveOpenCodeConfigDir = defaultOpenCodeConfigDir,
+    private readonly coreFetch: HTHCoreFetch = (url, init) => fetch(url, init)
   ) {}
 
   async syncAgentConfigs(
@@ -1171,7 +1173,7 @@ export class HTHConfigSyncService {
     if (!port) {
       return new Map();
     }
-    const response = await fetch(`http://127.0.0.1:${port}/api/agents/management`);
+    const response = await this.coreFetch(`http://127.0.0.1:${port}/api/agents/management`);
     if (!response.ok) {
       return new Map();
     }
@@ -1283,7 +1285,7 @@ export class HTHConfigSyncService {
     if (!port) {
       throw new Error('aioncore is not running');
     }
-    const response = await fetch(`http://127.0.0.1:${port}/api/assistants/import`, {
+    const response = await this.coreFetch(`http://127.0.0.1:${port}/api/assistants/import`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ assistants }),
@@ -1341,7 +1343,7 @@ export class HTHConfigSyncService {
     const categories = Object.fromEntries(
       assistants.map((assistant) => [assistant.id || '', assistant.categories ?? []]).filter(([id]) => Boolean(id))
     );
-    const response = await fetch(`http://127.0.0.1:${port}/api/settings/client`, {
+    const response = await this.coreFetch(`http://127.0.0.1:${port}/api/settings/client`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ [HTH_ASSISTANT_CATEGORIES_SETTING]: categories }),
@@ -1352,11 +1354,14 @@ export class HTHConfigSyncService {
   }
 
   private async updateAssistant(port: number, assistant: UpdateAssistantRequest): Promise<void> {
-    const response = await fetch(`http://127.0.0.1:${port}/api/assistants/${encodeURIComponent(assistant.id)}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(assistant),
-    });
+    const response = await this.coreFetch(
+      `http://127.0.0.1:${port}/api/assistants/${encodeURIComponent(assistant.id)}`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(assistant),
+      }
+    );
     if (!response.ok) {
       throw new Error(await this.extractBackendError(response, `Assistant update failed: ${response.status}`));
     }
@@ -1459,7 +1464,7 @@ export class HTHConfigSyncService {
   }
 
   private async fetchAssistants(port: number): Promise<Assistant[]> {
-    const response = await fetch(`http://127.0.0.1:${port}/api/assistants`);
+    const response = await this.coreFetch(`http://127.0.0.1:${port}/api/assistants`);
     if (!response.ok) {
       throw new Error(await this.extractBackendError(response, `Assistant list failed: ${response.status}`));
     }
@@ -1469,7 +1474,7 @@ export class HTHConfigSyncService {
 
   private async resolveChromeDevtoolsMcpId(port: number): Promise<string | undefined> {
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/api/mcp/servers`);
+      const response = await this.coreFetch(`http://127.0.0.1:${port}/api/mcp/servers`);
       if (!response.ok) {
         return undefined;
       }
@@ -1483,7 +1488,7 @@ export class HTHConfigSyncService {
   }
 
   private async fetchAssistant(port: number, assistantId: string): Promise<AssistantDetail> {
-    const response = await fetch(`http://127.0.0.1:${port}/api/assistants/${encodeURIComponent(assistantId)}`);
+    const response = await this.coreFetch(`http://127.0.0.1:${port}/api/assistants/${encodeURIComponent(assistantId)}`);
     if (!response.ok) {
       throw new Error(`Assistant lookup failed: ${response.status}`);
     }
@@ -1503,9 +1508,12 @@ export class HTHConfigSyncService {
   }
 
   private async deleteAssistant(port: number, assistantId: string): Promise<void> {
-    const response = await fetch(`http://127.0.0.1:${port}/api/assistants/${encodeURIComponent(assistantId)}`, {
-      method: 'DELETE',
-    });
+    const response = await this.coreFetch(
+      `http://127.0.0.1:${port}/api/assistants/${encodeURIComponent(assistantId)}`,
+      {
+        method: 'DELETE',
+      }
+    );
     if (!response.ok && response.status !== 404) {
       throw new Error(await this.extractBackendError(response, `Assistant delete failed: ${response.status}`));
     }

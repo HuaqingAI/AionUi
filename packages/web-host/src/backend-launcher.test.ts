@@ -157,6 +157,21 @@ describe('buildSpawnArgs', () => {
     expect(args).not.toContain('--local');
   });
 
+  it('uses the requested external identity mode instead of local mode', () => {
+    const args = buildSpawnArgs({
+      port: 1,
+      dbPath: '/d',
+      local: true,
+      identityMode: 'aionpro',
+      appVersion: '0.0.1',
+      isPackaged: false,
+    });
+
+    expect(args).toContain('--identity-mode');
+    expect(args).toContain('aionpro');
+    expect(args).not.toContain('--local');
+  });
+
   it('passes prompt dump flag in development only when AIONUI_DUMP_PROMPTS is enabled', () => {
     const prev = process.env.AIONUI_DUMP_PROMPTS;
     process.env.AIONUI_DUMP_PROMPTS = '1';

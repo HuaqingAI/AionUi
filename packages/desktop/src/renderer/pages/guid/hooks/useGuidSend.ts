@@ -10,12 +10,28 @@ import type { IMcpServer, TProviderWithModel } from '@/common/config/storage';
 import { toSessionMcpServer } from '@/renderer/hooks/mcp/catalog';
 import { emitter } from '@/renderer/utils/emitter';
 import { updateWorkspaceTime } from '@/renderer/utils/workspace/workspaceHistory';
+import { markHTHProjectConfigInjected } from '@/renderer/pages/conversation/hooks/useHTHProjectConfigInjection';
+import { getConversationOrNull } from '@/renderer/pages/conversation/utils/conversationCache';
 import { Message } from '@arco-design/web-react';
 import { useCallback, useRef } from 'react';
 import { type TFunction } from 'i18next';
 import type { NavigateFunction } from 'react-router-dom';
 import { mutate as swrMutate } from 'swr';
 import { getConversationCreateErrorMessage } from '@/renderer/pages/conversation/utils/conversationCreateError';
+import {
+  buildGuidSessionExcludedAutoInjectSkills,
+  filterGuidSessionSkillIds,
+} from '@/renderer/pages/guid/utils/sessionSkills';
+
+const blockingHTHProjectConfigInjectionReasons = new Set([
+  'authRequired',
+  'personalApiKeyInvalid',
+  'modelListUnavailable',
+  'modelListInvalid',
+  'modelListEmpty',
+  'defaultModelUnavailable',
+  'openCodeConfigInvalid',
+]);
 
 export type GuidSendDeps = {
   // Input state
@@ -109,8 +125,34 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
 
     const assistantConversationId = selectedAssistantId;
     const assistantBackend = selectedAssistantBackend;
-    const enabled_skills_to_send = guidEnabledSkills ?? assistantDefaultSkillIds;
-    const excludeBuiltinSkills = guidDisabledBuiltinSkills ?? assistantDefaultDisabledBuiltinSkillIds;
+    const injectHTHProjectConfig = async (conversationId: string, workspace?: string) => {
+      const result = await ipcBridge.hth.injectProjectConfig.invoke({
+        conversationId,
+        workspace,
+        assistantId: assistantConversationId,
+      });
+      if (result.reason && blockingHTHProjectConfigInjectionReasons.has(result.reason)) {
+        throw new Error(`HTH project config injection failed: ${result.reason}`);
+      }
+    };
+    const injectNewConversationProjectConfig = async (conversationId: string, workspace?: string) => {
+      const projectConfigWorkspace =
+        assistantBackend === 'codex' && !workspace
+          ? (await getConversationOrNull(conversationId))?.extra?.workspace
+          : workspace;
+      if (assistantBackend === 'codex' && !projectConfigWorkspace) {
+        throw new Error('Codex workspace is unavailable after conversation creation');
+      }
+
+      await injectHTHProjectConfig(conversationId, projectConfigWorkspace);
+      if (assistantBackend === 'codex' && projectConfigWorkspace) {
+        markHTHProjectConfigInjected(conversationId, projectConfigWorkspace, assistantConversationId);
+      }
+    };
+    const enabled_skills_to_send = filterGuidSessionSkillIds(guidEnabledSkills ?? assistantDefaultSkillIds);
+    const excludeBuiltinSkills = buildGuidSessionExcludedAutoInjectSkills(
+      guidDisabledBuiltinSkills ?? assistantDefaultDisabledBuiltinSkillIds
+    );
     const selectedAllMcpServerIds = selectedMcpServerIds ?? [];
     const selectedMcpServerIdSet = new Set(selectedAllMcpServerIds);
     const selectedUserMcpServerIds = availableMcpServers
@@ -188,6 +230,7 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
             default_files: files.map(chatFileRefPath),
             workspace: finalWorkspace,
             custom_workspace: isCustomWorkspace,
+            exclude_auto_inject_skills: excludeBuiltinSkills,
             selected_mcp_server_ids: selectedUserMcpServerIdsToSend,
             selected_session_mcp_servers: selectedSessionMcpServersToSend,
           },
@@ -201,6 +244,8 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
         if (isCustomWorkspace) {
           updateWorkspaceTime(finalWorkspace);
         }
+
+        await injectNewConversationProjectConfig(conversation.id, conversation.extra?.workspace);
 
         if (assistantConversationId) {
           await Promise.all([
@@ -242,6 +287,7 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
           workspace: finalWorkspace,
           custom_workspace: isCustomWorkspace,
           default_files: files.map(chatFileRefPath),
+          exclude_auto_inject_skills: excludeBuiltinSkills,
           selected_mcp_server_ids: selectedUserMcpServerIdsToSend,
           selected_session_mcp_servers:
             selectedMcpServerIds !== undefined ? selectedSessionMcpServers : selectedSessionMcpServersToSend,
@@ -255,6 +301,8 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
       if (isCustomWorkspace) {
         updateWorkspaceTime(finalWorkspace);
       }
+
+      await injectNewConversationProjectConfig(conversation.id, conversation.extra?.workspace);
 
       if (assistantConversationId) {
         await Promise.all([

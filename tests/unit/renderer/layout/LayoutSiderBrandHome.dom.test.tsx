@@ -70,10 +70,17 @@ vi.mock('@renderer/hooks/ui/useConversationShortcuts', () => ({
 }));
 vi.mock('@renderer/utils/platform', () => ({ isElectronDesktop: platformMocks.isElectronDesktopMock }));
 vi.mock('@renderer/pages/conversation/Preview/context/PreviewContext', () => ({
-  usePreviewContext: () => ({ closePreview: () => {} }),
+  usePreviewContext: () => ({ closePreview: () => {}, isOpen: false }),
+}));
+vi.mock('@/renderer/pages/conversation/explorer/ExplorerContainer', () => ({
+  ExplorerContainer: ({ projectId }: { projectId: string }) => <div data-testid='explorer'>{projectId}</div>,
 }));
 
 import Layout from '@renderer/components/layout/Layout';
+import {
+  resetCurrentProjectForTest,
+  setCurrentProject,
+} from '@/renderer/pages/conversation/explorer/currentProjectStore';
 
 const renderLayout = () => render(<Layout sider={<div>sider</div>} />);
 
@@ -100,6 +107,7 @@ describe('Layout sider brand Home button', () => {
     shortcutMocks.params = undefined;
     featureMocks.teamModeEnabled = false;
     sessionStorage.clear();
+    resetCurrentProjectForTest();
     currentPathname = '/guid';
   });
 
@@ -197,6 +205,16 @@ describe('Layout sider brand Home button', () => {
     renderLayout();
 
     expect(shortcutMocks.params?.toggleSider).toEqual(expect.any(Function));
+  });
+
+  it('renders the project Explorer beside a project conversation', () => {
+    currentPathname = '/conversation/project-chat';
+    setCurrentProject('project-123');
+
+    const { container } = renderLayout();
+
+    expect(container.querySelector('[data-project-panel-host]')).toBeInTheDocument();
+    expect(screen.getByTestId('explorer')).toHaveTextContent('project-123');
   });
 
   it('clicking the logo icon counts toward the devtools easter-egg and never navigates', () => {

@@ -66,6 +66,7 @@ type SpawnConfig = {
   port: number;
   dbPath: string;
   local: boolean;
+  identityMode?: 'webui' | 'aionpro';
   parentPid?: number;
   logDir?: string;
   workDir?: string;
@@ -76,6 +77,12 @@ type SpawnConfig = {
 
 export type BackendLaunchFlags = {
   recoverCorruptedDatabase?: boolean;
+  /**
+   * Override the legacy embedded-local identity mode. AionPro mode requires a
+   * per-launch bootstrap secret in the child environment.
+   */
+  identityMode?: 'webui' | 'aionpro';
+  bootstrapSecret?: string;
 };
 
 export type BackendDirConfig = {
@@ -212,7 +219,11 @@ export function buildSpawnArgs(config: SpawnConfig): string[] {
   if (!config.isPackaged && process.env.AIONUI_DUMP_PROMPTS === '1') args.push('--dump-prompts');
   if (config.logDir) args.push('--log-dir', config.logDir);
   if (config.workDir) args.push('--work-dir', config.workDir);
-  if (config.local) args.push('--local');
+  if (config.identityMode) {
+    args.push('--identity-mode', config.identityMode);
+  } else if (config.local) {
+    args.push('--local');
+  }
   if (config.recoverCorruptedDatabase) args.push('--recover-corrupted-database');
   return args;
 }
@@ -223,22 +234,27 @@ export function buildSpawnArgs(config: SpawnConfig): string[] {
  * backend's `/api/system/info` matches what Electron main persists in
  * ProcessEnv('aionui.dir').
  */
-export function buildSpawnEnv(dirs?: BackendDirConfig): NodeJS.ProcessEnv {
+export function buildSpawnEnv(dirs?: BackendDirConfig, bootstrapSecret?: string): NodeJS.ProcessEnv {
   // PREBUILDS_ONLY protects the packaged Electron process's own node-gyp-build
   // natives (see desktop process/index.ts) and must stay scoped to it. Agent
   // CLIs spawned under aioncore (e.g. cursor-agent) ship natives under
   // build/Release only, and node-gyp-build skips that directory for any
   // non-empty value, aborting the agent before the ACP handshake (#4070).
   const { PREBUILDS_ONLY: _prebuildsOnly, ...parentEnv } = process.env;
-  if (!dirs) return parentEnv;
-  return {
-    ...parentEnv,
-    AIONUI_CACHE_DIR: dirs.cacheDir,
-    AIONUI_WORK_DIR: dirs.workDir,
-    AIONUI_LOG_DIR: dirs.logDir,
-    CODEX_HOME: path.join(dirs.workDir, 'runtime', 'codex-home'),
-    OPENCODE_CONFIG_DIR: path.join(dirs.workDir, 'runtime', 'opencode-home'),
-  };
+  const env = dirs
+    ? {
+        ...parentEnv,
+        AIONUI_CACHE_DIR: dirs.cacheDir,
+        AIONUI_WORK_DIR: dirs.workDir,
+        AIONUI_LOG_DIR: dirs.logDir,
+        CODEX_HOME: path.join(dirs.workDir, 'runtime', 'codex-home'),
+        OPENCODE_CONFIG_DIR: path.join(dirs.workDir, 'runtime', 'opencode-home'),
+      }
+    : parentEnv;
+  if (bootstrapSecret) {
+    env.AIONCORE_BOOTSTRAP_SECRET = bootstrapSecret;
+  }
+  return env;
 }
 
 const FETCH_FORBIDDEN_PORTS = new Set([
@@ -524,6 +540,7 @@ export class BackendLifecycleManager {
   private _lastLogDir?: string;
   private _lastDirs?: BackendDirConfig;
   private _lastOptions?: BackendStartOptions;
+  private _lastLaunchFlags: BackendLaunchFlags = {};
   private restartCount = 0;
   private restartWindowStart = 0;
   private readonly maxRestarts = 3;
@@ -618,6 +635,7 @@ export class BackendLifecycleManager {
     this._lastLogDir = logDir;
     this._lastDirs = dirs;
     this._lastOptions = options;
+    this._lastLaunchFlags = { ...launchFlags, recoverCorruptedDatabase: false };
     let stdoutTail = '';
     let stderrTail = '';
     let startupSettled = false;
@@ -669,7 +687,8 @@ export class BackendLifecycleManager {
     const args = buildSpawnArgs({
       port: this._port,
       dbPath,
-      local: true,
+      local: launchFlags.identityMode === undefined,
+      identityMode: launchFlags.identityMode,
       parentPid: process.pid,
       logDir,
       workDir: dirs?.workDir,
@@ -693,7 +712,7 @@ export class BackendLifecycleManager {
     try {
       this.childProcess = spawn(binaryPath, args, {
         stdio: ['pipe', 'pipe', 'pipe'],
-        env: buildSpawnEnv(dirs),
+        env: buildSpawnEnv(dirs, launchFlags.bootstrapSecret),
         cwd: dirs?.workDir ?? dbPath,
         detached: process.platform !== 'win32',
       });
@@ -1058,7 +1077,14 @@ export class BackendLifecycleManager {
     setTimeout(() => {
       if (this._status === 'stopped') return;
       this._status = 'starting';
-      this.start(this._lastDbPath, this._lastLogDir, this._lastDirs, this._lastOptions, this._port)
+      this.start(
+        this._lastDbPath,
+        this._lastLogDir,
+        this._lastDirs,
+        this._lastOptions,
+        this._port,
+        this._lastLaunchFlags
+      )
         .then(async (port) => {
           if (this._status === 'running') {
             await this._lastOptions?.onReady?.(port);
