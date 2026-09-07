@@ -14,14 +14,12 @@ import type { AssistantDetail } from '@/common/types/agent/assistantTypes';
 import { useInputFocusRing } from '@/renderer/hooks/chat/useInputFocusRing';
 import { appendPromptToDraft } from '@/renderer/hooks/chat/useSendBoxDraft';
 import { getFuzzyMatchIndices, useSlashCommandController } from '@/renderer/hooks/chat/useSlashCommandController';
-import { openExternalUrl } from '@/renderer/utils/platform';
 import SlashCommandMenu, { type SlashCommandMenuItem } from '@/renderer/components/chat/SlashCommandMenu';
+import AssistantDescriptionPanel from '@/renderer/components/assistant/AssistantDescriptionPanel';
 import AssistantSelectionArea from './components/AssistantSelectionArea';
 import GuidActionRow from './components/GuidActionRow';
 import GuidInputCard from './components/GuidInputCard';
 import GuidModelSelector from './components/GuidModelSelector';
-import QuickActionButtons from './components/QuickActionButtons';
-import FeedbackReportModal from '@/renderer/components/settings/SettingsModal/contents/FeedbackReportModal';
 import { useGuidAssistantSelection } from './hooks/useGuidAssistantSelection';
 import { useGuidInput } from './hooks/useGuidInput';
 import { useGuidModelSelection } from './hooks/useGuidModelSelection';
@@ -34,6 +32,7 @@ import { chatFileRefPath, uploadFileRef } from '@/common/types/chatFile';
 import { useOpenFileSelector } from '@/renderer/hooks/file/useOpenFileSelector';
 import { appendSpeechTranscript } from '@/renderer/hooks/system/useSpeechInput';
 import { useLiveTranscriptInsertion } from '@/renderer/hooks/system/useLiveTranscriptInsertion';
+import { filterVisibleSkills } from '@/renderer/utils/internalResources';
 import { ArrowRightUp } from '@icon-park/react';
 import { Button, ConfigProvider } from '@arco-design/web-react';
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -41,6 +40,7 @@ import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
 import useSWR from 'swr';
 import styles from './index.module.css';
+import { filterGuidSessionSkills } from './utils/sessionSkills';
 
 type GuidNavigationState = {
   resetAssistant?: boolean;
@@ -61,16 +61,6 @@ const GuidPage: React.FC = () => {
   const { activeBorderColor, inactiveBorderColor, activeShadow } = useInputFocusRing();
 
   const localeKey = resolveLocaleKey(i18n.language);
-  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
-
-  // Open external link
-  const openLink = useCallback(async (url: string) => {
-    try {
-      await openExternalUrl(url);
-    } catch (error) {
-      console.error('Failed to open external link:', error);
-    }
-  }, []);
 
   // --- Skills state ---
   // Skill metadata comes from the database-backed catalog. Built-in auto-inject
@@ -81,13 +71,15 @@ const GuidPage: React.FC = () => {
   const [guidEnabledSkills, setGuidEnabledSkills] = useState<string[] | undefined>(undefined);
   const [availableMcpServers, setAvailableMcpServers] = useState<IMcpServer[]>([]);
   const [guidSelectedMcpServerIds, setGuidSelectedMcpServerIds] = useState<string[] | undefined>(undefined);
+  const visibleSkills = useMemo(() => filterGuidSessionSkills(allSkills), [allSkills]);
 
   useEffect(() => {
     ipcBridge.fs.listAvailableSkills
       .invoke()
       .then((availableSkills) => {
+        const visibleAvailableSkills = filterVisibleSkills(availableSkills);
         setAllSkills(
-          availableSkills.map((s) => ({
+          visibleAvailableSkills.map((s) => ({
             name: s.name,
             description: s.description,
             isAuto: s.source === 'builtin' && s.is_auto_inject,
@@ -178,15 +170,15 @@ const GuidPage: React.FC = () => {
     );
     const enabledSkillSet = new Set(guidEnabledSkills ?? resolvedAssistantDefaults.skillIds);
 
-    return allSkills
+    return visibleSkills
       .filter((skill) => (skill.isAuto ? !disabledBuiltinSkillSet.has(skill.name) : enabledSkillSet.has(skill.name)))
       .map((skill) => skill.name);
   }, [
-    allSkills,
     guidDisabledBuiltinSkills,
     guidEnabledSkills,
     resolvedAssistantDefaults.disabledBuiltinSkillIds,
     resolvedAssistantDefaults.skillIds,
+    visibleSkills,
   ]);
   const skillDescriptionByName = useMemo(
     () => new Map(allSkills.map((skill) => [skill.name, skill.description])),
@@ -631,7 +623,7 @@ const GuidPage: React.FC = () => {
       selectedMode={agentSelection.selectedMode}
       dynamicModes={agentSelection.currentAgentModeOptions}
       onModeSelect={setGuidSelectedMode}
-      allSkills={allSkills}
+      allSkills={visibleSkills}
       disabledBuiltinSkills={guidDisabledBuiltinSkills ?? []}
       enabledSkills={guidEnabledSkills ?? []}
       onToggleSkill={handleToggleSkill}
@@ -679,6 +671,51 @@ const GuidPage: React.FC = () => {
             onSelectAssistant={handleSelectAssistant}
           />
 
+          {selectedAssistantRecord ? (
+            <AssistantDescriptionPanel
+              assistant={selectedAssistantRecord}
+              localeKey={localeKey}
+              description={
+                selectedAssistantDetail?.profile?.description_i18n?.[localeKey] ||
+                selectedAssistantDetail?.profile?.description_i18n?.['en-US'] ||
+                selectedAssistantDetail?.profile?.description ||
+                selectedAssistantRecord.description_i18n?.[localeKey] ||
+                selectedAssistantRecord.description_i18n?.['en-US'] ||
+                selectedAssistantRecord.description
+              }
+              showPrompts={false}
+              className='mb-16px px-4px'
+            />
+          ) : null}
+
+          {selectedAssistantPrompts.length > 0 ? (
+            <div className='mt-18px mb-16px w-full animate-fade-in pl-4px'>
+              <div className={`${styles.assistantPromptHint} mb-10px text-left`}>
+                {t('guid.promptExamplesHint', { defaultValue: 'Try these example prompts:' })}
+              </div>
+              <div className='flex flex-col gap-9px'>
+                {selectedAssistantPrompts.map((prompt, index) => (
+                  <Button
+                    key={`${index}-${prompt}`}
+                    type='text'
+                    className='group !h-auto !w-full !border-none !bg-transparent !px-0 !py-6px !text-left !text-12.5px !text-t-secondary !whitespace-normal !break-words transition-colors hover:!bg-transparent hover:!text-t-primary'
+                    onClick={() => {
+                      guidInput.setInput(prompt);
+                      guidInput.handleTextareaFocus();
+                    }}
+                  >
+                    <span>{prompt}</span>
+                    <ArrowRightUp
+                      theme='outline'
+                      size='13'
+                      className='ml-6px inline-flex flex-shrink-0 align-[-1px] text-t-primary opacity-0 transition-opacity group-hover:opacity-100'
+                    />
+                  </Button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
           <GuidInputCard
             focusRequestKey={navState?.focusPrefill && navState.prefillPrompt ? location.key : undefined}
             input={guidInput.input}
@@ -702,42 +739,7 @@ const GuidPage: React.FC = () => {
             onSelectWorkspace={(dir) => guidInput.setDir(dir)}
             onClearWorkspace={() => guidInput.setDir('')}
           />
-
-          {selectedAssistantPrompts.length > 0 ? (
-            <div className='mt-18px w-full animate-fade-in ps-20px'>
-              <div className={`${styles.assistantPromptHint} mb-10px text-start`}>
-                {t('guid.promptExamplesHint', { defaultValue: 'Try these example prompts:' })}
-              </div>
-              <div className='flex flex-col gap-9px'>
-                {selectedAssistantPrompts.map((prompt, index) => (
-                  <Button
-                    key={`${index}-${prompt}`}
-                    type='text'
-                    className='group !h-auto !w-full !border-none !bg-transparent !px-0 !py-6px !text-start !text-12.5px !text-t-secondary !whitespace-normal !break-words transition-colors hover:!bg-transparent hover:!text-t-primary'
-                    onClick={() => {
-                      guidInput.setInput(prompt);
-                      guidInput.handleTextareaFocus();
-                    }}
-                  >
-                    <span>{prompt}</span>
-                    <ArrowRightUp
-                      theme='outline'
-                      size='13'
-                      className='ms-6px inline-flex flex-shrink-0 align-[-1px] text-t-primary opacity-0 transition-opacity group-hover:opacity-100'
-                    />
-                  </Button>
-                ))}
-              </div>
-            </div>
-          ) : null}
         </div>
-
-        <QuickActionButtons
-          onOpenBugReport={() => setShowFeedbackModal(true)}
-          inactiveBorderColor={inactiveBorderColor}
-          activeShadow={activeShadow}
-        />
-        <FeedbackReportModal visible={showFeedbackModal} onCancel={() => setShowFeedbackModal(false)} />
       </div>
     </ConfigProvider>
   );

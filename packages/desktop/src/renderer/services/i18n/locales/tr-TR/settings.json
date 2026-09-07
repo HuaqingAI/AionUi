@@ -175,7 +175,7 @@
   "assistantHomeLeadShort": "Beceri ve araçlarla önceden yapılandırılmış, hemen kullanıma hazır yapay zekâ uzmanları. Etkinleştirdikten sonra sohbetlerde, ekiplerde ve zamanlanmış görevlerde kullanabilirsiniz.",
   "assistantRuntimeLabel": "Agent:",
   "assistantGoChat": "Sohbet",
-  "assistantReorderHint": "Sıralamak için sürükleyin — bu, bir asistan seçtiğiniz her yerde (ana ekran, ekipler, zamanlanmış görevler…) görüntülenme sırasını belirler.",
+  "assistantReorderHint": "Sıralamak için sürükleyin — bu, bir asistan seçtiğiniz her yerde (ana ekran, zamanlanmış görevler…) görüntülenme sırasını belirler.",
   "assistantReorderHintShort": "Sıralamak için sürükleyin",
   "assistantReorderSearchDisabled": "Sıralamak için aramayı temizleyin.",
   "myAssistantsHintShort": "Yerel CLI’lerinizden otomatik oluşturulan, kendi oluşturduğunuz veya resmi olanlardan çoğalttığınız asistanlar.",

@@ -22,6 +22,7 @@ const {
   draftMutateMock,
   draftContentRef,
   runtimeViewIsProcessingRef,
+  useAddEventListenerMock,
 } = vi.hoisted(() => ({
   ensureConversationRuntimeMock: vi.fn().mockResolvedValue({ recovered: false, config_options: [], runtime: null }),
   sendMessageInvokeMock: vi.fn().mockResolvedValue(undefined),
@@ -37,6 +38,7 @@ const {
   draftMutateMock: vi.fn(),
   draftContentRef: { current: '' },
   runtimeViewIsProcessingRef: { current: false },
+  useAddEventListenerMock: vi.fn(),
 }));
 
 vi.mock('@/common', () => ({
@@ -246,7 +248,7 @@ vi.mock('@/renderer/utils/emitter', () => ({
   emitter: {
     emit: vi.fn(),
   },
-  useAddEventListener: vi.fn(),
+  useAddEventListener: useAddEventListenerMock,
 }));
 vi.mock('@/renderer/utils/file/fileSelection', () => ({
   mergeFileSelectionItems: vi.fn((items: unknown[]) => items),
@@ -386,6 +388,23 @@ describe('AionrsSendBox', () => {
     await waitFor(() => {
       expect(ensureConversationRuntimeMock).toHaveBeenCalledWith('conv-1');
     });
+  });
+
+  it('replaces the conversation draft when a recommended instruction is selected', () => {
+    render(<AionrsSendBox conversation_id='conv-1' modelSelection={modelSelection} />);
+
+    const replaceHandler = useAddEventListenerMock.mock.calls.find(([event]) => event === 'sendbox.replace')?.[1] as
+      | ((text: string) => void)
+      | undefined;
+    expect(replaceHandler).toBeDefined();
+    draftMutateMock.mockClear();
+
+    act(() => {
+      replaceHandler?.('Recommended instruction');
+    });
+
+    const replaceDraft = draftMutateMock.mock.calls.at(-1)?.[0] as (draft: { content: string }) => { content: string };
+    expect(replaceDraft({ content: 'Existing draft' })).toMatchObject({ content: 'Recommended instruction' });
   });
 
   it('suppresses visible error and preserves runtime gate for active-turn busy conflicts', async () => {

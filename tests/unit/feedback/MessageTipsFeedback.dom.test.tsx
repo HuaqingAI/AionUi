@@ -417,6 +417,15 @@ describe('MessageTips error actions', () => {
 });
 
 describe('agent error locale copy', () => {
+  it('uses the local product name in the Chinese Codex reconnect tip', () => {
+    const localeDir = path.join(process.cwd(), 'packages/desktop/src/renderer/services/i18n/locales');
+    const locale = JSON.parse(readFileSync(path.join(localeDir, 'zh-CN', 'conversation.json'), 'utf8'));
+    const body = locale.agentTip.codes.CODEX_RETRYING.body as string;
+
+    expect(body).toContain('华青智能助手正在等待重连');
+    expect(body).not.toContain('AionUi 正在等待重连');
+  });
+
   it('defines empty-turn info tip copy in every locale', () => {
     const localeDir = path.join(process.cwd(), 'packages/desktop/src/renderer/services/i18n/locales');
 

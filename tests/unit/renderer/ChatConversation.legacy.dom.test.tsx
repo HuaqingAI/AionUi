@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TChatConversation } from '@/common/config/storage';
+import type { Assistant } from '@/common/types/agent/assistantTypes';
 import ChatConversation from '@/renderer/pages/conversation/components/ChatConversation';
 
 const usePresetAssistantInfoMock = vi.fn();
@@ -101,6 +102,7 @@ describe('ChatConversation legacy runtime rendering', () => {
   );
 
   it('prefers preset assistant backend over legacy extra backend for ACP conversations', () => {
+    const assistant = { id: 'assistant-research', name: 'Research Assistant' } as Assistant;
     usePresetAssistantInfoMock.mockReturnValue({
       info: {
         name: 'Research Assistant',
@@ -109,6 +111,7 @@ describe('ChatConversation legacy runtime rendering', () => {
         backend: 'codex',
         assistantId: 'assistant-research',
       },
+      assistant,
       isLoading: false,
     });
 
@@ -138,6 +141,7 @@ describe('ChatConversation legacy runtime rendering', () => {
       expect.objectContaining({
         backend: 'codex',
         assistantId: 'assistant-research',
+        assistant,
       })
     );
   });

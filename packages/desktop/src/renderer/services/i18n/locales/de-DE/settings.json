@@ -175,7 +175,7 @@
   "assistantHomeLeadShort": "Einsatzbereite KI-Experten mit vorkonfigurierten Fähigkeiten und Werkzeugen. Nach dem Aktivieren kannst du sie in Chats, Teams und geplanten Aufgaben verwenden.",
   "assistantRuntimeLabel": "Agent:",
   "assistantGoChat": "Chat",
-  "assistantReorderHint": "Zum Umsortieren ziehen — das bestimmt die Anzeigereihenfolge überall dort, wo du einen Assistenten auswählst (Startseite, Teams, geplante Aufgaben…).",
+  "assistantReorderHint": "Zum Umsortieren ziehen — das bestimmt die Anzeigereihenfolge überall dort, wo du einen Assistenten auswählst (Startseite, geplante Aufgaben…).",
   "assistantReorderHintShort": "Zum Umsortieren ziehen",
   "assistantReorderSearchDisabled": "Leere die Suche, um die Reihenfolge zu ändern.",
   "myAssistantsHintShort": "Assistenten, die automatisch aus deinen lokalen CLIs erzeugt wurden, sowie selbst erstellte oder von offiziellen duplizierte.",

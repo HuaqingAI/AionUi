@@ -4,17 +4,7 @@ import { resolveExtensionAssetUrl } from '@/renderer/utils/platform';
 import { type IExtensionSettingsTab } from '@/common/adapter/ipcBridge';
 import { useExtI18n } from '@/renderer/hooks/system/useExtI18n';
 import { useExtensionSettingsTabs } from '@/renderer/hooks/system/useExtensionSettingsTabs';
-import {
-  Computer,
-  Info,
-  Lightning,
-  LinkCloud,
-  Puzzle,
-  Speed,
-  System,
-  Toolkit,
-  Logout,
-} from '@icon-park/react';
+import { Computer, Info, Inbox, Lightning, LinkCloud, Puzzle, Speed, System, Toolkit, Logout } from '@icon-park/react';
 import classNames from 'classnames';
 import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -23,7 +13,7 @@ import { Message, Tooltip } from '@arco-design/web-react';
 import { getSiderTooltipProps } from '@/renderer/utils/ui/siderTooltip';
 
 /** Builtin settings tab IDs in display order (must match router paths). */
-export const BUILTIN_TAB_IDS = ['agent', 'skills', 'tools', 'appearance', 'system', 'about'] as const;
+export const BUILTIN_TAB_IDS = ['agent', 'skills', 'tools', 'appearance', 'system', 'archived', 'about'] as const;
 
 /**
  * Legacy anchor IDs that have been merged into other tabs.
@@ -44,6 +34,7 @@ export const LEGACY_ANCHOR_REMAP: Record<string, string> = {
 const GROUP_HEADER_BEFORE: Record<string, string> = {
   agent: 'settings.groupAiCore',
   appearance: 'settings.groupApp',
+  archived: 'settings.archived.title',
   about: 'settings.groupAbout',
 };
 
@@ -95,6 +86,12 @@ const SettingsSider: React.FC<{ collapsed?: boolean; tooltipEnabled?: boolean }>
       },
       appearance: { id: 'appearance', label: t('settings.appearancePanel'), icon: <Computer />, path: 'appearance' },
       system: { id: 'system', label: t('settings.system'), icon: <System />, path: 'system' },
+      archived: {
+        id: 'archived',
+        label: t('settings.archived.navLabel'),
+        icon: <Inbox />,
+        path: 'archived',
+      },
       about: { id: 'about', label: t('settings.about'), icon: <Info />, path: 'about' },
     };
 

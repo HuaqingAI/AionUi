@@ -6,6 +6,8 @@
 
 import type { IConversationMcpStatus } from '@/common/config/storage';
 import type { ChatFileRef } from '@/common/types/chatFile';
+import type { Assistant } from '@/common/types/agent/assistantTypes';
+import AssistantDescriptionPanel from '@/renderer/components/assistant/AssistantDescriptionPanel';
 import { ConversationProvider } from '@/renderer/hooks/context/ConversationContext';
 import ConversationPlanBar from '@renderer/pages/conversation/PlanBar/ConversationPlanBar';
 import { usePlanRecovery } from '@renderer/pages/conversation/PlanBar/usePlanRecovery';
@@ -43,6 +45,7 @@ const AcpChat: React.FC<{
   teamSendMessage?: (payload: { input: string; files: ChatFileRef[] }) => Promise<void>;
   teamRuntime?: TeamSendBoxRuntime;
   assistantId?: string;
+  assistant?: Assistant;
   forkCapability?: { at_turn: boolean };
   promptCapability?: { image: boolean; audio: boolean };
 }> = ({
@@ -60,6 +63,7 @@ const AcpChat: React.FC<{
   teamSendMessage,
   teamRuntime,
   assistantId,
+  assistant,
   forkCapability,
   promptCapability,
 }) => {
@@ -91,7 +95,13 @@ const AcpChat: React.FC<{
       <ConversationArtifactProvider conversation_id={conversation_id}>
         <div className={`${CHAT_SURFACE_CONTAINER_CLASS} flex-1 flex flex-col px-20px min-h-0`}>
           <FlexFullContainer>
-            <MessageList className='flex-1' emptySlot={emptySlot} />
+            <MessageList
+              className='flex-1'
+              emptySlot={emptySlot}
+              topSlot={
+                assistant ? <AssistantDescriptionPanel assistant={assistant} className='px-4px pt-4px' /> : undefined
+              }
+            />
           </FlexFullContainer>
           <AcpE2EStreamInjector conversationId={conversation_id} />
           <ConversationPlanBar conversation_id={conversation_id} />

@@ -13,22 +13,35 @@
 import React from 'react';
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { Assistant } from '@/common/types/agent/assistantTypes';
 
 // Probe replaces the heavy MessageList: it renders whatever forkCapability
 // value reaches ConversationContext, so assertions read the real context.
 vi.mock('@renderer/pages/conversation/Messages/MessageList', async () => {
   const { useConversationContextSafe } = await import('@/renderer/hooks/context/ConversationContext');
   const ReactModule = await import('react');
-  const Probe: React.FC<Record<string, unknown>> = () => {
+  const Probe: React.FC<{ topSlot?: React.ReactNode }> = ({ topSlot }) => {
     const ctx = useConversationContextSafe();
     return ReactModule.createElement(
-      'div',
-      { 'data-testid': 'fork-capability-probe' },
-      JSON.stringify(ctx?.forkCapability ?? null)
+      ReactModule.Fragment,
+      undefined,
+      ReactModule.createElement(
+        'div',
+        { 'data-testid': 'fork-capability-probe' },
+        JSON.stringify(ctx?.forkCapability ?? null)
+      ),
+      topSlot
+        ? ReactModule.createElement('div', { 'data-testid': 'assistant-description-top-slot' }, topSlot)
+        : undefined
     );
   };
   return { __esModule: true, default: Probe };
 });
+
+vi.mock('@/renderer/components/assistant/AssistantDescriptionPanel', () => ({
+  __esModule: true,
+  default: ({ assistant }: { assistant: Assistant }) => <div>{assistant.description}</div>,
+}));
 
 vi.mock('@renderer/pages/conversation/platforms/aionrs/AionrsSendBox', () => ({
   __esModule: true,
@@ -71,13 +84,14 @@ vi.mock('@renderer/pages/conversation/Messages/artifacts', () => ({
 import AionrsChat from '@renderer/pages/conversation/platforms/aionrs/AionrsChat';
 import type { AionrsModelSelection } from '@renderer/pages/conversation/platforms/aionrs/useAionrsModelSelection';
 
-const renderChat = (forkCapability?: { at_turn: boolean }) =>
+const renderChat = (forkCapability?: { at_turn: boolean }, assistant?: Assistant) =>
   render(
     <AionrsChat
       conversation_id='conv-aionrs-1'
       workspace='/workspace/demo'
       modelSelection={{} as AionrsModelSelection}
       forkCapability={forkCapability}
+      assistant={assistant}
     />
   );
 
@@ -92,5 +106,11 @@ describe('AionrsChat fork capability wiring', () => {
   it('leaves the context without a capability when the detail declares none, keeping fork hidden', () => {
     renderChat(undefined);
     expect(screen.getByTestId('fork-capability-probe').textContent).toBe('null');
+  });
+
+  it('renders the selected assistant description above the conversation messages', () => {
+    renderChat(undefined, { id: 'assistant-1', name: 'Assistant', description: 'Assistant description' } as Assistant);
+
+    expect(screen.getByTestId('assistant-description-top-slot')).toHaveTextContent('Assistant description');
   });
 });

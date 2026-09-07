@@ -563,13 +563,19 @@ describe('GuidPage', () => {
     });
   });
 
-  it('omits aionui-config from the Guid new-conversation skill menu', async () => {
+  it('omits aionui-prefixed internal skills from the Guid new-conversation skill menu', async () => {
     listAvailableSkillsInvokeMock.mockResolvedValue([
       {
         name: 'aionui-config',
         description: 'Internal config sync',
         source: 'builtin',
         is_auto_inject: true,
+      },
+      {
+        name: 'aionui-browser',
+        description: 'Internal browser integration',
+        source: 'builtin',
+        is_auto_inject: false,
       },
       {
         name: 'pdf-reader',

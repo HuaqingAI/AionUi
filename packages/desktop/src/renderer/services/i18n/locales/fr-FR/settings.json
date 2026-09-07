@@ -178,7 +178,7 @@
   "myAssistantsHintShort": "Assistants générés automatiquement à partir de vos CLI locales, ainsi que ceux que vous avez créés ou dupliqués à partir d'officiels.",
   "assistantRuntimeLabel": "Agent:",
   "assistantGoChat": "Chat",
-  "assistantReorderHint": "Faites glisser pour réorganiser — cela décide de l'ordre d'affichage partout où vous choisissez un assistant (maison, équipes, tâches planifiées,…).",
+  "assistantReorderHint": "Faites glisser pour réorganiser — cela décide de l'ordre d'affichage partout où vous choisissez un assistant (maison, tâches planifiées,…).",
   "assistantGroupCli": "Assistants CLI",
   "assistantGroupCreated": "Assistants personnalisés",
   "myAssistantsEmpty": "Pas d'assistants ici pour l'instant.",

@@ -177,7 +177,7 @@
   "myAssistantsHintShort": "Asistentes generados automáticamente desde tus CLI locales, además de los que creaste o duplicaste desde oficiales.",
   "assistantRuntimeLabel": "Agente:",
   "assistantGoChat": "Chat",
-  "assistantReorderHint": "Arrastra para reordenar; esto decide el orden de visualización donde elijas un asistente (inicio, equipos, tareas programadas, ...).",
+  "assistantReorderHint": "Arrastra para reordenar; esto decide el orden de visualización donde elijas un asistente (inicio, tareas programadas, ...).",
   "assistantGroupCli": "Asistentes CLI",
   "assistantGroupCreated": "Asistentes personalizados",
   "myAssistantsEmpty": "Aún no hay asistentes aquí.",

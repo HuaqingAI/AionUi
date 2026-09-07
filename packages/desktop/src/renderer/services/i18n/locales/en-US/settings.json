@@ -178,7 +178,7 @@
   "myAssistantsHintShort": "Assistants auto-generated from your local CLIs, plus ones you created or duplicated from official.",
   "assistantRuntimeLabel": "Agent:",
   "assistantGoChat": "Chat",
-  "assistantReorderHint": "Drag to reorder — this decides the display order wherever you pick an assistant (home, teams, scheduled tasks, …).",
+  "assistantReorderHint": "Drag to reorder — this decides the display order wherever you pick an assistant (home, scheduled tasks, …).",
   "assistantGroupCli": "CLI Assistants",
   "assistantGroupCreated": "Custom Assistants",
   "myAssistantsEmpty": "No assistants here yet.",

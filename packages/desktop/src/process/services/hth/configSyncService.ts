@@ -782,7 +782,7 @@ export class HTHConfigSyncService {
         .map((id) =>
           Object.assign({}, template, {
             slug: id,
-            display_name: appendModelMultiplier(id.toUpperCase(), pricingByModel.get(id)),
+            display_name: `HTH/${appendModelMultiplier(id.toUpperCase(), pricingByModel.get(id))}`,
             description:
               formatModelPricingDescription(pricingByModel.get(id)) ||
               appendModelMultiplier(id.toUpperCase(), pricingByModel.get(id)),

@@ -175,7 +175,7 @@
   "assistantHomeLeadShort": "스킬과 도구가 준비되어 바로 사용할 수 있는 AI 전문가. 활성화하면 채팅, 팀, 예약 작업에서 사용할 수 있습니다.",
   "assistantRuntimeLabel": "Agent:",
   "assistantGoChat": "채팅",
-  "assistantReorderHint": "드래그하여 순서를 바꿀 수 있습니다. 이 순서는 어시스턴트를 선택하는 모든 곳(홈, 팀, 예약 작업 등)에서의 표시 순서를 결정합니다.",
+  "assistantReorderHint": "드래그하여 순서를 바꿀 수 있습니다. 이 순서는 어시스턴트를 선택하는 모든 곳(홈, 예약 작업 등)에서의 표시 순서를 결정합니다.",
   "assistantReorderHintShort": "드래그하여 순서 변경",
   "assistantReorderSearchDisabled": "검색을 지우면 순서를 변경할 수 있습니다.",
   "myAssistantsHintShort": "로컬 CLI에서 자동 생성되었거나 직접 만들었거나 공식에서 복제한 어시스턴트입니다.",

@@ -17,6 +17,7 @@ const {
   addOrUpdateMessageMock,
   resetStateMock,
   emitterEmitMock,
+  useAddEventListenerMock,
   setSendBoxHandlerMock,
   useAcpConfigOptionsMock,
   useTeamPermissionMock,
@@ -39,6 +40,7 @@ const {
   addOrUpdateMessageMock: vi.fn(),
   resetStateMock: vi.fn(),
   emitterEmitMock: vi.fn(),
+  useAddEventListenerMock: vi.fn(),
   setSendBoxHandlerMock: vi.fn(),
   useAcpConfigOptionsMock: vi.fn(),
   useTeamPermissionMock: vi.fn(),
@@ -289,7 +291,7 @@ vi.mock('@/renderer/utils/emitter', () => ({
   emitter: {
     emit: emitterEmitMock,
   },
-  useAddEventListener: vi.fn(),
+  useAddEventListener: useAddEventListenerMock,
 }));
 vi.mock('@/renderer/utils/file/fileSelection', () => ({
   mergeFileSelectionItems: vi.fn(),
@@ -394,6 +396,30 @@ describe('AcpSendBox', () => {
     await waitFor(() => {
       expect(resetStateMock).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('replaces the conversation draft when a recommended instruction is selected', () => {
+    render(
+      <AcpSendBox
+        conversation_id='conv-1'
+        backend='claude'
+        workspacePath='/tmp/workspace'
+        messageState={makeMessageState()}
+      />
+    );
+
+    const replaceHandler = useAddEventListenerMock.mock.calls.find(([event]) => event === 'sendbox.replace')?.[1] as
+      | ((text: string) => void)
+      | undefined;
+    expect(replaceHandler).toBeDefined();
+    draftMutateMock.mockClear();
+
+    act(() => {
+      replaceHandler?.('Recommended instruction');
+    });
+
+    const replaceDraft = draftMutateMock.mock.calls.at(-1)?.[0] as (draft: { content: string }) => { content: string };
+    expect(replaceDraft({ content: 'Existing draft' })).toMatchObject({ content: 'Recommended instruction' });
   });
 
   it('shows a progress ring with a window size, a hollow ring without one, and nothing without usage', () => {

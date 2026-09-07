@@ -8,16 +8,7 @@ import {
 import { resolveExtensionAssetUrl } from '@/renderer/utils/platform';
 import { type IExtensionSettingsTab } from '@/common/adapter/ipcBridge';
 import { useExtensionSettingsTabs } from '@/renderer/hooks/system/useExtensionSettingsTabs';
-import {
-  Computer,
-  Info,
-  Lightning,
-  LinkCloud,
-  Puzzle,
-  Robot,
-  System,
-  Toolkit,
-} from '@icon-park/react';
+import { Computer, Info, Inbox, Lightning, LinkCloud, Puzzle, Robot, System, Toolkit } from '@icon-park/react';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useExtI18n } from '@/renderer/hooks/system/useExtI18n';
@@ -68,6 +59,12 @@ export function getBuiltinSettingsNavItems(t: TranslateFn): NavItem[] {
       path: 'appearance',
     },
     system: { id: 'system', label: t('settings.system'), icon: <System theme='outline' size='16' />, path: 'system' },
+    archived: {
+      id: 'archived',
+      label: t('settings.archived.navLabel'),
+      icon: <Inbox theme='outline' size='16' />,
+      path: 'archived',
+    },
     about: { id: 'about', label: t('settings.about'), icon: <Info theme='outline' size='16' />, path: 'about' },
   };
 

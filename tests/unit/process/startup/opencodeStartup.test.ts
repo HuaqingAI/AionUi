@@ -155,15 +155,10 @@ describe('opencode startup bootstrap', () => {
     };
   }
 
-  it('uses managed Node npm to install OpenCode instead of system npm or curl', async () => {
+  it('uses an existing managed Node runtime to install OpenCode without a Core request', async () => {
     const fixture = await createManagedNodeFixture();
-    const calls: string[] = [];
-    const ensureNodeRuntime = vi.fn(async () => {
-      calls.push('node');
-      return { ready: true };
-    });
+    const ensureNodeRuntime = vi.fn(async () => ({ ready: true }));
     const commandRunner = vi.fn(async () => {
-      calls.push('npm');
       await mkdir(path.dirname(fixture.commandPath), { recursive: true });
       await writeFile(fixture.commandPath, '');
       return {};
@@ -178,13 +173,7 @@ describe('opencode startup bootstrap', () => {
     });
 
     expect(result).toEqual({ status: 'ready' });
-    expect(calls).toEqual(['node', 'npm']);
-    expect(ensureNodeRuntime).toHaveBeenCalledWith({
-      scope: {
-        kind: 'custom_agent',
-        id: 'startup-opencode',
-      },
-    });
+    expect(ensureNodeRuntime).not.toHaveBeenCalled();
     expect(commandRunner).toHaveBeenCalledWith(
       fixture.nodeExecutable,
       [
@@ -356,7 +345,7 @@ describe('opencode startup bootstrap', () => {
         fixture.npmCliPath,
         'install',
         '--global',
-        '@openai/codex@0.152.0',
+        '@openai/codex@0.151.0',
         '--prefix',
         fixture.codexPrefix,
         '--registry',
@@ -373,6 +362,48 @@ describe('opencode startup bootstrap', () => {
         timeout: 180000,
       }
     );
+  });
+
+  it('uninstalls an older managed Codex package before installing the pinned version', async () => {
+    const fixture = await createManagedNodeFixture();
+    const packageRoot =
+      process.platform === 'win32'
+        ? path.join(fixture.codexPrefix, 'node_modules', '@openai', 'codex')
+        : path.join(fixture.codexPrefix, 'lib', 'node_modules', '@openai', 'codex');
+    const packageJsonPath = path.join(packageRoot, 'package.json');
+    await mkdir(packageRoot, { recursive: true });
+    await writeFile(packageJsonPath, JSON.stringify({ version: '0.152.0', bin: { codex: 'bin/codex.js' } }));
+    await mkdir(path.dirname(fixture.codexCommandPath), { recursive: true });
+    await writeFile(fixture.codexCommandPath, '');
+
+    const commandRunner = vi.fn(async (_file: string, args: string[]) => {
+      if (args[1] === 'install') {
+        await writeFile(packageJsonPath, JSON.stringify({ version: '0.151.0', bin: { codex: 'bin/codex.js' } }));
+      }
+      return {};
+    });
+
+    const result = await ensureCodexReady({
+      commandRunner,
+      dataPath: fixture.dataPath,
+      emitStatus: vi.fn(),
+      ensureNodeRuntime: async () => ({ ready: true }),
+      env: {},
+    });
+
+    expect(result).toEqual({ status: 'ready' });
+    expect(commandRunner).toHaveBeenCalledTimes(2);
+    expect(commandRunner.mock.calls[0]?.[1]).toEqual([
+      fixture.npmCliPath,
+      'uninstall',
+      '--global',
+      '@openai/codex',
+      '--prefix',
+      fixture.codexPrefix,
+      '--registry',
+      'https://registry.npmmirror.com',
+    ]);
+    expect(commandRunner.mock.calls[1]?.[1]).toContain('@openai/codex@0.151.0');
   });
 
   it('starts Codex without invoking plugin or marketplace commands', async () => {
@@ -693,16 +724,13 @@ describe('opencode startup bootstrap', () => {
     );
   });
 
-  it('emits Codex installation status before preparing managed Node', async () => {
+  it('emits Codex installation status before installing with an existing managed Node runtime', async () => {
     const fixture = await createManagedNodeFixture();
     const calls: string[] = [];
     const emitStatus = vi.fn((event: { phase: string; resource_id?: string }) => {
       calls.push(`${event.resource_id}:${event.phase}`);
     });
-    const ensureNodeRuntime = vi.fn(async () => {
-      calls.push('node');
-      return { ready: true };
-    });
+    const ensureNodeRuntime = vi.fn(async () => ({ ready: true }));
     const commandRunner = vi.fn(async () => {
       calls.push('npm');
       await mkdir(path.dirname(fixture.codexCommandPath), { recursive: true });
@@ -719,7 +747,8 @@ describe('opencode startup bootstrap', () => {
     });
 
     expect(result).toEqual({ status: 'ready' });
-    expect(calls).toEqual(['codex:downloading', 'node', 'npm', 'codex:ready']);
+    expect(calls).toEqual(['codex:downloading', 'npm', 'codex:ready']);
+    expect(ensureNodeRuntime).not.toHaveBeenCalled();
     expect(emitStatus).toHaveBeenCalledWith({
       resource: 'acp_tool',
       resource_id: 'codex',
@@ -755,6 +784,12 @@ describe('opencode startup bootstrap', () => {
     const oldPath = path.join(fixture.dataPath, 'system-node-bin');
     process.env.PATH = oldPath;
     process.env.Path = oldPath;
+    const packageRoot =
+      process.platform === 'win32'
+        ? path.join(fixture.codexPrefix, 'node_modules', '@openai', 'codex')
+        : path.join(fixture.codexPrefix, 'lib', 'node_modules', '@openai', 'codex');
+    await mkdir(packageRoot, { recursive: true });
+    await writeFile(path.join(packageRoot, 'package.json'), JSON.stringify({ version: '0.151.0' }));
     await mkdir(path.dirname(fixture.codexCommandPath), { recursive: true });
     await writeFile(fixture.codexCommandPath, '');
     const commandRunner = vi.fn(async () => ({}));
@@ -783,6 +818,7 @@ describe('opencode startup bootstrap', () => {
     await writeFile(
       path.join(packageRoot, 'package.json'),
       JSON.stringify({
+        version: '0.151.0',
         bin: {
           codex: 'bin/codex.js',
         },
@@ -836,6 +872,7 @@ describe('opencode startup bootstrap', () => {
     await writeFile(
       path.join(packageRoot, 'package.json'),
       JSON.stringify({
+        version: '0.151.0',
         bin: {
           codex: 'bin/codex.js',
         },

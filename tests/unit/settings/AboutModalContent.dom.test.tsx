@@ -21,6 +21,8 @@ vi.mock('react-i18next', () => ({
     t: (key: string, params?: Record<string, string>) =>
       key === 'login.brand'
         ? '华青智能助手'
+        : key === 'settings.appDescription'
+          ? '一个桌面。你的 AI 智能体，真正实现协同工作。'
         : key === 'update.preparingInstall'
         ? '准备安装...'
         : key === 'settings.updateReadyInstall'
@@ -111,6 +113,7 @@ describe('AboutModalContent update ready state', () => {
     render(<AboutModalContent />);
 
     expect(screen.getByText('华青智能助手')).toBeInTheDocument();
+    expect(screen.getByText('一个桌面。你的 AI 智能体，真正实现协同工作。')).toBeInTheDocument();
     expect(screen.queryByText('AionUi')).not.toBeInTheDocument();
     expect(screen.queryByText('settings.includePrereleaseUpdates')).not.toBeInTheDocument();
     expect(screen.queryByText('settings.helpDocumentation')).not.toBeInTheDocument();

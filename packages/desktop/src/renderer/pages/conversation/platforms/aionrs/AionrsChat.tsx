@@ -6,6 +6,8 @@
 
 import type { IConversationMcpStatus } from '@/common/config/storage';
 import type { ChatFileRef } from '@/common/types/chatFile';
+import type { Assistant } from '@/common/types/agent/assistantTypes';
+import AssistantDescriptionPanel from '@/renderer/components/assistant/AssistantDescriptionPanel';
 import type { ConversationContextValue } from '@/renderer/hooks/context/ConversationContext';
 import { ConversationProvider } from '@/renderer/hooks/context/ConversationContext';
 import ConversationPlanBar from '@renderer/pages/conversation/PlanBar/ConversationPlanBar';
@@ -41,6 +43,7 @@ const AionrsChat: React.FC<{
   teamSendMessage?: (payload: { input: string; files: ChatFileRef[] }) => Promise<void>;
   teamRuntime?: TeamSendBoxRuntime;
   assistantId?: string;
+  assistant?: Assistant;
   forkCapability?: { at_turn: boolean };
 }> = ({
   conversation_id,
@@ -56,6 +59,7 @@ const AionrsChat: React.FC<{
   teamSendMessage,
   teamRuntime,
   assistantId,
+  assistant,
   forkCapability,
 }) => {
   useMessageLstCache(conversation_id);
@@ -89,7 +93,13 @@ const AionrsChat: React.FC<{
       <ConversationArtifactProvider conversation_id={conversation_id}>
         <div className={`${CHAT_SURFACE_CONTAINER_CLASS} flex-1 flex flex-col px-20px min-h-0`}>
           <FlexFullContainer>
-            <MessageList className='flex-1' emptySlot={emptySlot} />
+            <MessageList
+              className='flex-1'
+              emptySlot={emptySlot}
+              topSlot={
+                assistant ? <AssistantDescriptionPanel assistant={assistant} className='px-4px pt-4px' /> : undefined
+              }
+            />
           </FlexFullContainer>
           <ConversationPlanBar conversation_id={conversation_id} />
           <AionrsSendBox

@@ -1316,9 +1316,10 @@ describe('HTHConfigSyncService auth handling', () => {
       'gpt-5.6-terra',
       'grok-4.5',
     ]);
+    expect(catalog.models.every((model: { display_name: string }) => model.display_name.startsWith('HTH/'))).toBe(true);
     expect(catalog.models[2]).toMatchObject({
       slug: 'grok-4.5',
-      display_name: 'GROK-4.5 x2.4',
+      display_name: 'HTH/GROK-4.5 x2.4',
       description: '输入 $4.00 / 百万 Token\n输出 $8.00 / 百万 Token',
       visibility: 'list',
       supported_in_api: true,

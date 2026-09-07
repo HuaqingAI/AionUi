@@ -140,7 +140,8 @@ const BEISEN_CLI_STARTUP_SCOPE: IRuntimeStatusScope = {
 };
 const CODEX_TOOL_ID = 'codex';
 const CODEX_PACKAGE_NAME = '@openai/codex';
-const CODEX_PACKAGE_SPEC = '@openai/codex@0.152.0';
+const CODEX_PACKAGE_VERSION = '0.151.0';
+const CODEX_PACKAGE_SPEC = `${CODEX_PACKAGE_NAME}@${CODEX_PACKAGE_VERSION}`;
 const CODEX_AGENT_MATCH = 'codex';
 const CODEX_STARTUP_SCOPE: IRuntimeStatusScope = {
   kind: 'custom_agent',
@@ -539,6 +540,16 @@ async function pathExists(filePath: string): Promise<boolean> {
     return true;
   } catch {
     return false;
+  }
+}
+
+async function readManagedToolPackageVersion(tool: ManagedAcpTool, dataPath = getDataPath()): Promise<string | null> {
+  const packageJsonPath = path.join(getManagedToolPackageRoot(tool, dataPath), 'package.json');
+  try {
+    const packageJson = JSON.parse(await fs.readFile(packageJsonPath, 'utf8')) as { version?: unknown };
+    return typeof packageJson.version === 'string' ? packageJson.version : null;
+  } catch {
+    return null;
   }
 }
 
@@ -1013,9 +1024,16 @@ async function ensureManagedToolInstalledWithManagedNode(options: {
   const nodeBinDir = path.dirname(nodeExecutable);
   prependPathEntry(nodeBinDir);
   const prefix = getManagedToolNpmPrefix(options.tool, options.dataPath);
+  const installedPackageVersion =
+    options.tool.toolId === CODEX_TOOL_ID ? await readManagedToolPackageVersion(options.tool, options.dataPath) : null;
+  const codexVersionMismatch =
+    options.tool.toolId === CODEX_TOOL_ID &&
+    installedPackageVersion !== null &&
+    installedPackageVersion !== CODEX_PACKAGE_VERSION;
+  const codexNeedsInstall = options.tool.toolId === CODEX_TOOL_ID && installedPackageVersion !== CODEX_PACKAGE_VERSION;
   if (await pathExists(commandPath)) {
     const packageIsReady = options.tool.toolId !== DWS_TOOL_ID || (await pathExists(getDwsBinaryPath(prefix)));
-    if (packageIsReady) {
+    if (packageIsReady && !codexNeedsInstall) {
       await ensureManagedToolLauncherUsesManagedNode(options.tool, options.dataPath, nodeExecutable);
       return;
     }
@@ -1041,6 +1059,27 @@ async function ensureManagedToolInstalledWithManagedNode(options: {
   }
   if (process.platform === 'win32') {
     commandEnv.Path = commandEnv.PATH;
+  }
+
+  if (codexVersionMismatch) {
+    await options.commandRunner(
+      nodeExecutable,
+      [
+        npmCliPath,
+        'uninstall',
+        '--global',
+        options.tool.packageName,
+        '--prefix',
+        prefix,
+        '--registry',
+        MANAGED_NPM_REGISTRY,
+      ],
+      {
+        cwd: options.dataPath,
+        env: commandEnv,
+        timeout: OPENCODE_INSTALL_TIMEOUT_MS,
+      }
+    );
   }
 
   await options.commandRunner(
@@ -1144,7 +1183,11 @@ async function ensureManagedToolReady(
       hadTool ? `Checking ${tool.displayName} installation` : `Installing ${tool.displayName} with managed Node runtime`
     );
 
-    const nodeResult = await ensureNodeRuntime({ scope });
+    // The managed Node runtime is shared by the desktop process and Core. When
+    // it is already present, avoid an authenticated Core request before using it.
+    const nodeResult = (await findManagedNodeExecutable(dataPath))
+      ? { ready: true }
+      : await ensureNodeRuntime({ scope });
     if (nodeResult.ready !== true) {
       emitToolRuntimeStatus(emitStatus, scopedTool, 'failed', 'managed Node runtime is not ready');
       return { status: 'failed', error: 'managed Node runtime is not ready' };
