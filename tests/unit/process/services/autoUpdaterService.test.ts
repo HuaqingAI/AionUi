@@ -18,6 +18,7 @@ const autoUpdaterMock = vi.hoisted(() => ({
   allowDowngrade: false,
   channel: undefined as string | undefined,
   currentVersion: { version: '2.1.13' },
+  requestHeaders: {} as Record<string, string>,
   setFeedURL: vi.fn(),
   on: vi.fn(),
   removeListener: vi.fn(),
@@ -27,6 +28,8 @@ const autoUpdaterMock = vi.hoisted(() => ({
   quitAndInstall: vi.fn(),
   checkForUpdatesAndNotify: vi.fn(),
 }));
+
+const fetchMock = vi.hoisted(() => vi.fn());
 
 const nativeAutoUpdaterMock = vi.hoisted(() => ({
   on: vi.fn(),
@@ -87,6 +90,7 @@ describe('AutoUpdaterService', () => {
     autoUpdaterMock.allowPrerelease = false;
     autoUpdaterMock.allowDowngrade = false;
     autoUpdaterMock.channel = undefined;
+    autoUpdaterMock.requestHeaders = {};
     appMock.getPath.mockImplementation(() => '/tmp/aionui-test');
     delete (autoUpdaterMock as { updateInfoAndProvider?: unknown }).updateInfoAndProvider;
     appMock.isPackaged = false;
@@ -98,17 +102,26 @@ describe('AutoUpdaterService', () => {
       configurable: true,
       value: { version: '2.1.13' },
     });
+    fetchMock.mockImplementation(
+      async () =>
+        new Response(JSON.stringify({ success: true, data: { legacy_open: true } }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+    );
+    vi.stubGlobal('fetch', fetchMock);
   });
 
   afterEach(() => {
     vi.clearAllTimers();
     vi.useRealTimers();
+    vi.unstubAllGlobals();
     setPlatform(originalPlatform);
   });
 
   it('does not use the stable CDN updater when prerelease manual mode is enabled', async () => {
     autoUpdaterMock.checkForUpdates.mockResolvedValue({
-      isUpdateAvailable: true,
+      isUpdateAvailable: false,
       updateInfo: {
         version: '2.1.14',
         files: [{ url: 'AionUi-2.1.14-mac-arm64.dmg', sha512: 'sha512-value' }],
@@ -132,7 +145,7 @@ describe('AutoUpdaterService', () => {
   it('ignores a feed version that is not newer than the installed build', async () => {
     appMock.getVersion.mockReturnValue('2.1.54');
     autoUpdaterMock.checkForUpdates.mockResolvedValue({
-      isUpdateAvailable: true,
+      isUpdateAvailable: false,
       updateInfo: {
         version: '2.1.53',
         files: [{ url: 'AionUi-2.1.53-mac-arm64.dmg', sha512: 'sha512-value' }],
@@ -170,6 +183,59 @@ describe('AutoUpdaterService', () => {
     expect(result).toEqual({ success: true, updateInfo });
   });
 
+  it('uses the desktop token for the manifest and a scoped capability for download artifacts', async () => {
+    const updateInfo = {
+      version: '2.1.14',
+      files: [{ url: 'AionUi-2.1.14-mac-arm64.dmg', sha512: 'sha512-value' }],
+      path: 'AionUi-2.1.14-mac-arm64.dmg',
+      sha512: 'sha512-value',
+      releaseDate: '2026-06-08T00:00:00.000Z',
+    };
+    autoUpdaterMock.checkForUpdates.mockResolvedValue({ isUpdateAvailable: true, updateInfo });
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            eligible: true,
+            release: { version: '2.1.14', platform: 'mac_arm64' },
+            artifact_capability: 'artifact-capability',
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )
+    );
+
+    const { autoUpdaterService } = await import('@/process/services/autoUpdaterService');
+    Object.defineProperty(autoUpdaterService, '_desktopAuthService', {
+      value: {
+        getDesktopUpdateAccess: vi
+          .fn()
+          .mockResolvedValue({ baseUrl: 'https://api.example.com', token: 'desktop-token' }),
+      },
+    });
+    autoUpdaterService.initialize();
+
+    await expect(autoUpdaterService.checkForUpdates()).resolves.toEqual({ success: true, updateInfo });
+
+    expect(autoUpdaterMock.setFeedURL).toHaveBeenLastCalledWith(
+      expect.objectContaining({ manifestRequestHeaders: { Authorization: 'Bearer desktop-token' } })
+    );
+    expect(autoUpdaterMock.requestHeaders).toEqual({ 'X-AionUi-Update-Capability': 'artifact-capability' });
+  });
+
+  it('does not call electron-updater when an unauthenticated client is denied by enforced mode', async () => {
+    fetchMock.mockResolvedValue(new Response('', { status: 401 }));
+
+    const { autoUpdaterService } = await import('@/process/services/autoUpdaterService');
+    autoUpdaterService.initialize();
+
+    await expect(autoUpdaterService.checkForUpdates()).resolves.toEqual({ success: true });
+
+    expect(autoUpdaterMock.checkForUpdates).not.toHaveBeenCalled();
+    expect(autoUpdaterMock.requestHeaders).toEqual({});
+  });
+
   it('configures electron-updater to read stable metadata from the CDN', async () => {
     const { autoUpdaterService } = await import('@/process/services/autoUpdaterService');
     const { CdnGenericProvider } = await import('@/process/services/cdnGenericProvider');
@@ -178,7 +244,7 @@ describe('AutoUpdaterService', () => {
 
     expect(autoUpdaterMock.setFeedURL).toHaveBeenCalledWith({
       provider: 'custom',
-      url: 'https://static.aionui.com/releases',
+      url: 'http://127.0.0.1:3001/api/aionui/client-updates',
       updateProvider: CdnGenericProvider,
     });
   });
@@ -604,7 +670,7 @@ describe('AutoUpdaterService', () => {
   it('moves the process cwd to temp before the Windows updater handoff', async () => {
     setPlatform('win32');
     const tempRoot = path.join(process.env.TEMP || process.cwd(), `aionui-updater-cwd-test-${process.pid}`);
-    const expectedCwd = path.join(tempRoot, 'aionui-updater-cwd');
+    const expectedCwd = path.join(tempRoot, 'hqbuddy-updater-cwd');
     const chdir = vi.spyOn(process, 'chdir').mockImplementation(() => undefined);
     appMock.getPath.mockImplementation((name: string) => (name === 'temp' ? tempRoot : '/tmp/aionui-test'));
 

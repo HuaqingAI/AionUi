@@ -17,6 +17,7 @@ type GenericProviderRuntimeOptions = ConstructorParameters<typeof GenericProvide
 export type CdnGenericProviderConfiguration = Omit<GenericProviderConfiguration, 'provider'> & {
   provider: 'custom';
   updateProvider?: unknown;
+  manifestRequestHeaders?: Record<string, string>;
 };
 
 const withTrailingSlash = (url: string): string => (url.endsWith('/') ? url : `${url}/`);
@@ -32,11 +33,13 @@ export class CdnGenericProvider extends GenericProvider {
     updater: GenericProviderUpdater,
     runtimeOptions: GenericProviderRuntimeOptions
   ) {
+    const { manifestRequestHeaders, ...configurationWithoutManifestHeaders } = configuration;
     const genericConfiguration: GenericProviderConfiguration = {
-      ...configuration,
+      ...configurationWithoutManifestHeaders,
       provider: 'generic',
     };
     super(genericConfiguration, updater, runtimeOptions);
+    this.setRequestHeaders(manifestRequestHeaders ?? null);
     this._updater = updater;
     this._cdnBaseUrl = new URL(withTrailingSlash(configuration.url));
     log.debug('[auto-update] CDN provider initialized', {

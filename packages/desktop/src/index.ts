@@ -788,7 +788,7 @@ const createWindow = ({ showOnReady = true }: { showOnReady?: boolean } = {}): v
         // Check for updates after 3 seconds delay
         // 3秒后检查更新
         setTimeout(() => {
-          void autoUpdaterService.checkForUpdatesAndNotify();
+          void autoUpdaterService.checkForUpdates();
         }, 3000);
       })
       .catch((error) => {

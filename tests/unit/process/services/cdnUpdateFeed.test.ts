@@ -9,7 +9,15 @@ import type { UpdateInfo } from 'electron-updater';
 import type { AppUpdater } from 'electron-updater/out/AppUpdater';
 import type { ProviderRuntimeOptions } from 'electron-updater/out/providers/Provider';
 import { CdnGenericProvider } from '@/process/services/cdnGenericProvider';
-import { buildCdnFeedOptions, DEFAULT_NEW_API_BASE_URL } from '@/process/services/updateFeed';
+import { DEV_HTH_BASE_URL } from '@/process/services/hth/baseUrl';
+import { buildCdnFeedOptions } from '@/process/services/updateFeed';
+
+vi.mock('electron', () => ({
+  app: {
+    getPath: () => '/tmp/aionui-test',
+    isPackaged: false,
+  },
+}));
 
 const makeRuntimeOptions = (): ProviderRuntimeOptions => ({
   isUseMultipleRangeRequest: true,
@@ -30,7 +38,7 @@ describe('CDN update feed options', () => {
     const options = buildCdnFeedOptions();
 
     expect(options.provider).toBe('custom');
-    expect(options.url).toBe(`${DEFAULT_NEW_API_BASE_URL}/api/aionui/client-updates`);
+    expect(options.url).toBe(`${DEV_HTH_BASE_URL}/api/aionui/client-updates`);
     expect(options.updateProvider).toBe(CdnGenericProvider);
   });
 
@@ -52,6 +60,13 @@ describe('CDN update feed options', () => {
     expect(options.provider).toBe('custom');
     expect(options.url).toBe('https://api.example.com/api/aionui/client-updates');
     expect(options.updateProvider).toBe(CdnGenericProvider);
+  });
+
+  it('keeps manifest authentication separate from the update file URL contract', () => {
+    const options = buildCdnFeedOptions({ Authorization: 'Bearer desktop-token' });
+
+    expect(options.url).toBe(`${DEV_HTH_BASE_URL}/api/aionui/client-updates`);
+    expect(options.manifestRequestHeaders).toEqual({ Authorization: 'Bearer desktop-token' });
   });
 });
 

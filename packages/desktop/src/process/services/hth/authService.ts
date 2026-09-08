@@ -58,6 +58,11 @@ export type HTHAuthAccess = {
   quotaApplyUrl?: string;
 };
 
+export type HTHDesktopUpdateAccess = {
+  baseUrl: string;
+  token: string;
+};
+
 type TokenResponse = {
   access_token?: string;
   token?: string;
@@ -199,6 +204,18 @@ export class HTHAuthService {
       personalApiKeyName: auth.personalApiKeyName || 'hth-default-apikey',
       quotaApplyUrl: auth.quotaApplyUrl,
     };
+  }
+
+  async getDesktopUpdateAccess(): Promise<HTHDesktopUpdateAccess | null> {
+    const auth = await this.readAuth();
+    if (!auth || this.isExpired(auth)) {
+      return null;
+    }
+    const token = this.decryptToken(auth);
+    if (!token) {
+      return null;
+    }
+    return { baseUrl: auth.baseUrl, token };
   }
 
   async startLogin(request: HTHStartLoginRequest): Promise<HTHStartLoginResult> {

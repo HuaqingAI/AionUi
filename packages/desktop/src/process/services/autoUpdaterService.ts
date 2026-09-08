@@ -24,7 +24,8 @@ import {
   recordAutoUpdateQuitAndInstall,
   recordAutoUpdateStatus,
 } from './autoUpdateDiagnostics';
-import { buildCdnFeedOptions } from './updateFeed';
+import { HTHAuthService } from './hth/authService';
+import { buildCdnFeedOptions, resolveUpdateFeedBaseUrl } from './updateFeed';
 
 const DEBUG_AUTO_UPDATE_CURRENT_VERSION_ENV = 'AIONUI_DEBUG_AUTO_UPDATE_CURRENT_VERSION';
 const MAC_NATIVE_INSTALL_READY_TIMEOUT_MS = 60_000;
@@ -93,6 +94,27 @@ type AutoUpdaterCacheAccess = {
   constructor?: { name?: string };
 };
 
+type ClientUpdateAccessResponse = {
+  mode?: string;
+  legacy_open?: boolean;
+  eligible?: boolean;
+  release?: {
+    version?: string;
+    platform?: string;
+  };
+  artifact_capability?: string;
+};
+
+type ClientUpdateAccessEnvelope = {
+  success?: boolean;
+  data?: ClientUpdateAccessResponse;
+};
+
+type PreparedClientUpdateAccess =
+  | { kind: 'legacy' }
+  | { kind: 'not-eligible' }
+  | { kind: 'eligible'; artifactCapability: string; manifestToken: string; version: string };
+
 /** Events emitted by AutoUpdaterService */
 export interface AutoUpdaterEvents {
   'update-status': (status: AutoUpdateStatus) => void;
@@ -116,6 +138,8 @@ class AutoUpdaterService extends EventEmitter {
     timer: ReturnType<typeof setTimeout>;
   } | null = null;
   private _downloadedUpdateVersion: string | undefined;
+
+  private readonly _desktopAuthService = new HTHAuthService();
   /** Stores registered autoUpdater event handlers for cleanup and test access */
   private readonly _autoUpdaterHandlers = new Map<string, (...args: unknown[]) => void>();
   private readonly _nativeAutoUpdaterHandlers = new Map<string, (...args: unknown[]) => void>();
@@ -175,8 +199,9 @@ class AutoUpdaterService extends EventEmitter {
     log.warn(`[auto-update] Debug current version override enabled: ${parsedVersion.version}`);
   }
 
-  private applyFeedOptions(): void {
-    const feedOptions = buildCdnFeedOptions();
+  private applyFeedOptions(manifestToken?: string): void {
+    const manifestRequestHeaders = manifestToken ? { Authorization: `Bearer ${manifestToken}` } : undefined;
+    const feedOptions = buildCdnFeedOptions(manifestRequestHeaders);
     autoUpdater.setFeedURL(feedOptions);
     log.info('Update feed set to generic provider');
     log.debug('[auto-update] generic feed configured', {
@@ -185,7 +210,71 @@ class AutoUpdaterService extends EventEmitter {
       channel: autoUpdater.channel ?? 'latest',
       platform: process.platform,
       arch: process.arch,
+      authenticated: Boolean(manifestToken),
     });
+  }
+
+  private setArtifactCapability(artifactCapability?: string): void {
+    autoUpdater.requestHeaders = artifactCapability ? { 'X-AionUi-Update-Capability': artifactCapability } : {};
+  }
+
+  private async prepareClientUpdateAccess(expectedVersion?: string): Promise<PreparedClientUpdateAccess> {
+    const access = await this._desktopAuthService.getDesktopUpdateAccess();
+    const endpoint = new URL('access', `${resolveUpdateFeedBaseUrl()}/`);
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (access) {
+      headers.Authorization = `Bearer ${access.token}`;
+    }
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        platform: this.getCurrentUpdatePlatform(),
+        current_version: app.getVersion(),
+        expected_version: expectedVersion,
+      }),
+    });
+    if (response.status === 401 && !access) {
+      return { kind: 'not-eligible' };
+    }
+    if (!response.ok) {
+      throw new Error(`Client update access request failed with status ${response.status}`);
+    }
+    const envelope = (await response.json()) as ClientUpdateAccessEnvelope;
+    const data = envelope.data;
+    if (!envelope.success || !data) {
+      throw new Error('Client update access response is invalid');
+    }
+    if (data.legacy_open) {
+      return { kind: 'legacy' };
+    }
+    if (!data.eligible) {
+      return { kind: 'not-eligible' };
+    }
+    const version = data.release?.version;
+    const artifactCapability = data.artifact_capability;
+    if (!access || !version || !artifactCapability) {
+      throw new Error('Client update access response is incomplete');
+    }
+    return {
+      kind: 'eligible',
+      artifactCapability,
+      manifestToken: access.token,
+      version,
+    };
+  }
+
+  private getCurrentUpdatePlatform(): string {
+    if (process.platform === 'win32' && process.arch === 'x64') {
+      return 'windows_x64';
+    }
+    if (process.platform === 'darwin' && process.arch === 'arm64') {
+      return 'mac_arm64';
+    }
+    if (process.platform === 'darwin' && process.arch === 'x64') {
+      return 'mac_x64';
+    }
+    throw new Error(`Client updates are unsupported on ${process.platform}/${process.arch}`);
   }
 
   /**
@@ -624,31 +713,7 @@ class AutoUpdaterService extends EventEmitter {
         log.debug('[auto-update] CDN stable feed skipped because prerelease mode is handled by GitHub API');
         return { success: true };
       }
-
-      this.applyFeedOptions();
-      const result = await autoUpdater.checkForUpdates();
-      if (!result) {
-        const { default: i18n } = await import('./i18n');
-        log.debug('[auto-update] checkForUpdates returned null');
-        return { success: false, error: i18n.t('update.errors.checkReturnedNull') };
-      }
-      // Only report updateInfo when electron-updater internally confirms the update is available.
-      // When isUpdateAvailable is false, updateInfoAndProvider is NOT set internally,
-      // so a subsequent downloadUpdate() call would fail with "Please check update first".
-      if (!result.isUpdateAvailable) {
-        log.debug('[auto-update] no update available from generic feed', {
-          version: result.updateInfo.version,
-        });
-        return { success: true };
-      }
-      log.debug('[auto-update] update available from generic feed', {
-        version: result.updateInfo.version,
-        releaseDate: result.updateInfo.releaseDate,
-      });
-      return {
-        success: true,
-        updateInfo: result.updateInfo,
-      };
+      return await this.checkForUpdatesWithPreparedAccess(false);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       log.error('Check for updates failed:', message);
@@ -657,6 +722,55 @@ class AutoUpdaterService extends EventEmitter {
         error: message,
       };
     }
+  }
+
+  private async checkForUpdatesWithPreparedAccess(retriedAfterReleaseChange: boolean): Promise<{
+    success: boolean;
+    updateInfo?: UpdateInfo;
+    error?: string;
+  }> {
+    this.setArtifactCapability();
+    const preparedAccess = await this.prepareClientUpdateAccess();
+    if (preparedAccess.kind === 'not-eligible') {
+      this.setArtifactCapability();
+      return { success: true };
+    }
+    if (preparedAccess.kind === 'legacy') {
+      this.applyFeedOptions();
+      this.setArtifactCapability();
+    } else {
+      this.applyFeedOptions(preparedAccess.manifestToken);
+      this.setArtifactCapability(preparedAccess.artifactCapability);
+    }
+
+    const result = await autoUpdater.checkForUpdates();
+    if (!result) {
+      const { default: i18n } = await import('./i18n');
+      log.debug('[auto-update] checkForUpdates returned null');
+      return { success: false, error: i18n.t('update.errors.checkReturnedNull') };
+    }
+    if (!result.isUpdateAvailable) {
+      this.setArtifactCapability();
+      log.debug('[auto-update] no update available from generic feed', {
+        version: result.updateInfo.version,
+      });
+      return { success: true };
+    }
+    if (preparedAccess.kind === 'eligible' && result.updateInfo.version !== preparedAccess.version) {
+      this.setArtifactCapability();
+      if (retriedAfterReleaseChange) {
+        return { success: false, error: 'Client update release changed during check' };
+      }
+      return this.checkForUpdatesWithPreparedAccess(true);
+    }
+    log.debug('[auto-update] update available from generic feed', {
+      version: result.updateInfo.version,
+      releaseDate: result.updateInfo.releaseDate,
+    });
+    return {
+      success: true,
+      updateInfo: result.updateInfo,
+    };
   }
 
   async restoreDownloadedUpdateIfAvailable(): Promise<{
@@ -778,6 +892,23 @@ class AutoUpdaterService extends EventEmitter {
     return fileInfo.info.url;
   }
 
+  private async refreshArtifactCapabilityForDownload(): Promise<void> {
+    const updater = autoUpdater as unknown as AutoUpdaterCacheAccess;
+    const version = updater.updateInfoAndProvider?.info.version;
+    if (!version) {
+      return;
+    }
+    const preparedAccess = await this.prepareClientUpdateAccess(version);
+    if (preparedAccess.kind === 'legacy') {
+      this.setArtifactCapability();
+      return;
+    }
+    if (preparedAccess.kind !== 'eligible' || preparedAccess.version !== version) {
+      throw new Error('The selected update is no longer available for this account');
+    }
+    this.setArtifactCapability(preparedAccess.artifactCapability);
+  }
+
   async downloadUpdate(): Promise<{ success: boolean; error?: string }> {
     if (this._activeDownloadPromise) {
       log.debug('[auto-update] downloadUpdate reused active download');
@@ -793,6 +924,10 @@ class AutoUpdaterService extends EventEmitter {
           throw new Error('AutoUpdaterService not initialized');
         }
 
+        const updater = autoUpdater as unknown as AutoUpdaterCacheAccess;
+        if (updater.updateInfoAndProvider?.info.version) {
+          await this.refreshArtifactCapabilityForDownload();
+        }
         log.debug('[auto-update] downloadUpdate requested');
         this._ignoreActiveDownloadEvents = false;
         await autoUpdater.downloadUpdate(cancellationToken);
@@ -809,6 +944,8 @@ class AutoUpdaterService extends EventEmitter {
           success: false,
           error: message,
         };
+      } finally {
+        this.setArtifactCapability();
       }
     };
 
@@ -827,6 +964,7 @@ class AutoUpdaterService extends EventEmitter {
     this._activeDownloadCancellationToken = null;
     this._activeDownloadPromise = null;
     this._ignoreActiveDownloadEvents = true;
+    this.setArtifactCapability();
     this.broadcastStatus({ status: 'cancelled' });
     return { success: true };
   }
@@ -893,13 +1031,8 @@ class AutoUpdaterService extends EventEmitter {
    * Check for updates and notify (for startup)
    */
   async checkForUpdatesAndNotify(): Promise<void> {
-    try {
-      // Ensure clean state: prevent stale allowDowngrade=true from prior setAllowPrerelease(true) calls
-      autoUpdater.allowDowngrade = false;
-      await autoUpdater.checkForUpdatesAndNotify();
-    } catch (error) {
-      log.error('Auto-update check failed:', error);
-    }
+    autoUpdater.allowDowngrade = false;
+    await this.checkForUpdates();
   }
 }
 

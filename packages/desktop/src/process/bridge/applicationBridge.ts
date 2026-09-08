@@ -266,6 +266,8 @@ export function initApplicationBridge(): void {
   hthAuthService = new HTHAuthService(undefined, {
     onLoginComplete: async () => {
       await coreIdentityService.establish(await hthAuthService.getAccess());
+      const { autoUpdaterService } = await import('../services/autoUpdaterService');
+      void autoUpdaterService.checkForUpdates();
       showHTHLoginWindow();
     },
   });

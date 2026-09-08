@@ -155,6 +155,28 @@ describe('HTHAuthService loopback callback', () => {
     await service.logout();
   });
 
+  it('returns desktop update access without requiring a personal API key', async () => {
+    const authFile = path.join(tempDir, 'hth', 'auth.json');
+    await fs.mkdir(path.dirname(authFile), { recursive: true });
+    await fs.writeFile(
+      authFile,
+      JSON.stringify({
+        baseUrl: 'https://api.example.com',
+        accessToken: 'desktop-token',
+        encrypted: false,
+        email: 'user@example.com',
+        deviceId: 'device-1',
+        lastLoginAt: Date.now(),
+      })
+    );
+    const service = new HTHAuthService(authFile);
+
+    await expect(service.getDesktopUpdateAccess()).resolves.toEqual({
+      baseUrl: 'https://api.example.com',
+      token: 'desktop-token',
+    });
+  });
+
   it.each([
     ['the HRESULT in the error message', new Error('Failed to open: Application not found (0x800401F5)')],
     ['the symbolic code', Object.assign(new Error('Failed to open browser'), { code: 'CO_E_APPNOTFOUND' })],

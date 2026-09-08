@@ -33,10 +33,14 @@ export type CdnFeedOptions = CdnGenericProviderConfiguration & {
   updateProvider: typeof CdnGenericProvider;
 };
 
-export function buildCdnFeedOptions(): CdnFeedOptions {
-  return {
+export function buildCdnFeedOptions(manifestRequestHeaders?: Record<string, string>): CdnFeedOptions {
+  const options: CdnFeedOptions = {
     provider: 'custom',
     url: resolveUpdateFeedBaseUrl(),
     updateProvider: CdnGenericProvider,
   };
+  if (manifestRequestHeaders) {
+    options.manifestRequestHeaders = manifestRequestHeaders;
+  }
+  return options;
 }
