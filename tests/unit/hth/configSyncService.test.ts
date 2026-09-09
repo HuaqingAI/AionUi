@@ -402,7 +402,9 @@ describe('HTHConfigSyncService auth handling', () => {
     } as unknown as HTHPackageStore;
     const coreFetch = vi.fn(async (url: string, init?: RequestInit) => {
       if (url.endsWith('/api/assistants')) {
-        return new Response(JSON.stringify([{ id: assistantId, avatar: avatarPath }]), { status: 200 });
+        return new Response(JSON.stringify([{ id: assistantId, avatar: avatarPath, prompts: ['保留的推荐问题'] }]), {
+          status: 200,
+        });
       }
       if (init?.method === 'PUT') {
         return new Response(JSON.stringify({ id: assistantId }), { status: 200 });
@@ -421,7 +423,11 @@ describe('HTHConfigSyncService auth handling', () => {
 
     const update = coreFetch.mock.calls.find(([, init]) => init?.method === 'PUT');
     expect(update).toBeDefined();
-    expect(JSON.parse((update?.[1]?.body ?? '{}') as string)).toEqual({ id: assistantId, avatar: avatarPath });
+    expect(JSON.parse((update?.[1]?.body ?? '{}') as string)).toEqual({
+      id: assistantId,
+      avatar: avatarPath,
+      recommended_prompts: ['保留的推荐问题'],
+    });
     expect(coreFetch).toHaveBeenCalledTimes(2);
   });
 
@@ -459,7 +465,7 @@ describe('HTHConfigSyncService auth handling', () => {
     } as unknown as HTHPackageStore;
     const coreFetch = vi.fn(async (url: string, init?: RequestInit) => {
       if (url.endsWith('/api/assistants')) {
-        return new Response(JSON.stringify([{ id: assistantId }]), { status: 200 });
+        return new Response(JSON.stringify([{ id: assistantId, prompts: ['保留的推荐问题'] }]), { status: 200 });
       }
       if (init?.method === 'PUT') {
         return new Response(JSON.stringify({ id: assistantId }), { status: 200 });
@@ -492,6 +498,9 @@ describe('HTHConfigSyncService auth handling', () => {
     const body = JSON.parse((update?.[1]?.body ?? '{}') as string) as { avatar?: string };
     expect(remoteFetch).toHaveBeenCalledTimes(2);
     expect(body.avatar).toContain('hth-assistant-avatars');
+    expect(JSON.parse((update?.[1]?.body ?? '{}') as string)).toMatchObject({
+      recommended_prompts: ['保留的推荐问题'],
+    });
     await expect(fs.readFile(body.avatar || '')).resolves.toEqual(Buffer.from('restored-avatar'));
   });
 

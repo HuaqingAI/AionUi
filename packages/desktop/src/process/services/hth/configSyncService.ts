@@ -1297,22 +1297,26 @@ export class HTHConfigSyncService {
       }
     }
 
-    const repairCandidates = Array.from(manifestsByAssistantId.values()).filter((manifest) => {
+    const repairCandidates = Array.from(manifestsByAssistantId.values()).flatMap((manifest) => {
       const assistant = existingAssistants.get(manifest.assistantId);
-      return Boolean(assistant && needsLegacyAvatarRepair(assistant.avatar));
+      return assistant && needsLegacyAvatarRepair(assistant.avatar) ? [{ manifest, assistant }] : [];
     });
     if (repairCandidates.length === 0) {
       return;
     }
 
-    const missingCachedAvatars: HTHPackageManifest[] = [];
-    for (const manifest of repairCandidates) {
+    const missingCachedAvatars: typeof repairCandidates = [];
+    for (const { manifest, assistant } of repairCandidates) {
       if (!manifest.avatarPath || !(await this.isUsableAssistantAvatarFile(manifest.avatarPath))) {
-        missingCachedAvatars.push(manifest);
+        missingCachedAvatars.push({ manifest, assistant });
         continue;
       }
       try {
-        await this.updateAssistant(port, { id: manifest.assistantId, avatar: manifest.avatarPath });
+        await this.updateAssistant(port, {
+          id: manifest.assistantId,
+          avatar: manifest.avatarPath,
+          recommended_prompts: assistant.prompts,
+        });
       } catch {
         // A later normal assistant sync can retry the Core-side migration.
       }
@@ -1347,7 +1351,7 @@ export class HTHConfigSyncService {
       }
     }
 
-    for (const manifest of missingCachedAvatars) {
+    for (const { manifest, assistant } of missingCachedAvatars) {
       const avatar = remoteAvatarByAssistantId.get(manifest.assistantId);
       if (!avatar) {
         continue;
@@ -1355,7 +1359,11 @@ export class HTHConfigSyncService {
       try {
         const prepared = await this.prepareAssistantAvatar(avatar, manifest.assistantId);
         if (prepared.value) {
-          await this.updateAssistant(port, { id: manifest.assistantId, avatar: prepared.value });
+          await this.updateAssistant(port, {
+            id: manifest.assistantId,
+            avatar: prepared.value,
+            recommended_prompts: assistant.prompts,
+          });
         }
       } catch {
         // The missing image can be recovered by a later startup or normal sync.
