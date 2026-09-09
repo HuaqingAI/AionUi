@@ -844,6 +844,43 @@ describe('opencode startup bootstrap', () => {
     expect(launcher).toContain(cliPath);
   });
 
+  it('rewrites a newly installed Windows Codex launcher to use managed Node directly', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+    const fixture = await createManagedNodeFixture();
+    const packageRoot = path.join(fixture.codexPrefix, 'node_modules', '@openai', 'codex');
+    const cliPath = path.join(packageRoot, 'bin', 'codex.js');
+    const commandRunner = vi.fn(async () => {
+      await mkdir(path.dirname(fixture.codexCommandPath), { recursive: true });
+      await mkdir(path.dirname(cliPath), { recursive: true });
+      await writeFile(
+        path.join(packageRoot, 'package.json'),
+        JSON.stringify({
+          version: '0.151.0',
+          bin: {
+            codex: 'bin/codex.js',
+          },
+        })
+      );
+      await writeFile(cliPath, '#!/usr/bin/env node\nawait Promise.resolve();\n');
+      await writeFile(fixture.codexCommandPath, '@echo off\r\nnode codex.js %*\r\n');
+      return {};
+    });
+
+    const result = await ensureCodexReady({
+      commandRunner,
+      dataPath: fixture.dataPath,
+      emitStatus: vi.fn(),
+      ensureNodeRuntime: async () => ({ ready: true }),
+      env: {},
+    });
+
+    const launcher = await readFile(fixture.codexCommandPath, 'utf8');
+    expect(result).toEqual({ status: 'ready' });
+    expect(commandRunner).toHaveBeenCalledOnce();
+    expect(launcher).toContain('REM AionUi managed Node launcher');
+    expect(launcher).toContain(`"${fixture.nodeExecutable}" "${cliPath}" %*`);
+  });
+
   it('prepends managed Node before existing PATH during startup path setup', async () => {
     const fixture = await createManagedNodeFixture();
     const env: NodeJS.ProcessEnv = {
@@ -889,6 +926,34 @@ describe('opencode startup bootstrap', () => {
     expect(launcher).toContain('AionUi managed Node launcher');
     expect(launcher).toContain(fixture.nodeExecutable);
     expect(launcher).toContain(cliPath);
+  });
+
+  it('repairs the Windows Codex launcher before backend startup', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+    const fixture = await createManagedNodeFixture();
+    const packageRoot = path.join(fixture.codexPrefix, 'node_modules', '@openai', 'codex');
+    const cliPath = path.join(packageRoot, 'bin', 'codex.js');
+    await mkdir(path.dirname(fixture.codexCommandPath), { recursive: true });
+    await mkdir(path.dirname(cliPath), { recursive: true });
+    await writeFile(
+      path.join(packageRoot, 'package.json'),
+      JSON.stringify({
+        version: '0.151.0',
+        bin: {
+          codex: 'bin/codex.js',
+        },
+      })
+    );
+    await writeFile(cliPath, '#!/usr/bin/env node\nawait Promise.resolve();\n');
+    await writeFile(fixture.codexCommandPath, '@echo off\r\nnode codex.js %*\r\n');
+
+    addStartupManagedAcpToolBinsToPath(fixture.dataPath, {
+      PATH: path.join(fixture.dataPath, 'system-node-bin'),
+    });
+
+    const launcher = await readFile(fixture.codexCommandPath, 'utf8');
+    expect(launcher).toContain('REM AionUi managed Node launcher');
+    expect(launcher).toContain(`"${fixture.nodeExecutable}" "${cliPath}" %*`);
   });
 
   it('repairs the macOS OpenCode launcher to execute the native binary directly', async () => {

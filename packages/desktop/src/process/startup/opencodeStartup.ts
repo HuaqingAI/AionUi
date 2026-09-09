@@ -713,8 +713,21 @@ function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
+function windowsBatchQuote(value: string): string {
+  return `"${value.replaceAll('%', '%%')}"`;
+}
+
 function buildManagedNodeLauncher(nodeExecutable: string, targetPath: string): string {
   const encodedTarget = Buffer.from(targetPath, 'utf8').toString('base64');
+  if (process.platform === 'win32') {
+    return [
+      '@echo off',
+      `REM ${MANAGED_NODE_LAUNCHER_MARKER}`,
+      `REM target_b64=${encodedTarget}`,
+      `${windowsBatchQuote(nodeExecutable)} ${windowsBatchQuote(targetPath)} %*`,
+      '',
+    ].join('\r\n');
+  }
   return [
     '#!/bin/sh',
     `# ${MANAGED_NODE_LAUNCHER_MARKER}`,
@@ -784,16 +797,18 @@ function isManagedToolNodeScriptTargetSync(targetPath: string): boolean {
   }
 }
 
-async function buildManagedToolLauncher(nodeExecutable: string, targetPath: string): Promise<string> {
-  return (await isManagedToolNodeScriptTarget(targetPath))
-    ? buildManagedNodeLauncher(nodeExecutable, targetPath)
-    : buildManagedDirectLauncher(targetPath);
+async function buildManagedToolLauncher(nodeExecutable: string, targetPath: string): Promise<string | null> {
+  if (await isManagedToolNodeScriptTarget(targetPath)) {
+    return buildManagedNodeLauncher(nodeExecutable, targetPath);
+  }
+  return process.platform === 'win32' ? null : buildManagedDirectLauncher(targetPath);
 }
 
-function buildManagedToolLauncherSync(nodeExecutable: string, targetPath: string): string {
-  return isManagedToolNodeScriptTargetSync(targetPath)
-    ? buildManagedNodeLauncher(nodeExecutable, targetPath)
-    : buildManagedDirectLauncher(targetPath);
+function buildManagedToolLauncherSync(nodeExecutable: string, targetPath: string): string | null {
+  if (isManagedToolNodeScriptTargetSync(targetPath)) {
+    return buildManagedNodeLauncher(nodeExecutable, targetPath);
+  }
+  return process.platform === 'win32' ? null : buildManagedDirectLauncher(targetPath);
 }
 
 async function ensureManagedToolLauncherUsesManagedNode(
@@ -801,7 +816,7 @@ async function ensureManagedToolLauncherUsesManagedNode(
   dataPath: string,
   nodeExecutable: string
 ): Promise<void> {
-  if (process.platform === 'win32') {
+  if (process.platform === 'win32' && tool.toolId !== CODEX_TOOL_ID) {
     return;
   }
 
@@ -816,6 +831,9 @@ async function ensureManagedToolLauncherUsesManagedNode(
   }
 
   const launcher = await buildManagedToolLauncher(nodeExecutable, targetPath);
+  if (!launcher) {
+    return;
+  }
   try {
     const current = await fs.readFile(commandPath, 'utf8');
     if (current === launcher) {
@@ -835,7 +853,7 @@ function ensureManagedToolLauncherUsesManagedNodeSync(
   dataPath: string,
   nodeExecutable: string
 ): void {
-  if (process.platform === 'win32') {
+  if (process.platform === 'win32' && tool.toolId !== CODEX_TOOL_ID) {
     return;
   }
 
@@ -850,6 +868,9 @@ function ensureManagedToolLauncherUsesManagedNodeSync(
   }
 
   const launcher = buildManagedToolLauncherSync(nodeExecutable, targetPath);
+  if (!launcher) {
+    return;
+  }
   try {
     if (readFileSync(commandPath, 'utf8') === launcher) {
       return;
