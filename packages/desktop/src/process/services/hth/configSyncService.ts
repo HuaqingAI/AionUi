@@ -143,6 +143,7 @@ const HTH_ASSISTANT_CATEGORIES_SETTING = 'hth.assistantCategories';
 const MAX_AGENT_PACKAGE_BYTES = 50 * 1024 * 1024;
 const MAX_ASSISTANT_AVATAR_BYTES = 2 * 1024 * 1024;
 const ASSISTANT_AVATAR_DIR_NAME = 'hth-assistant-avatars';
+const SUPPORTED_ASSISTANT_AVATAR_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
 const MAX_HTH_MODELS = 500;
 const MAX_HTH_MODEL_ID_LENGTH = 256;
 const HTH_MODEL_REQUEST_TIMEOUT_MS = 10_000;
@@ -158,6 +159,23 @@ function defaultOpenCodeConfigDir(): string {
   return path.join(getSystemDir().workDir, 'runtime', 'opencode-home');
 }
 
+function isLegacyLocalAvatarPath(avatar: string | undefined): boolean {
+  const value = avatar?.trim();
+  if (!value || value.startsWith('/api/') || value.startsWith('/assets/')) {
+    return false;
+  }
+  return (
+    value.startsWith('file://') ||
+    /^[A-Za-z]:[\\/]/.test(value) ||
+    /^\/[A-Za-z]:[\\/]/.test(value) ||
+    value.startsWith('/')
+  );
+}
+
+function needsLegacyAvatarRepair(avatar: string | undefined): boolean {
+  return !avatar?.trim() || isLegacyLocalAvatarPath(avatar);
+}
+
 class HTHUnauthorizedConfigError extends Error {
   constructor(message = HTH_LOGIN_REQUIRED_MESSAGE) {
     super(message);
@@ -169,6 +187,7 @@ export class HTHConfigSyncService {
   private codexModelCatalogSyncPromise: Promise<CodexConfigFailureReason | undefined> | null = null;
   private modelPricingCache: { key: string; expiresAt: number; snapshot: ModelPricingSnapshot } | null = null;
   private modelPricingRequest: { key: string; promise: Promise<ModelPricingSnapshot | null> } | null = null;
+  private legacyAvatarRepairPromise: Promise<void> | null = null;
 
   constructor(
     private readonly authService: HTHAuthService,
@@ -359,6 +378,22 @@ export class HTHConfigSyncService {
       packages: packageResults,
       lastSyncedAt: Date.now(),
     };
+  }
+
+  async repairLegacyAssistantAvatars(): Promise<void> {
+    if (this.legacyAvatarRepairPromise) {
+      return this.legacyAvatarRepairPromise;
+    }
+
+    const repair = this.repairLegacyAssistantAvatarsOnce();
+    this.legacyAvatarRepairPromise = repair;
+    try {
+      await repair;
+    } finally {
+      if (this.legacyAvatarRepairPromise === repair) {
+        this.legacyAvatarRepairPromise = null;
+      }
+    }
   }
 
   async getModelPricingDescriptions(modelIds: string[]): Promise<{ descriptions: Record<string, string> }> {
@@ -1244,6 +1279,90 @@ export class HTHConfigSyncService {
     return match?.id;
   }
 
+  private async repairLegacyAssistantAvatarsOnce(): Promise<void> {
+    const port = (globalThis as typeof globalThis & { __backendPort?: number }).__backendPort;
+    if (!port) {
+      return;
+    }
+
+    const [existingAssistants, manifests] = await Promise.all([
+      this.listAssistants(port),
+      this.packageStore.readAllManifests(),
+    ]);
+    const manifestsByAssistantId = new Map<string, HTHPackageManifest>();
+    for (const manifest of manifests) {
+      const existing = manifestsByAssistantId.get(manifest.assistantId);
+      if (!existing || manifest.syncedAt > existing.syncedAt) {
+        manifestsByAssistantId.set(manifest.assistantId, manifest);
+      }
+    }
+
+    const repairCandidates = Array.from(manifestsByAssistantId.values()).filter((manifest) => {
+      const assistant = existingAssistants.get(manifest.assistantId);
+      return Boolean(assistant && needsLegacyAvatarRepair(assistant.avatar));
+    });
+    if (repairCandidates.length === 0) {
+      return;
+    }
+
+    const missingCachedAvatars: HTHPackageManifest[] = [];
+    for (const manifest of repairCandidates) {
+      if (!manifest.avatarPath || !(await this.isUsableAssistantAvatarFile(manifest.avatarPath))) {
+        missingCachedAvatars.push(manifest);
+        continue;
+      }
+      try {
+        await this.updateAssistant(port, { id: manifest.assistantId, avatar: manifest.avatarPath });
+      } catch {
+        // A later normal assistant sync can retry the Core-side migration.
+      }
+    }
+
+    if (missingCachedAvatars.length === 0) {
+      return;
+    }
+
+    const access = await this.getAccessOrLogout();
+    if (!access) {
+      return;
+    }
+    let configs: HTHAgentConfigs;
+    try {
+      configs = await this.fetchConfigs(access.baseUrl, access.token);
+    } catch {
+      return;
+    }
+
+    const remoteAvatarByAssistantId = new Map<string, string>();
+    for (const agent of configs.agents) {
+      const avatar = agent.avatar?.trim();
+      if (!avatar || !this.isRemoteImageAvatar(avatar)) {
+        continue;
+      }
+      try {
+        const cliType = this.requireAgentCliType(agent);
+        remoteAvatarByAssistantId.set(resolveHTHAssistantId(access.baseUrl, cliType, agent), avatar);
+      } catch {
+        continue;
+      }
+    }
+
+    for (const manifest of missingCachedAvatars) {
+      const avatar = remoteAvatarByAssistantId.get(manifest.assistantId);
+      if (!avatar) {
+        continue;
+      }
+      try {
+        const prepared = await this.prepareAssistantAvatar(avatar, manifest.assistantId);
+        if (prepared.value) {
+          await this.updateAssistant(port, { id: manifest.assistantId, avatar: prepared.value });
+        }
+      } catch {
+        // The missing image can be recovered by a later startup or normal sync.
+      }
+    }
+  }
+
   private mapAssistant(
     agent: HTHAgentConfigItem,
     assistantId: string,
@@ -1297,6 +1416,18 @@ export class HTHConfigSyncService {
     return { value: filePath, sha256: sha };
   }
 
+  private async isUsableAssistantAvatarFile(filePath: string): Promise<boolean> {
+    if (!SUPPORTED_ASSISTANT_AVATAR_EXTENSIONS.has(path.extname(filePath).toLowerCase())) {
+      return false;
+    }
+    try {
+      const stat = await fs.stat(filePath);
+      return stat.isFile() && stat.size > 0 && stat.size <= MAX_ASSISTANT_AVATAR_BYTES;
+    } catch {
+      return false;
+    }
+  }
+
   private isRemoteImageAvatar(value: string): boolean {
     return value.startsWith('http://') || value.startsWith('https://');
   }
@@ -1316,7 +1447,7 @@ export class HTHConfigSyncService {
     }
     try {
       const ext = path.extname(new URL(value).pathname).toLowerCase();
-      if (['.png', '.jpg', '.jpeg', '.gif', '.webp'].includes(ext)) {
+      if (SUPPORTED_ASSISTANT_AVATAR_EXTENSIONS.has(ext)) {
         return ext === '.jpeg' ? '.jpg' : ext;
       }
     } catch {
@@ -1460,6 +1591,9 @@ export class HTHConfigSyncService {
   ): boolean {
     const existingAvatar = existing.avatar ?? '';
     const nextAvatar = assistant.avatar ?? '';
+    if (isLegacyLocalAvatarPath(existingAvatar)) {
+      return false;
+    }
     if (existingAvatar === nextAvatar) {
       return true;
     }

@@ -377,6 +377,246 @@ describe('HTHConfigSyncService auth handling', () => {
     await expect(fs.readFile(updateRequest.avatar || '')).resolves.toEqual(avatarData);
   });
 
+  it('repairs a cached legacy HTH avatar without running a package sync', async () => {
+    (globalThis as typeof globalThis & { __backendPort?: number }).__backendPort = 18181;
+    const assistantId = 'hth-legacy-avatar';
+    const avatarPath = path.join(tempDir, 'hth-assistant-avatars', `${assistantId}.png`);
+    await fs.mkdir(path.dirname(avatarPath), { recursive: true });
+    await fs.writeFile(avatarPath, 'legacy-avatar');
+    const packageStore = {
+      readAllManifests: vi.fn(async () => [
+        {
+          packageId: 'package-legacy-avatar',
+          assistantId,
+          cliType: 'opencode',
+          sourceUrl: 'https://oss.test/agent.zip',
+          version: '1.0.0',
+          avatarPath,
+          name: 'Legacy Avatar Agent',
+          syncedAt: Date.now(),
+          extractDir: path.join(tempDir, 'extracted'),
+          globalFiles: [],
+          projectFiles: [],
+        },
+      ]),
+    } as unknown as HTHPackageStore;
+    const coreFetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/api/assistants')) {
+        return new Response(JSON.stringify([{ id: assistantId, avatar: avatarPath }]), { status: 200 });
+      }
+      if (init?.method === 'PUT') {
+        return new Response(JSON.stringify({ id: assistantId }), { status: 200 });
+      }
+      throw new Error(`Unexpected Core request: ${url}`);
+    });
+    const syncService = new HTHConfigSyncService(
+      new HTHAuthService(authFile),
+      packageStore,
+      undefined,
+      undefined,
+      coreFetch
+    );
+
+    await syncService.repairLegacyAssistantAvatars();
+
+    const update = coreFetch.mock.calls.find(([, init]) => init?.method === 'PUT');
+    expect(update).toBeDefined();
+    expect(JSON.parse((update?.[1]?.body ?? '{}') as string)).toEqual({ id: assistantId, avatar: avatarPath });
+    expect(coreFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('recovers a missing legacy HTH avatar by downloading only the current image', async () => {
+    await writeStoredAuth(authFile);
+    (globalThis as typeof globalThis & { __backendPort?: number }).__backendPort = 18181;
+    const agent = {
+      id: 'agent-legacy-avatar',
+      cli_type: 'opencode' as const,
+      artifact_key: 'oss://bucket/agent-packages/opencode/agent-legacy-avatar/1.0.0/opencode.zip',
+      url: 'https://oss.test/agent-legacy-avatar.zip',
+      url_type: 'https' as const,
+      version: '1.0.0',
+      name: 'Legacy Avatar Agent',
+      avatar: 'https://oss.test/agent-avatars/legacy-avatar.png',
+      sha256: 'sha-1',
+    };
+    const assistantId = resolveHTHAssistantId('http://127.0.0.1:3001', 'opencode', agent);
+    const packageStore = {
+      readAllManifests: vi.fn(async () => [
+        {
+          packageId: 'package-legacy-avatar',
+          assistantId,
+          cliType: 'opencode',
+          sourceUrl: 'https://oss.test/agent-legacy-avatar.zip',
+          version: '1.0.0',
+          avatarPath: path.join(tempDir, 'missing-avatar.png'),
+          name: agent.name,
+          syncedAt: Date.now(),
+          extractDir: path.join(tempDir, 'extracted'),
+          globalFiles: [],
+          projectFiles: [],
+        },
+      ]),
+    } as unknown as HTHPackageStore;
+    const coreFetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/api/assistants')) {
+        return new Response(JSON.stringify([{ id: assistantId }]), { status: 200 });
+      }
+      if (init?.method === 'PUT') {
+        return new Response(JSON.stringify({ id: assistantId }), { status: 200 });
+      }
+      throw new Error(`Unexpected Core request: ${url}`);
+    });
+    const remoteFetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ agents: [agent] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(Buffer.from('restored-avatar'), { status: 200, headers: { 'Content-Type': 'image/png' } })
+      );
+    vi.stubGlobal('fetch', remoteFetch);
+    const syncService = new HTHConfigSyncService(
+      new HTHAuthService(authFile),
+      packageStore,
+      undefined,
+      undefined,
+      coreFetch
+    );
+
+    await syncService.repairLegacyAssistantAvatars();
+
+    const update = coreFetch.mock.calls.find(([, init]) => init?.method === 'PUT');
+    const body = JSON.parse((update?.[1]?.body ?? '{}') as string) as { avatar?: string };
+    expect(remoteFetch).toHaveBeenCalledTimes(2);
+    expect(body.avatar).toContain('hth-assistant-avatars');
+    await expect(fs.readFile(body.avatar || '')).resolves.toEqual(Buffer.from('restored-avatar'));
+  });
+
+  it('does not repair HTH avatars that Core already serves through its avatar route', async () => {
+    (globalThis as typeof globalThis & { __backendPort?: number }).__backendPort = 18181;
+    const assistantId = 'hth-managed-avatar';
+    const packageStore = {
+      readAllManifests: vi.fn(async () => [
+        {
+          packageId: 'package-managed-avatar',
+          assistantId,
+          cliType: 'opencode',
+          sourceUrl: 'https://oss.test/agent.zip',
+          version: '1.0.0',
+          name: 'Managed Avatar Agent',
+          syncedAt: Date.now(),
+          extractDir: path.join(tempDir, 'extracted'),
+          globalFiles: [],
+          projectFiles: [],
+        },
+      ]),
+    } as unknown as HTHPackageStore;
+    const coreFetch = vi.fn(
+      async () =>
+        new Response(JSON.stringify([{ id: assistantId, avatar: `/api/assistants/${assistantId}/avatar?v=1` }]), {
+          status: 200,
+        })
+    );
+    const remoteFetch = vi.fn();
+    vi.stubGlobal('fetch', remoteFetch);
+    const syncService = new HTHConfigSyncService(
+      new HTHAuthService(authFile),
+      packageStore,
+      undefined,
+      undefined,
+      coreFetch
+    );
+
+    await syncService.repairLegacyAssistantAvatars();
+
+    expect(coreFetch).toHaveBeenCalledTimes(1);
+    expect(remoteFetch).not.toHaveBeenCalled();
+  });
+
+  it('migrates an unchanged local avatar during a later assistant sync', async () => {
+    await writeStoredAuth(authFile);
+    (globalThis as typeof globalThis & { __backendPort?: number }).__backendPort = 18181;
+    const assistantId = 'hth-local-avatar';
+    const avatarPath = path.join(tempDir, 'hth-assistant-avatars', `${assistantId}.png`);
+    const agent = {
+      id: 'agent-local-avatar',
+      cli_type: 'opencode' as const,
+      artifact_key: 'oss://bucket/agent-packages/opencode/agent-local-avatar/1.0.0/opencode.zip',
+      url: 'https://oss.test/agent-local-avatar.zip',
+      url_type: 'https' as const,
+      version: '1.0.0',
+      name: 'Local Avatar Agent',
+      avatar: avatarPath,
+      sha256: 'sha-1',
+    };
+    const resolvedAssistantId = resolveHTHAssistantId('http://127.0.0.1:3001', 'opencode', agent);
+    const packageStore = {
+      readManifest: vi.fn(async () => ({
+        packageId: resolveHTHPackageId('http://127.0.0.1:3001', 'opencode', agent),
+        assistantId: resolvedAssistantId,
+        cliType: 'opencode',
+        artifactKey: agent.artifact_key,
+        sourceUrl: agent.url,
+        version: agent.version,
+        sha256: agent.sha256,
+        name: agent.name,
+        syncedAt: Date.now(),
+        extractDir: path.join(tempDir, 'extracted'),
+        globalFiles: [],
+        projectFiles: [],
+      })),
+      writeManifest: vi.fn(async () => undefined),
+      readAllManifests: vi.fn(async () => []),
+    } as unknown as HTHPackageStore;
+    const coreFetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/api/agents/management')) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      if (url.endsWith('/api/assistants')) {
+        return new Response(
+          JSON.stringify([{ id: resolvedAssistantId, name: agent.name, avatar: avatarPath, agent_id: '' }]),
+          { status: 200 }
+        );
+      }
+      if (url.endsWith('/api/mcp/servers')) {
+        return emptyMcpCatalogResponse();
+      }
+      if (url.endsWith('/api/assistants/import')) {
+        return new Response(JSON.stringify({ imported: 0, skipped: 1, failed: 0, errors: [] }), { status: 200 });
+      }
+      if (init?.method === 'PUT') {
+        return new Response(JSON.stringify({ id: resolvedAssistantId }), { status: 200 });
+      }
+      throw new Error(`Unexpected Core request: ${url}`);
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ agents: [agent] }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+      )
+    );
+    const syncService = new HTHConfigSyncService(
+      new HTHAuthService(authFile),
+      packageStore,
+      undefined,
+      undefined,
+      coreFetch
+    );
+
+    const result = await syncService.syncAgentConfigs({ force: false });
+
+    const update = coreFetch.mock.calls.find(([, init]) => init?.method === 'PUT');
+    expect(result.updated).toBe(1);
+    expect(JSON.parse((update?.[1]?.body ?? '{}') as string)).toMatchObject({ avatar: avatarPath });
+  });
+
   it('skips remote assistant avatars that already exist as backend avatar routes', async () => {
     await writeStoredAuth(authFile);
     (globalThis as typeof globalThis & { __backendPort?: number }).__backendPort = 18181;

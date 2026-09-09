@@ -262,10 +262,12 @@ export function initApplicationBridge(): void {
       }
     },
   });
+  let repairLegacyAssistantAvatars = (): void => undefined;
   let hthAuthService: HTHAuthService;
   hthAuthService = new HTHAuthService(undefined, {
     onLoginComplete: async () => {
       await coreIdentityService.establish(await hthAuthService.getAccess());
+      repairLegacyAssistantAvatars();
       const { autoUpdaterService } = await import('../services/autoUpdaterService');
       void autoUpdaterService.checkForUpdates();
       showHTHLoginWindow();
@@ -278,12 +280,18 @@ export function initApplicationBridge(): void {
     undefined,
     coreIdentityService.fetch.bind(coreIdentityService)
   );
+  repairLegacyAssistantAvatars = () => {
+    void hthConfigSyncService.repairLegacyAssistantAvatars().catch((error) => {
+      console.warn('[HTH] Failed to repair legacy assistant avatars:', error);
+    });
+  };
   const hthQuotaService = new HTHQuotaService(hthAuthService);
 
   ipcBridge.hth.authStatus.provider(async () => {
     const status = await hthAuthService.getStatus();
     if (status.loggedIn) {
       await coreIdentityService.establish(await hthAuthService.getAccess());
+      repairLegacyAssistantAvatars();
     }
     return status;
   });
