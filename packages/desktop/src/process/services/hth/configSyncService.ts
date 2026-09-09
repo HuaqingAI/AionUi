@@ -550,6 +550,7 @@ export class HTHConfigSyncService {
     assertPathInside(workspace, configPath);
     try {
       await fs.access(configPath);
+      await this.ensureCodexTrustedWorkspace(workspace);
       return { injected: false, files: [] };
     } catch {
       // The user has not supplied a project-level Codex configuration.
@@ -580,6 +581,7 @@ export class HTHConfigSyncService {
       'utf8'
     );
     await this.replaceRuntimePlaceholdersInFiles(workspace, ['.codex/config.toml'], access);
+    await this.ensureCodexTrustedWorkspace(workspace);
     return { injected: true, files: ['.codex/config.toml'] };
   }
 

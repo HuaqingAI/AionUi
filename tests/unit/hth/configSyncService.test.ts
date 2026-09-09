@@ -1522,6 +1522,7 @@ describe('HTHConfigSyncService auth handling', () => {
       departments: ['Engineering', 'Platform'],
     });
     const workspace = path.join(tempDir, 'manual-codex-workspace');
+    const codexHome = path.join(tempDir, 'aionui', 'runtime', 'codex-home');
     const packageStore = {
       findByAssistantId: vi.fn(async () => null),
     } as unknown as HTHPackageStore;
@@ -1545,7 +1546,11 @@ describe('HTHConfigSyncService auth handling', () => {
       })
     );
 
-    const result = await new HTHConfigSyncService(new HTHAuthService(authFile), packageStore).injectProjectConfig({
+    const result = await new HTHConfigSyncService(
+      new HTHAuthService(authFile),
+      packageStore,
+      () => codexHome
+    ).injectProjectConfig({
       conversationId: 'conversation-1',
       workspace,
       assistantId: 'manual-codex',
@@ -1568,10 +1573,14 @@ describe('HTHConfigSyncService auth handling', () => {
         '',
       ].join('\n')
     );
+    await expect(fs.readFile(path.join(codexHome, 'config.toml'), 'utf8')).resolves.toContain(
+      `[projects.${JSON.stringify(path.resolve(workspace))}]\ntrust_level = "trusted"`
+    );
   });
 
   it('preserves an existing Codex project configuration for a manually created Codex assistant', async () => {
     const workspace = path.join(tempDir, 'manual-codex-existing-config-workspace');
+    const codexHome = path.join(tempDir, 'aionui', 'runtime', 'codex-home');
     const configPath = path.join(workspace, '.codex', 'config.toml');
     await fs.mkdir(path.dirname(configPath), { recursive: true });
     await fs.writeFile(configPath, 'model = "user-selected-model"\n', 'utf8');
@@ -1596,7 +1605,11 @@ describe('HTHConfigSyncService auth handling', () => {
       )
     );
 
-    const result = await new HTHConfigSyncService(new HTHAuthService(authFile), packageStore).injectProjectConfig({
+    const result = await new HTHConfigSyncService(
+      new HTHAuthService(authFile),
+      packageStore,
+      () => codexHome
+    ).injectProjectConfig({
       conversationId: 'conversation-1',
       workspace,
       assistantId: 'manual-codex',
@@ -1604,6 +1617,9 @@ describe('HTHConfigSyncService auth handling', () => {
 
     expect(result).toEqual({ injected: false, files: [] });
     await expect(fs.readFile(configPath, 'utf8')).resolves.toBe('model = "user-selected-model"\n');
+    await expect(fs.readFile(path.join(codexHome, 'config.toml'), 'utf8')).resolves.toContain(
+      `[projects.${JSON.stringify(path.resolve(workspace))}]\ntrust_level = "trusted"`
+    );
   });
 
   it('returns descriptions only for requested token-priced HTH models', async () => {
