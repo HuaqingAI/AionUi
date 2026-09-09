@@ -183,7 +183,7 @@ describe('AutoUpdaterService', () => {
     expect(result).toEqual({ success: true, updateInfo });
   });
 
-  it('uses the desktop token for the manifest and a scoped capability for download artifacts', async () => {
+  it('uses a scoped capability for the manifest and download artifacts', async () => {
     const updateInfo = {
       version: '2.1.14',
       files: [{ url: 'AionUi-2.1.14-mac-arm64.dmg', sha512: 'sha512-value' }],
@@ -219,20 +219,30 @@ describe('AutoUpdaterService', () => {
     await expect(autoUpdaterService.checkForUpdates()).resolves.toEqual({ success: true, updateInfo });
 
     expect(autoUpdaterMock.setFeedURL).toHaveBeenLastCalledWith(
-      expect.objectContaining({ manifestRequestHeaders: { Authorization: 'Bearer desktop-token' } })
+      expect.objectContaining({ manifestRequestHeaders: { 'X-AionUi-Update-Capability': 'artifact-capability' } })
     );
     expect(autoUpdaterMock.requestHeaders).toEqual({ 'X-AionUi-Update-Capability': 'artifact-capability' });
   });
 
-  it('does not call electron-updater when an unauthenticated client is denied by enforced mode', async () => {
+  it('falls back to the global feed when the desktop token is no longer valid', async () => {
     fetchMock.mockResolvedValue(new Response('', { status: 401 }));
+    autoUpdaterMock.checkForUpdates.mockResolvedValue({
+      isUpdateAvailable: false,
+      updateInfo: {
+        version: '2.1.14',
+        files: [{ url: 'AionUi-2.1.14-mac-arm64.dmg', sha512: 'sha512-value' }],
+        path: 'AionUi-2.1.14-mac-arm64.dmg',
+        sha512: 'sha512-value',
+        releaseDate: '2026-06-08T00:00:00.000Z',
+      },
+    });
 
     const { autoUpdaterService } = await import('@/process/services/autoUpdaterService');
     autoUpdaterService.initialize();
 
     await expect(autoUpdaterService.checkForUpdates()).resolves.toEqual({ success: true });
 
-    expect(autoUpdaterMock.checkForUpdates).not.toHaveBeenCalled();
+    expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(1);
     expect(autoUpdaterMock.requestHeaders).toEqual({});
   });
 

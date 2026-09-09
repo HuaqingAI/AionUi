@@ -95,7 +95,6 @@ type AutoUpdaterCacheAccess = {
 };
 
 type ClientUpdateAccessResponse = {
-  mode?: string;
   legacy_open?: boolean;
   eligible?: boolean;
   release?: {
@@ -113,7 +112,7 @@ type ClientUpdateAccessEnvelope = {
 type PreparedClientUpdateAccess =
   | { kind: 'legacy' }
   | { kind: 'not-eligible' }
-  | { kind: 'eligible'; artifactCapability: string; manifestToken: string; version: string };
+  | { kind: 'eligible'; artifactCapability: string; manifestCapability: string; version: string };
 
 /** Events emitted by AutoUpdaterService */
 export interface AutoUpdaterEvents {
@@ -199,8 +198,10 @@ class AutoUpdaterService extends EventEmitter {
     log.warn(`[auto-update] Debug current version override enabled: ${parsedVersion.version}`);
   }
 
-  private applyFeedOptions(manifestToken?: string): void {
-    const manifestRequestHeaders = manifestToken ? { Authorization: `Bearer ${manifestToken}` } : undefined;
+  private applyFeedOptions(manifestCapability?: string): void {
+    const manifestRequestHeaders = manifestCapability
+      ? { 'X-AionUi-Update-Capability': manifestCapability }
+      : undefined;
     const feedOptions = buildCdnFeedOptions(manifestRequestHeaders);
     autoUpdater.setFeedURL(feedOptions);
     log.info('Update feed set to generic provider');
@@ -210,7 +211,7 @@ class AutoUpdaterService extends EventEmitter {
       channel: autoUpdater.channel ?? 'latest',
       platform: process.platform,
       arch: process.arch,
-      authenticated: Boolean(manifestToken),
+      authenticated: Boolean(manifestCapability),
     });
   }
 
@@ -234,8 +235,8 @@ class AutoUpdaterService extends EventEmitter {
         expected_version: expectedVersion,
       }),
     });
-    if (response.status === 401 && !access) {
-      return { kind: 'not-eligible' };
+    if (response.status === 401) {
+      return { kind: 'legacy' };
     }
     if (!response.ok) {
       throw new Error(`Client update access request failed with status ${response.status}`);
@@ -259,7 +260,7 @@ class AutoUpdaterService extends EventEmitter {
     return {
       kind: 'eligible',
       artifactCapability,
-      manifestToken: access.token,
+      manifestCapability: artifactCapability,
       version,
     };
   }
@@ -739,7 +740,7 @@ class AutoUpdaterService extends EventEmitter {
       this.applyFeedOptions();
       this.setArtifactCapability();
     } else {
-      this.applyFeedOptions(preparedAccess.manifestToken);
+      this.applyFeedOptions(preparedAccess.manifestCapability);
       this.setArtifactCapability(preparedAccess.artifactCapability);
     }
 

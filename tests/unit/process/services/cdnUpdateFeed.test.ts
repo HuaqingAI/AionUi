@@ -63,14 +63,41 @@ describe('CDN update feed options', () => {
   });
 
   it('keeps manifest authentication separate from the update file URL contract', () => {
-    const options = buildCdnFeedOptions({ Authorization: 'Bearer desktop-token' });
+    const options = buildCdnFeedOptions({ 'X-AionUi-Update-Capability': 'capability' });
 
     expect(options.url).toBe(`${DEV_HTH_BASE_URL}/api/aionui/client-updates`);
-    expect(options.manifestRequestHeaders).toEqual({ Authorization: 'Bearer desktop-token' });
+    expect(options.manifestRequestHeaders).toEqual({ 'X-AionUi-Update-Capability': 'capability' });
   });
 });
 
 describe('CdnGenericProvider', () => {
+  it('passes the manifest capability header to electron-updater request execution', async () => {
+    const request = vi.fn().mockResolvedValue(`version: 2.1.14
+files:
+  - url: AionUi-2.1.14-mac-arm64.dmg
+    sha512: sha512-value
+path: AionUi-2.1.14-mac-arm64.dmg
+sha512: sha512-value
+releaseDate: '2026-06-08T00:00:00.000Z'
+`);
+    const provider = new CdnGenericProvider(
+      {
+        provider: 'custom',
+        url: 'https://static.aionui.com/releases',
+        manifestRequestHeaders: { 'X-AionUi-Update-Capability': 'capability' },
+      },
+      { channel: 'latest', isAddNoCacheQuery: false } as AppUpdater,
+      { ...makeRuntimeOptions(), executor: { request } as ProviderRuntimeOptions['executor'] }
+    );
+
+    await provider.getLatestVersion();
+
+    expect(request).toHaveBeenCalledWith(
+      expect.objectContaining({ headers: { 'X-AionUi-Update-Capability': 'capability' } }),
+      undefined
+    );
+  });
+
   it('resolves relative update files under the version directory', () => {
     const provider = new CdnGenericProvider(
       {
