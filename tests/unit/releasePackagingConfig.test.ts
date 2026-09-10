@@ -92,6 +92,7 @@ describe('release packaging configuration', () => {
     const outerSigningCommand = script.slice(outerRequirementIndex, verificationIndex);
 
     expect(script).toContain(`designated => identifier "com.hqbuddy.app"`);
+    expect(script).toContain('`=${MACOS_AD_HOC_DESIGNATED_REQUIREMENT}`');
     expect(deepSignIndex).toBeGreaterThanOrEqual(0);
     expect(outerRequirementIndex).toBeGreaterThan(deepSignIndex);
     expect(script).toContain("'--preserve-metadata=identifier,entitlements,flags,runtime'");

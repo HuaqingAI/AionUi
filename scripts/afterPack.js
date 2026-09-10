@@ -13,6 +13,7 @@ const { verifyBundledAioncoreResources } = require('../packages/shared-scripts/s
 const { resolveExecutableName } = require('./appNaming');
 
 const MACOS_AD_HOC_DESIGNATED_REQUIREMENT = 'designated => identifier "com.hqbuddy.app"';
+const MACOS_AD_HOC_REQUIREMENTS_ARGUMENT = `=${MACOS_AD_HOC_DESIGNATED_REQUIREMENT}`;
 
 /**
  * afterPack hook for electron-builder
@@ -74,7 +75,7 @@ function signAndVerifyMacApp(appOutDir, packager) {
       '--sign',
       '-',
       '--requirements',
-      MACOS_AD_HOC_DESIGNATED_REQUIREMENT,
+      MACOS_AD_HOC_REQUIREMENTS_ARGUMENT,
       '--preserve-metadata=identifier,entitlements,flags,runtime',
       '--timestamp=none',
       appPath,
