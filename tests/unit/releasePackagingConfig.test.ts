@@ -50,7 +50,7 @@ describe('release packaging configuration', () => {
     const packageJson = JSON.parse(readProjectFile('package.json')) as { version?: string };
     const macBlock = yamlBlock(config, 'mac');
 
-    expect(packageJson.version).toBe('1.0.0');
+    expect(packageJson.version).toBe('1.0.1');
     expect(config).toContain(`productName: ${APP_DISPLAY_NAME}`);
     expect(config).toContain('executableName: HQBuddy');
     expect(macBlock).toContain(`  executableName: ${APP_DISPLAY_NAME}`);
@@ -82,6 +82,20 @@ describe('release packaging configuration', () => {
     const script = readProjectFile('scripts/build-with-builder.js');
 
     expect(script).toMatch(/--mac\s+dmg\s+zip\s+--\$\{targetArch\}\s+--prepackaged/);
+  });
+
+  it('uses a stable outer designated requirement for ad-hoc macOS updates', () => {
+    const script = readProjectFile('scripts/afterPack.js');
+    const deepSignIndex = script.indexOf("['--force', '--deep', '--sign', '-', '--timestamp=none', appPath]");
+    const outerRequirementIndex = script.indexOf('Applying stable outer code requirement');
+    const verificationIndex = script.indexOf('Verifying ad-hoc signature');
+    const outerSigningCommand = script.slice(outerRequirementIndex, verificationIndex);
+
+    expect(script).toContain(`designated => identifier "com.hqbuddy.app"`);
+    expect(deepSignIndex).toBeGreaterThanOrEqual(0);
+    expect(outerRequirementIndex).toBeGreaterThan(deepSignIndex);
+    expect(script).toContain("'--preserve-metadata=identifier,entitlements,flags,runtime'");
+    expect(outerSigningCommand).not.toContain("'--deep'");
   });
 
   itWithBash('fails release asset preparation when a mac zip is missing', () => {

@@ -12,6 +12,8 @@ const {
 const { verifyBundledAioncoreResources } = require('../packages/shared-scripts/src/verify-bundled-aioncore-resources');
 const { resolveExecutableName } = require('./appNaming');
 
+const MACOS_AD_HOC_DESIGNATED_REQUIREMENT = 'designated => identifier "com.hqbuddy.app"';
+
 /**
  * afterPack hook for electron-builder
  * Rebuilds native modules for cross-architecture builds
@@ -45,6 +47,24 @@ function signAndVerifyMacApp(appOutDir, packager) {
 
   console.log(`   Applying ad-hoc signature to ${appPath}`);
   execFileSync('codesign', ['--force', '--deep', '--sign', '-', '--timestamp=none', appPath], { stdio: 'inherit' });
+
+  // Squirrel compares updates against this requirement. The default ad-hoc
+  // requirement uses a per-build cdhash, so it cannot support version updates.
+  console.log(`   Applying stable outer code requirement to ${appPath}`);
+  execFileSync(
+    'codesign',
+    [
+      '--force',
+      '--sign',
+      '-',
+      '--requirements',
+      MACOS_AD_HOC_DESIGNATED_REQUIREMENT,
+      '--preserve-metadata=identifier,entitlements,flags,runtime',
+      '--timestamp=none',
+      appPath,
+    ],
+    { stdio: 'inherit' }
+  );
 
   console.log(`   Verifying ad-hoc signature for ${appPath}`);
   execFileSync('codesign', ['--verify', '--deep', '--strict', '--verbose=4', appPath], { stdio: 'inherit' });
