@@ -1,5 +1,5 @@
 const { Arch } = require('builder-util');
-const { execFileSync } = require('child_process');
+const { execFileSync, spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -41,6 +41,22 @@ function verifyBundledResources(resourcesDir, electronPlatformName, targetArch) 
   console.log(`   ✓ Bundled resources verified for ${result.runtimeKey} (${result.checked.length} checks)`);
 }
 
+function verifyStableMacDesignatedRequirement(appPath) {
+  const result = spawnSync('codesign', ['-d', '-r-', '--verbose=4', appPath], { encoding: 'utf8' });
+
+  if (result.error) {
+    throw result.error;
+  }
+  if (result.status !== 0) {
+    throw new Error(`Failed to inspect the code requirement for ${appPath}: ${result.stderr}`);
+  }
+
+  const inspection = `${result.stdout}${result.stderr}`;
+  if (!inspection.includes(MACOS_AD_HOC_DESIGNATED_REQUIREMENT)) {
+    throw new Error(`Stable designated requirement was not embedded in ${appPath}`);
+  }
+}
+
 function signAndVerifyMacApp(appOutDir, packager) {
   const appName = packager?.appInfo?.productFilename || resolveExecutableName();
   const appPath = path.join(appOutDir, `${appName}.app`);
@@ -68,6 +84,8 @@ function signAndVerifyMacApp(appOutDir, packager) {
 
   console.log(`   Verifying ad-hoc signature for ${appPath}`);
   execFileSync('codesign', ['--verify', '--deep', '--strict', '--verbose=4', appPath], { stdio: 'inherit' });
+  verifyStableMacDesignatedRequirement(appPath);
+  console.log(`   ✓ Stable designated requirement verified for ${appPath}`);
 }
 
 module.exports = async function afterPack(context) {

@@ -96,6 +96,7 @@ describe('release packaging configuration', () => {
     expect(outerRequirementIndex).toBeGreaterThan(deepSignIndex);
     expect(script).toContain("'--preserve-metadata=identifier,entitlements,flags,runtime'");
     expect(outerSigningCommand).not.toContain("'--deep'");
+    expect(script).toContain('Stable designated requirement was not embedded');
   });
 
   itWithBash('fails release asset preparation when a mac zip is missing', () => {
