@@ -56,6 +56,20 @@ const requestLoopback = (url: string): Promise<LoopbackResponse> =>
     request.on('error', reject);
   });
 
+const completeLoopbackLogin = async (service: HTHAuthService, code: string): Promise<void> => {
+  const login = await service.startLogin({ baseUrl: 'http://127.0.0.1:3001' });
+  expect(login.outcome).toBe('started');
+  if (login.outcome !== 'started') {
+    throw new Error('Expected the browser login to start');
+  }
+  const loginUrl = new URL(login.loginUrl);
+  const callbackUrl = new URL(loginUrl.searchParams.get('redirect_uri') ?? '');
+  callbackUrl.searchParams.set('code', code);
+  callbackUrl.searchParams.set('state', login.state);
+  const response = await requestLoopback(callbackUrl.toString());
+  expect(response.statusCode).toBe(200);
+};
+
 describe('HTHAuthService loopback callback', () => {
   let tempDir: string;
   let fetchMock: ReturnType<typeof vi.fn>;
@@ -152,6 +166,25 @@ describe('HTHAuthService loopback callback', () => {
 
     expect(response.statusCode).toBe(400);
     expect(onLoginComplete).not.toHaveBeenCalled();
+    await service.logout();
+  });
+
+  it('keeps the installation identifier after logout and re-login', async () => {
+    const authFile = path.join(tempDir, 'hth', 'auth.json');
+    const service = new HTHAuthService(authFile);
+
+    await completeLoopbackLogin(service, 'code-1');
+    await service.logout();
+    await completeLoopbackLogin(service, 'code-2');
+
+    const firstRequest = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string) as {
+      device_id?: string;
+    };
+    const secondRequest = JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string) as {
+      device_id?: string;
+    };
+    expect(firstRequest.device_id).toBeTruthy();
+    expect(secondRequest.device_id).toBe(firstRequest.device_id);
     await service.logout();
   });
 

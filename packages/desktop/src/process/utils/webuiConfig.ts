@@ -7,7 +7,7 @@
 import { app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
-import { networkInterfaces } from 'os';
+import { resolvePreferredLanIPv4 } from '@process/services/hth/clientEnvironment';
 import { getSystemDir } from './initStorage';
 import { httpRequest } from '@/common/adapter/httpBridge';
 import { startWebHost, type WebHostHandle } from '@aionui/web-host';
@@ -186,19 +186,6 @@ export function setDesktopWebUIInitialPassword(password: string | undefined): vo
   currentInitialPassword = password;
 }
 
-const getLanIP = (): string | null => {
-  const nets = networkInterfaces();
-  for (const name of Object.keys(nets)) {
-    const netInfo = nets[name];
-    if (!netInfo) continue;
-    for (const net of netInfo) {
-      const isIPv4 = net.family === 'IPv4' || (net.family as unknown) === 4;
-      if (isIPv4 && !net.internal) return net.address;
-    }
-  }
-  return null;
-};
-
 const toDesktopHandle = (handle: WebHostHandle, allowRemote: boolean): DesktopWebUIHandle => ({
   port: handle.port,
   allowRemote,
@@ -295,13 +282,13 @@ export function getDesktopWebUIStatus(): {
   initialPassword?: string;
 } {
   if (!currentHandle) {
-    const lanIP = getLanIP();
+    const lanIP = resolvePreferredLanIPv4();
     return {
       running: false,
       port: DEFAULT_WEBUI_PORT,
       allowRemote: false,
       localUrl: `http://localhost:${DEFAULT_WEBUI_PORT}`,
-      lanIP: lanIP ?? undefined,
+      lanIP: lanIP || undefined,
     };
   }
   return {

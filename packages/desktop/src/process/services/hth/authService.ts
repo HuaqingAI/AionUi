@@ -16,6 +16,7 @@ import http from 'http';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import { getHTHAuthFilePath, normalizeHTHBaseUrl, resolveDefaultHTHBaseUrl } from './baseUrl';
+import { resolveMacInstallationId } from './clientEnvironment';
 
 type StoredAuth = {
   baseUrl: string;
@@ -150,10 +151,12 @@ function escapeHtml(value: string): string {
 export class HTHAuthService {
   private pendingLogin: PendingLogin | null = null;
   private readonly authFile: string;
+  private readonly installationIdFile: string;
   private readonly onLoginComplete?: () => Promise<void> | void;
 
   constructor(authFile = getHTHAuthFilePath(), options: HTHAuthServiceOptions = {}) {
     this.authFile = authFile;
+    this.installationIdFile = path.join(path.dirname(authFile), 'installation-id');
     this.onLoginComplete = options.onLoginComplete;
   }
 
@@ -257,7 +260,7 @@ export class HTHAuthService {
     }
 
     const currentAuth = await this.readAuth();
-    const deviceId = currentAuth?.deviceId || randomUUID();
+    const deviceId = await this.getInstallationId(currentAuth?.deviceId, pending.baseUrl);
     const tokenUrl = new URL('/api/aionui/desktop/token', pending.baseUrl);
     const response = await fetch(tokenUrl, {
       method: 'POST',
@@ -524,6 +527,39 @@ const timer = window.setInterval(() => {
   private async writeAuth(auth: StoredAuth): Promise<void> {
     await fs.mkdir(path.dirname(this.authFile), { recursive: true });
     await fs.writeFile(this.authFile, JSON.stringify(auth, null, 2), 'utf8');
+  }
+
+  private async getInstallationId(previousDeviceId?: string, namespace?: string): Promise<string> {
+    try {
+      const stored = (await fs.readFile(this.installationIdFile, 'utf8')).trim();
+      if (stored && stored.length <= 128) {
+        return stored;
+      }
+    } catch {
+      // Generate and persist the identifier below when this is a new install.
+    }
+
+    const deviceId = previousDeviceId?.trim() || resolveMacInstallationId(undefined, namespace) || randomUUID();
+    await fs.mkdir(path.dirname(this.installationIdFile), { recursive: true });
+    try {
+      await fs.writeFile(this.installationIdFile, deviceId, { encoding: 'utf8', flag: 'wx' });
+      return deviceId;
+    } catch (error) {
+      const errorCode =
+        typeof error === 'object' && error !== null && 'code' in error ? (error as { code?: unknown }).code : undefined;
+      if (errorCode !== 'EEXIST') {
+        throw error;
+      }
+      try {
+        const stored = (await fs.readFile(this.installationIdFile, 'utf8')).trim();
+        if (stored && stored.length <= 128) {
+          return stored;
+        }
+      } catch {
+        // Preserve the original write error if the competing file is unavailable.
+      }
+      throw new Error('Invalid persisted AionUI installation identifier', { cause: error });
+    }
   }
 
   private normalizeBaseUrl(baseUrl: string): string {

@@ -5,7 +5,7 @@
  */
 
 import type { BrowserWindow } from 'electron';
-import { app, session, shell } from 'electron';
+import { app, powerMonitor, session, shell } from 'electron';
 import { ipcBridge } from '@/common';
 import { ProcessConfig } from '@process/utils/initStorage';
 import { getZoomFactor, setZoomFactor } from '@process/utils/zoom';
@@ -15,6 +15,8 @@ import { initApplicationBridgeCore } from './applicationBridgeCore';
 import type { IStartOnBootStatus } from '@/common/adapter/ipcBridge';
 import { restartApplication } from './restartApplication';
 import { HTHAuthService } from '@process/services/hth/authService';
+import { HTHClientHeartbeatService } from '@process/services/hth/clientHeartbeatService';
+import { shouldRunClientHeartbeat } from '@process/services/hth/clientEnvironment';
 import { HTHCoreIdentityService } from '@process/services/hth/coreIdentityService';
 import { HTHConfigSyncService } from '@process/services/hth/configSyncService';
 import { HTHQuotaService } from '@process/services/hth/quotaService';
@@ -264,15 +266,25 @@ export function initApplicationBridge(): void {
   });
   let repairLegacyAssistantAvatars = (): void => undefined;
   let hthAuthService: HTHAuthService;
+  let clientHeartbeatService: HTHClientHeartbeatService;
   hthAuthService = new HTHAuthService(undefined, {
     onLoginComplete: async () => {
       await coreIdentityService.establish(await hthAuthService.getAccess());
       repairLegacyAssistantAvatars();
+      if (shouldRunClientHeartbeat()) {
+        clientHeartbeatService.start();
+      }
       const { autoUpdaterService } = await import('../services/autoUpdaterService');
       void autoUpdaterService.checkForUpdates();
       showHTHLoginWindow();
     },
   });
+  clientHeartbeatService = new HTHClientHeartbeatService(hthAuthService);
+  if (shouldRunClientHeartbeat()) {
+    void app.whenReady().then(() => clientHeartbeatService.start());
+    powerMonitor.on('resume', () => clientHeartbeatService.resume());
+    app.once('before-quit', () => clientHeartbeatService.stop());
+  }
   const hthConfigSyncService = new HTHConfigSyncService(
     hthAuthService,
     undefined,
@@ -307,6 +319,7 @@ export function initApplicationBridge(): void {
   });
   ipcBridge.hth.exchangeLoginCode.provider((request) => hthAuthService.exchangeLoginCode(request));
   ipcBridge.hth.logout.provider(async () => {
+    clientHeartbeatService.stop();
     await coreIdentityService.clear();
     return hthAuthService.logout();
   });

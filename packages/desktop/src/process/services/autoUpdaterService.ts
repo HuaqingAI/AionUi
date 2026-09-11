@@ -25,6 +25,7 @@ import {
   recordAutoUpdateStatus,
 } from './autoUpdateDiagnostics';
 import { HTHAuthService } from './hth/authService';
+import { resolveAionUiClientPlatform } from './hth/clientEnvironment';
 import { buildCdnFeedOptions, resolveUpdateFeedBaseUrl } from './updateFeed';
 
 const DEBUG_AUTO_UPDATE_CURRENT_VERSION_ENV = 'AIONUI_DEBUG_AUTO_UPDATE_CURRENT_VERSION';
@@ -266,15 +267,8 @@ class AutoUpdaterService extends EventEmitter {
   }
 
   private getCurrentUpdatePlatform(): string {
-    if (process.platform === 'win32' && process.arch === 'x64') {
-      return 'windows_x64';
-    }
-    if (process.platform === 'darwin' && process.arch === 'arm64') {
-      return 'mac_arm64';
-    }
-    if (process.platform === 'darwin' && process.arch === 'x64') {
-      return 'mac_x64';
-    }
+    const platform = resolveAionUiClientPlatform();
+    if (platform) return platform;
     throw new Error(`Client updates are unsupported on ${process.platform}/${process.arch}`);
   }
 
