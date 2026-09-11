@@ -86,6 +86,8 @@ describe('opencode startup bootstrap', () => {
     prefix: string;
     shopifyCliCommandPath: string;
     shopifyCliPrefix: string;
+    ziniaoCliCommandPath: string;
+    ziniaoCliPrefix: string;
   }> {
     const dataPath = await mkdtemp(path.join(tmpdir(), 'aionui-opencode-startup-'));
     const nodeRoot = path.join(dataPath, 'runtime', 'node', 'node-v24.11.0-test');
@@ -126,11 +128,20 @@ describe('opencode startup bootstrap', () => {
       shopifyCliPrefix,
       process.platform === 'win32' ? 'shopify.cmd' : 'bin/shopify'
     );
+    const ziniaoCliPrefix = path.join(dataPath, 'runtime', 'npm-global', 'ziniao-open');
+    const ziniaoCliCommandPath = path.join(
+      ziniaoCliPrefix,
+      process.platform === 'win32' ? 'ziniao-cli.cmd' : 'bin/ziniao-cli'
+    );
 
     await mkdir(path.dirname(nodeExecutable), { recursive: true });
     await mkdir(path.dirname(npmCliPath), { recursive: true });
+    const npmRoot = path.dirname(path.dirname(npmCliPath));
+    await mkdir(path.join(npmRoot, 'lib'), { recursive: true });
     await writeFile(nodeExecutable, '');
     await writeFile(npmCliPath, '');
+    await writeFile(path.join(npmRoot, 'package.json'), JSON.stringify({ version: '10.0.0' }));
+    await writeFile(path.join(npmRoot, 'lib', 'cli.js'), '');
 
     return {
       beisenCliCommandPath,
@@ -152,6 +163,8 @@ describe('opencode startup bootstrap', () => {
       prefix,
       shopifyCliCommandPath,
       shopifyCliPrefix,
+      ziniaoCliCommandPath,
+      ziniaoCliPrefix,
     };
   }
 
@@ -206,6 +219,7 @@ describe('opencode startup bootstrap', () => {
     const fixture = await createManagedNodeFixture();
     await mkdir(path.dirname(fixture.commandPath), { recursive: true });
     await writeFile(fixture.commandPath, '');
+    const commandRunner = vi.fn(async () => ({ stdout: 'v24.11.0' }));
 
     const env = {
       AIONUI_BEISEN_CLI_BOOTSTRAP: '0',
@@ -219,7 +233,14 @@ describe('opencode startup bootstrap', () => {
     };
 
     expect(await isManagedNodeEnvironmentReady(fixture.dataPath)).toBe(false);
-    expect(await ensureManagedNodeEnvironmentMarker({ dataPath: fixture.dataPath, env })).toBe(true);
+    expect(
+      await ensureManagedNodeEnvironmentMarker({
+        commandRunner,
+        dataPath: fixture.dataPath,
+        ensureNodeRuntime: async () => ({ ready: true }),
+        env,
+      })
+    ).toBe(true);
     expect(await isManagedNodeEnvironmentReady(fixture.dataPath)).toBe(true);
     await expect(
       readFile(path.join(fixture.dataPath, 'runtime', MANAGED_NODE_ENVIRONMENT_MARKER), 'utf8')
@@ -228,6 +249,7 @@ describe('opencode startup bootstrap', () => {
 
   it('does not write the environment marker while an enabled tool is missing', async () => {
     const fixture = await createManagedNodeFixture();
+    const commandRunner = vi.fn(async () => ({ stdout: 'v24.11.0' }));
     const env = {
       AIONUI_BEISEN_CLI_BOOTSTRAP: '0',
       AIONUI_CODEX_BOOTSTRAP: '0',
@@ -239,8 +261,155 @@ describe('opencode startup bootstrap', () => {
       AIONUI_ZINIAO_OPEN_BOOTSTRAP: '0',
     };
 
-    expect(await ensureManagedNodeEnvironmentMarker({ dataPath: fixture.dataPath, env })).toBe(false);
+    expect(
+      await ensureManagedNodeEnvironmentMarker({
+        commandRunner,
+        dataPath: fixture.dataPath,
+        ensureNodeRuntime: async () => ({ ready: true }),
+        env,
+      })
+    ).toBe(false);
     expect(await isManagedNodeEnvironmentReady(fixture.dataPath)).toBe(false);
+  });
+
+  it('treats a failed AionCore node readiness request as a pending environment', async () => {
+    const fixture = await createManagedNodeFixture();
+    await mkdir(path.join(fixture.dataPath, 'runtime'), { recursive: true });
+    await writeFile(path.join(fixture.dataPath, 'runtime', MANAGED_NODE_ENVIRONMENT_MARKER), 'ready\n');
+
+    await expect(
+      ensureManagedNodeEnvironmentMarker({
+        dataPath: fixture.dataPath,
+        ensureNodeRuntime: async () => {
+          throw new Error('AionCore unavailable');
+        },
+        env: {},
+      })
+    ).resolves.toBe(false);
+    expect(await isManagedNodeEnvironmentReady(fixture.dataPath)).toBe(false);
+  });
+
+  it('does not write the marker when an installed CLI version command fails', async () => {
+    const fixture = await createManagedNodeFixture();
+    await mkdir(path.dirname(fixture.commandPath), { recursive: true });
+    await writeFile(fixture.commandPath, '');
+    await mkdir(path.join(fixture.dataPath, 'runtime'), { recursive: true });
+    await writeFile(path.join(fixture.dataPath, 'runtime', MANAGED_NODE_ENVIRONMENT_MARKER), 'ready\n');
+    const commandRunner = vi.fn(async (_file: string, args: string[]) => {
+      if (args.length === 1 && args[0] === '-v') return { stdout: 'v24.11.0' };
+      if (args.includes('--version')) throw new Error('opencode is broken');
+      return { stdout: '10.0.0' };
+    });
+    const env = {
+      AIONUI_BEISEN_CLI_BOOTSTRAP: '0',
+      AIONUI_CODEX_BOOTSTRAP: '0',
+      AIONUI_DWS_BOOTSTRAP: '0',
+      AIONUI_GOOGLEWORKSPACE_CLI_BOOTSTRAP: '0',
+      AIONUI_NOXINFLUENCER_CLI_BOOTSTRAP: '0',
+      AIONUI_OFFICECLI_BOOTSTRAP: '0',
+      AIONUI_SHOPIFY_CLI_BOOTSTRAP: '0',
+      AIONUI_ZINIAO_OPEN_BOOTSTRAP: '0',
+    };
+
+    await expect(
+      ensureManagedNodeEnvironmentMarker({
+        commandRunner,
+        dataPath: fixture.dataPath,
+        ensureNodeRuntime: async () => ({ ready: true }),
+        env,
+      })
+    ).resolves.toBe(false);
+    expect(await isManagedNodeEnvironmentReady(fixture.dataPath)).toBe(false);
+  });
+
+  it('uses the real version command for every enabled managed CLI before writing the marker', async () => {
+    const fixture = await createManagedNodeFixture();
+    const commandPaths = [
+      fixture.commandPath,
+      fixture.beisenCliCommandPath,
+      fixture.codexCommandPath,
+      fixture.dwsCommandPath,
+      fixture.googleWorkspaceCliCommandPath,
+      fixture.noxinfluencerCliCommandPath,
+      fixture.officeCliCommandPath,
+      fixture.shopifyCliCommandPath,
+      fixture.ziniaoCliCommandPath,
+    ];
+    await Promise.all(
+      commandPaths.map(async (commandPath) => {
+        await mkdir(path.dirname(commandPath), { recursive: true });
+        await writeFile(commandPath, '');
+      })
+    );
+    await mkdir(path.join(fixture.dwsPrefix, 'node_modules', 'dingtalk-workspace-cli', 'vendor'), {
+      recursive: true,
+    });
+    await writeFile(
+      path.join(
+        fixture.dwsPrefix,
+        'node_modules',
+        'dingtalk-workspace-cli',
+        'vendor',
+        process.platform === 'win32' ? 'dws.exe' : 'dws'
+      ),
+      ''
+    );
+    const commandRunner = vi.fn(async (_file: string, args: string[]) => {
+      if (args.length === 1 && args[0] === '-v') return { stdout: 'v24.11.0' };
+      return { stdout: '1.0.0' };
+    });
+
+    expect(
+      await ensureManagedNodeEnvironmentMarker({
+        commandRunner,
+        dataPath: fixture.dataPath,
+        ensureNodeRuntime: async () => ({ ready: true }),
+        env: {},
+      })
+    ).toBe(true);
+    const commandLines = commandRunner.mock.calls.map(([, args]) => args.join(' '));
+    expect(commandLines.some((line) => line.includes('beisen-cli') && line.includes('version'))).toBe(true);
+    for (const command of ['codex', 'dws', 'gws', 'noxinfluencer', 'officecli', 'opencode', 'shopify', 'ziniao-cli']) {
+      expect(commandLines.some((line) => line.includes(command) && line.includes('--version'))).toBe(true);
+    }
+  });
+
+  it('waits for a successful managed node -v probe before installing a CLI', async () => {
+    const fixture = await createManagedNodeFixture();
+    const ensureNodeRuntime = vi.fn(async () => ({ ready: true }));
+    let nodeProbeCount = 0;
+    const phases: string[] = [];
+    const commandRunner = vi.fn(async (_file: string, args: string[]) => {
+      if (args.length === 1 && args[0] === '-v') {
+        phases.push('node');
+        nodeProbeCount += 1;
+        return { stdout: nodeProbeCount === 1 ? 'managed node is still activating' : 'v24.11.0' };
+      }
+      if (args[0] === fixture.npmCliPath && args[1] === '--version') {
+        phases.push('npm');
+        return { stdout: '10.0.0' };
+      }
+      if (args.includes('install')) {
+        phases.push('install');
+        await mkdir(path.dirname(fixture.commandPath), { recursive: true });
+        await writeFile(fixture.commandPath, '');
+        return {};
+      }
+      phases.push('cli');
+      return { stdout: '1.0.0' };
+    });
+
+    await expect(
+      ensureOpenCodeReady({
+        commandRunner,
+        dataPath: fixture.dataPath,
+        emitStatus: vi.fn(),
+        ensureNodeRuntime,
+        env: {},
+      })
+    ).resolves.toEqual({ status: 'ready' });
+    expect(ensureNodeRuntime).toHaveBeenCalledOnce();
+    expect(phases.indexOf('install')).toBeGreaterThan(phases.lastIndexOf('node'));
   });
 
   it('allows E2E mode to bypass managed environment installation checks', async () => {
@@ -297,8 +466,12 @@ describe('opencode startup bootstrap', () => {
 
     await mkdir(path.dirname(nodeExecutable), { recursive: true });
     await mkdir(path.dirname(npmCliPath), { recursive: true });
+    const npmRoot = path.dirname(path.dirname(npmCliPath));
+    await mkdir(path.join(npmRoot, 'lib'), { recursive: true });
     await writeFile(nodeExecutable, '');
     await writeFile(npmCliPath, '');
+    await writeFile(path.join(npmRoot, 'package.json'), JSON.stringify({ version: '10.0.0' }));
+    await writeFile(path.join(npmRoot, 'lib', 'cli.js'), '');
 
     const commandRunner = vi.fn(async () => {
       await mkdir(path.dirname(commandPath), { recursive: true });
@@ -392,8 +565,8 @@ describe('opencode startup bootstrap', () => {
     });
 
     expect(result).toEqual({ status: 'ready' });
-    expect(commandRunner).toHaveBeenCalledTimes(2);
-    expect(commandRunner.mock.calls[0]?.[1]).toEqual([
+    expect(commandRunner).toHaveBeenCalledTimes(5);
+    expect(commandRunner.mock.calls[2]?.[1]).toEqual([
       fixture.npmCliPath,
       'uninstall',
       '--global',
@@ -403,7 +576,7 @@ describe('opencode startup bootstrap', () => {
       '--registry',
       'https://registry.npmmirror.com',
     ]);
-    expect(commandRunner.mock.calls[1]?.[1]).toContain('@openai/codex@0.151.0');
+    expect(commandRunner.mock.calls[3]?.[1]).toContain('@openai/codex@0.151.0');
   });
 
   it('starts Codex without invoking plugin or marketplace commands', async () => {
@@ -423,7 +596,7 @@ describe('opencode startup bootstrap', () => {
     });
 
     expect(result).toEqual({ status: 'ready' });
-    expect(commandRunner).toHaveBeenCalledTimes(1);
+    expect(commandRunner).toHaveBeenCalledTimes(4);
     expect(commandRunner.mock.calls.some(([, args]) => args.includes('plugin') || args.includes('marketplace'))).toBe(
       false
     );
@@ -747,7 +920,7 @@ describe('opencode startup bootstrap', () => {
     });
 
     expect(result).toEqual({ status: 'ready' });
-    expect(calls).toEqual(['codex:downloading', 'npm', 'codex:ready']);
+    expect(calls).toEqual(['codex:downloading', 'npm', 'npm', 'npm', 'npm', 'codex:ready']);
     expect(ensureNodeRuntime).not.toHaveBeenCalled();
     expect(emitStatus).toHaveBeenCalledWith({
       resource: 'acp_tool',
@@ -776,7 +949,7 @@ describe('opencode startup bootstrap', () => {
     });
 
     expect(result).toEqual({ status: 'ready' });
-    expect(commandRunner).not.toHaveBeenCalled();
+    expect(commandRunner).toHaveBeenCalledTimes(3);
   });
 
   it('prepends managed Node when the Codex command already exists', async () => {
@@ -804,7 +977,7 @@ describe('opencode startup bootstrap', () => {
 
     const entries = process.env.PATH?.split(path.delimiter) ?? [];
     expect(result).toEqual({ status: 'ready' });
-    expect(commandRunner).not.toHaveBeenCalled();
+    expect(commandRunner).toHaveBeenCalledTimes(3);
     expect(entries.indexOf(path.dirname(fixture.nodeExecutable))).toBeLessThan(entries.indexOf(oldPath));
   });
 
@@ -838,7 +1011,7 @@ describe('opencode startup bootstrap', () => {
 
     const launcher = await readFile(fixture.codexCommandPath, 'utf8');
     expect(result).toEqual({ status: 'ready' });
-    expect(commandRunner).not.toHaveBeenCalled();
+    expect(commandRunner).toHaveBeenCalledTimes(3);
     expect(launcher).toContain('AionUi managed Node launcher');
     expect(launcher).toContain(fixture.nodeExecutable);
     expect(launcher).toContain(cliPath);
@@ -849,20 +1022,22 @@ describe('opencode startup bootstrap', () => {
     const fixture = await createManagedNodeFixture();
     const packageRoot = path.join(fixture.codexPrefix, 'node_modules', '@openai', 'codex');
     const cliPath = path.join(packageRoot, 'bin', 'codex.js');
-    const commandRunner = vi.fn(async () => {
-      await mkdir(path.dirname(fixture.codexCommandPath), { recursive: true });
-      await mkdir(path.dirname(cliPath), { recursive: true });
-      await writeFile(
-        path.join(packageRoot, 'package.json'),
-        JSON.stringify({
-          version: '0.151.0',
-          bin: {
-            codex: 'bin/codex.js',
-          },
-        })
-      );
-      await writeFile(cliPath, '#!/usr/bin/env node\nawait Promise.resolve();\n');
-      await writeFile(fixture.codexCommandPath, '@echo off\r\nnode codex.js %*\r\n');
+    const commandRunner = vi.fn(async (_file: string, args: string[]) => {
+      if (args.includes('install')) {
+        await mkdir(path.dirname(fixture.codexCommandPath), { recursive: true });
+        await mkdir(path.dirname(cliPath), { recursive: true });
+        await writeFile(
+          path.join(packageRoot, 'package.json'),
+          JSON.stringify({
+            version: '0.151.0',
+            bin: {
+              codex: 'bin/codex.js',
+            },
+          })
+        );
+        await writeFile(cliPath, '#!/usr/bin/env node\nawait Promise.resolve();\n');
+        await writeFile(fixture.codexCommandPath, '@echo off\r\nnode codex.js %*\r\n');
+      }
       return {};
     });
 
@@ -876,7 +1051,7 @@ describe('opencode startup bootstrap', () => {
 
     const launcher = await readFile(fixture.codexCommandPath, 'utf8');
     expect(result).toEqual({ status: 'ready' });
-    expect(commandRunner).toHaveBeenCalledOnce();
+    expect(commandRunner).toHaveBeenCalledTimes(4);
     expect(launcher).toContain('REM AionUi managed Node launcher');
     expect(launcher).toContain(`"${fixture.nodeExecutable}" "${cliPath}" %*`);
   });
@@ -1170,7 +1345,7 @@ describe('opencode startup bootstrap', () => {
 
     expect(result).toEqual({
       status: 'failed',
-      error: 'managed Node executable was not found',
+      error: 'managed Node runtime is not ready',
     });
   });
 

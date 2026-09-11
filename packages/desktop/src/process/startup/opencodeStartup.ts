@@ -56,6 +56,7 @@ type ManagedAcpTool = {
   match: string | readonly string[];
   packageName: string;
   packageSpec?: string;
+  versionArgs: readonly string[];
   scope: IRuntimeStatusScope;
   toolId:
     | 'beisen-cli'
@@ -196,6 +197,10 @@ export const MANAGED_NODE_ENVIRONMENT_MARKER = '.hqbuddy-environment-ready';
 const MANAGED_NPM_REGISTRY = 'https://registry.npmmirror.com';
 const MANAGED_NODE_LAUNCHER_MARKER = 'AionUi managed Node launcher';
 const MANAGED_DIRECT_LAUNCHER_MARKER = 'AionUi managed direct launcher';
+const NODE_RUNTIME_SCOPE: IRuntimeStatusScope = {
+  kind: 'custom_agent',
+  id: 'managed-node-runtime',
+};
 const DWS_PLATFORM_ARCHIVES: Record<string, string> = {
   'darwin-arm64': 'dws-darwin-arm64.tar.gz',
   'darwin-x64': 'dws-darwin-amd64.tar.gz',
@@ -211,6 +216,7 @@ const OPENCODE_TOOL: ManagedAcpTool = {
   envDisabledKey: 'AIONUI_OPENCODE_BOOTSTRAP',
   match: OPENCODE_AGENT_MATCH,
   packageName: OPENCODE_PACKAGE_NAME,
+  versionArgs: ['--version'],
   scope: OPENCODE_STARTUP_SCOPE,
   toolId: OPENCODE_TOOL_ID,
 };
@@ -221,6 +227,7 @@ const BEISEN_CLI_TOOL: ManagedAcpTool = {
   envDisabledKey: 'AIONUI_BEISEN_CLI_BOOTSTRAP',
   match: BEISEN_CLI_TOOL_ID,
   packageName: BEISEN_CLI_PACKAGE_NAME,
+  versionArgs: ['version'],
   scope: BEISEN_CLI_STARTUP_SCOPE,
   toolId: BEISEN_CLI_TOOL_ID,
 };
@@ -232,6 +239,7 @@ const CODEX_TOOL: ManagedAcpTool = {
   match: CODEX_AGENT_MATCH,
   packageName: CODEX_PACKAGE_NAME,
   packageSpec: CODEX_PACKAGE_SPEC,
+  versionArgs: ['--version'],
   scope: CODEX_STARTUP_SCOPE,
   toolId: CODEX_TOOL_ID,
 };
@@ -242,6 +250,7 @@ const DWS_TOOL: ManagedAcpTool = {
   envDisabledKey: 'AIONUI_DWS_BOOTSTRAP',
   match: DWS_AGENT_MATCH,
   packageName: DWS_PACKAGE_NAME,
+  versionArgs: ['--version'],
   scope: DWS_STARTUP_SCOPE,
   toolId: DWS_TOOL_ID,
 };
@@ -252,6 +261,7 @@ const GOOGLEWORKSPACE_CLI_TOOL: ManagedAcpTool = {
   envDisabledKey: 'AIONUI_GOOGLEWORKSPACE_CLI_BOOTSTRAP',
   match: GOOGLEWORKSPACE_CLI_TOOL_ID,
   packageName: GOOGLEWORKSPACE_CLI_PACKAGE_NAME,
+  versionArgs: ['--version'],
   scope: GOOGLEWORKSPACE_CLI_STARTUP_SCOPE,
   toolId: GOOGLEWORKSPACE_CLI_TOOL_ID,
 };
@@ -262,6 +272,7 @@ const NOXINFLUENCER_CLI_TOOL: ManagedAcpTool = {
   envDisabledKey: 'AIONUI_NOXINFLUENCER_CLI_BOOTSTRAP',
   match: NOXINFLUENCER_CLI_TOOL_ID,
   packageName: NOXINFLUENCER_CLI_PACKAGE_NAME,
+  versionArgs: ['--version'],
   packageSpec: '@noxinfluencer/cli@latest',
   scope: NOXINFLUENCER_CLI_STARTUP_SCOPE,
   toolId: NOXINFLUENCER_CLI_TOOL_ID,
@@ -273,6 +284,7 @@ const OFFICECLI_TOOL: ManagedAcpTool = {
   envDisabledKey: 'AIONUI_OFFICECLI_BOOTSTRAP',
   match: OFFICECLI_AGENT_MATCH,
   packageName: OFFICECLI_PACKAGE_NAME,
+  versionArgs: ['--version'],
   scope: OFFICECLI_STARTUP_SCOPE,
   toolId: OFFICECLI_TOOL_ID,
 };
@@ -283,6 +295,7 @@ const SHOPIFY_CLI_TOOL: ManagedAcpTool = {
   envDisabledKey: 'AIONUI_SHOPIFY_CLI_BOOTSTRAP',
   match: SHOPIFY_CLI_TOOL_ID,
   packageName: SHOPIFY_CLI_PACKAGE_NAME,
+  versionArgs: ['--version'],
   scope: SHOPIFY_CLI_STARTUP_SCOPE,
   toolId: SHOPIFY_CLI_TOOL_ID,
 };
@@ -293,6 +306,7 @@ const ZINIAO_OPEN_TOOL: ManagedAcpTool = {
   envDisabledKey: 'AIONUI_ZINIAO_OPEN_BOOTSTRAP',
   match: ZINIAO_OPEN_TOOL_ID,
   packageName: ZINIAO_OPEN_PACKAGE_NAME,
+  versionArgs: ['--version'],
   scope: ZINIAO_OPEN_STARTUP_SCOPE,
   toolId: ZINIAO_OPEN_TOOL_ID,
 };
@@ -312,6 +326,19 @@ const STARTUP_TOOLS = [
 const execFileAsync = promisify(execFile);
 
 let startupPromise: Promise<OpenCodeBootstrapResult> | null = null;
+type ManagedNodeRuntime = {
+  nodeExecutable: string;
+  npmCliPath: string;
+};
+
+type ManagedNodeRuntimeCheckOptions = {
+  commandRunner: CommandRunner;
+  dataPath: string;
+  ensureNodeRuntime: EnsureNodeRuntime;
+  scope: IRuntimeStatusScope;
+};
+
+const managedNodeReadinessPromises = new Map<string, Promise<ManagedNodeRuntime | null>>();
 
 function normalizeError(error: unknown): string {
   if (error instanceof Error) {
@@ -590,8 +617,10 @@ export async function isManagedNodeEnvironmentReady(dataPath = getDataPath()): P
 
 export async function ensureManagedNodeEnvironmentMarker(
   options: {
+    commandRunner?: CommandRunner;
     dataPath?: string;
     env?: OpenCodeStartupEnv;
+    ensureNodeRuntime?: EnsureNodeRuntime;
   } = {}
 ): Promise<boolean> {
   const dataPath = options.dataPath ?? getDataPath();
@@ -599,43 +628,49 @@ export async function ensureManagedNodeEnvironmentMarker(
   if (env.AIONUI_E2E_TEST === '1') {
     return true;
   }
-  if (await isManagedNodeEnvironmentReady(dataPath)) {
-    return true;
-  }
-
   const requiredTools = STARTUP_TOOLS.filter((tool) => shouldEnsureManagedToolOnStartup(tool, env));
   if (requiredTools.length === 0) {
+    await fs.rm(getManagedNodeEnvironmentMarkerPath(dataPath), { force: true });
     return false;
   }
 
-  const nodeExecutable = await findManagedNodeExecutable(dataPath);
-  if (!nodeExecutable) {
+  const nodeRuntime = await ensureManagedNodeRuntimeReady({
+    commandRunner: options.commandRunner ?? runCommand,
+    dataPath,
+    ensureNodeRuntime: options.ensureNodeRuntime ?? ipcBridge.systemSettings.ensureNodeRuntime.invoke,
+    scope: NODE_RUNTIME_SCOPE,
+  });
+  if (!nodeRuntime) {
+    await fs.rm(getManagedNodeEnvironmentMarkerPath(dataPath), { force: true });
     return false;
   }
 
   const toolReadiness = await Promise.all(
     requiredTools.map(async (tool) => {
-      if (!(await pathExists(getManagedToolCommandPath(tool, dataPath)))) {
+      const prefix = getManagedToolNpmPrefix(tool, dataPath);
+      if (tool.toolId === DWS_TOOL_ID && !(await pathExists(getDwsBinaryPath(prefix)))) {
         return false;
       }
-      if (tool.toolId === DWS_TOOL_ID) {
-        const prefix = getManagedToolNpmPrefix(tool, dataPath);
-        return pathExists(getDwsBinaryPath(prefix));
-      }
-      return true;
+      return validateManagedToolVersion(
+        tool,
+        dataPath,
+        nodeRuntime.nodeExecutable,
+        options.commandRunner ?? runCommand
+      );
     })
   );
   if (!toolReadiness.every(Boolean)) {
+    await fs.rm(getManagedNodeEnvironmentMarkerPath(dataPath), { force: true });
     return false;
   }
 
   const markerPath = getManagedNodeEnvironmentMarkerPath(dataPath);
   try {
-    await fs.writeFile(markerPath, 'ready\n', { flag: 'wx' });
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
-      throw error;
-    }
+    await fs.mkdir(path.dirname(markerPath), { recursive: true });
+    await fs.writeFile(markerPath, 'ready\n');
+  } catch {
+    await fs.rm(markerPath, { force: true }).catch((): void => {});
+    return false;
   }
   return true;
 }
@@ -647,6 +682,168 @@ function getNpmCliPath(nodeExecutable: string): string {
 
   const nodeRoot = path.dirname(path.dirname(nodeExecutable));
   return path.join(nodeRoot, 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js');
+}
+
+function getManagedNpmRoot(npmCliPath: string): string {
+  return path.dirname(path.dirname(npmCliPath));
+}
+
+function buildManagedCommandEnv(
+  tool: ManagedAcpTool | null,
+  dataPath: string,
+  nodeExecutable: string
+): NodeJS.ProcessEnv {
+  const nodeBinDir = path.dirname(nodeExecutable);
+  const toolBinDir = tool ? getManagedToolGlobalBinDir(tool, dataPath) : null;
+  const commandEnv: NodeJS.ProcessEnv = {
+    ...process.env,
+    PATH: [toolBinDir, nodeBinDir, process.env.PATH ?? process.env.Path ?? ''].filter(Boolean).join(path.delimiter),
+  };
+  if (tool?.toolId === OPENCODE_TOOL_ID) {
+    commandEnv.OPENCODE_CONFIG_DIR = getOpenCodeConfigDir(dataPath);
+  }
+  if (process.platform === 'win32') {
+    commandEnv.Path = commandEnv.PATH;
+  }
+  return commandEnv;
+}
+
+function getCommandInvocation(file: string, args: string[]): { file: string; args: string[] } {
+  if (process.platform !== 'win32' || path.extname(file).toLowerCase() !== '.cmd') {
+    return { file, args };
+  }
+  const commandLine = [file, ...args].map(windowsBatchQuote).join(' ');
+  return {
+    file: process.env.ComSpec || 'cmd.exe',
+    args: ['/d', '/s', '/c', commandLine],
+  };
+}
+
+function commandResultHasOutput(result: { stderr?: string; stdout?: string }): boolean {
+  if (typeof result.stdout !== 'string' && typeof result.stderr !== 'string') {
+    // Test command runners may omit output while still representing exit code 0.
+    return true;
+  }
+  return `${result.stdout ?? ''}\n${result.stderr ?? ''}`.trim().length > 0;
+}
+
+async function runVersionCommand(
+  commandRunner: CommandRunner,
+  file: string,
+  args: string[],
+  options: { cwd: string; env: NodeJS.ProcessEnv; requireNodeVersion?: boolean }
+): Promise<boolean> {
+  try {
+    const invocation = getCommandInvocation(file, args);
+    const result = await commandRunner(invocation.file, invocation.args, {
+      cwd: options.cwd,
+      env: options.env,
+      timeout: OPENCODE_INSTALL_TIMEOUT_MS,
+    });
+    if (!commandResultHasOutput(result)) {
+      return false;
+    }
+    if (!options.requireNodeVersion) {
+      return true;
+    }
+    if (typeof result.stdout !== 'string' && typeof result.stderr !== 'string') {
+      return true;
+    }
+    const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
+    return /(?:^|\n)\s*v\d+\.\d+\.\d+(?:[-+][^\s]+)?\s*(?:\n|$)/i.test(output);
+  } catch {
+    return false;
+  }
+}
+
+async function probeManagedNodeRuntime(
+  options: Omit<ManagedNodeRuntimeCheckOptions, 'ensureNodeRuntime' | 'scope'>
+): Promise<ManagedNodeRuntime | null> {
+  const nodeExecutable = await findManagedNodeExecutable(options.dataPath);
+  if (!nodeExecutable) {
+    return null;
+  }
+
+  const npmCliPath = getNpmCliPath(nodeExecutable);
+  const npmRoot = getManagedNpmRoot(npmCliPath);
+  const npmFilesReady = await Promise.all([
+    pathExists(npmCliPath),
+    pathExists(path.join(npmRoot, 'package.json')),
+    pathExists(path.join(npmRoot, 'lib', 'cli.js')),
+  ]);
+  if (!npmFilesReady.every(Boolean)) {
+    return null;
+  }
+
+  const commandEnv = buildManagedCommandEnv(null, options.dataPath, nodeExecutable);
+  const nodeReady = await runVersionCommand(options.commandRunner, nodeExecutable, ['-v'], {
+    cwd: options.dataPath,
+    env: commandEnv,
+    requireNodeVersion: true,
+  });
+  if (!nodeReady) {
+    return null;
+  }
+  const npmReady = await runVersionCommand(options.commandRunner, nodeExecutable, [npmCliPath, '--version'], {
+    cwd: options.dataPath,
+    env: commandEnv,
+  });
+  return npmReady ? { nodeExecutable, npmCliPath } : null;
+}
+
+async function ensureManagedNodeRuntimeReady(
+  options: ManagedNodeRuntimeCheckOptions
+): Promise<ManagedNodeRuntime | null> {
+  const existing = managedNodeReadinessPromises.get(options.dataPath);
+  if (existing) {
+    return existing;
+  }
+
+  const check = (async (): Promise<ManagedNodeRuntime | null> => {
+    const localRuntime = await probeManagedNodeRuntime(options);
+    if (localRuntime) {
+      return localRuntime;
+    }
+
+    // AionCore owns activation/download of the managed runtime. Its explicit
+    // ready response is followed by local node/npm probes to catch incomplete
+    // files left by an interrupted activation.
+    let nodeResult: { ready: boolean };
+    try {
+      nodeResult = await options.ensureNodeRuntime({ scope: options.scope });
+    } catch {
+      return null;
+    }
+    if (nodeResult?.ready !== true) {
+      return null;
+    }
+    return probeManagedNodeRuntime(options);
+  })();
+  managedNodeReadinessPromises.set(options.dataPath, check);
+  try {
+    return await check;
+  } finally {
+    if (managedNodeReadinessPromises.get(options.dataPath) === check) {
+      managedNodeReadinessPromises.delete(options.dataPath);
+    }
+  }
+}
+
+async function validateManagedToolVersion(
+  tool: ManagedAcpTool,
+  dataPath: string,
+  nodeExecutable: string,
+  commandRunner: CommandRunner
+): Promise<boolean> {
+  const commandPath = getManagedToolCommandPath(tool, dataPath);
+  if (!(await pathExists(commandPath))) {
+    return false;
+  }
+  const commandEnv = buildManagedCommandEnv(tool, dataPath, nodeExecutable);
+  return runVersionCommand(commandRunner, commandPath, [...tool.versionArgs], {
+    cwd: dataPath,
+    env: commandEnv,
+  });
 }
 
 async function findManagedToolPackageBinTarget(tool: ManagedAcpTool, dataPath = getDataPath()): Promise<string | null> {
@@ -1034,14 +1231,12 @@ async function ensureDwsBinaryInstalled(prefix: string): Promise<void> {
 async function ensureManagedToolInstalledWithManagedNode(options: {
   commandRunner: CommandRunner;
   dataPath: string;
+  forceInstall?: boolean;
+  nodeRuntime: ManagedNodeRuntime;
   tool: ManagedAcpTool;
 }): Promise<void> {
   const commandPath = getManagedToolCommandPath(options.tool, options.dataPath);
-  const nodeExecutable = await findManagedNodeExecutable(options.dataPath);
-  if (!nodeExecutable) {
-    throw new Error('managed Node executable was not found');
-  }
-
+  const nodeExecutable = options.nodeRuntime.nodeExecutable;
   const nodeBinDir = path.dirname(nodeExecutable);
   prependPathEntry(nodeBinDir);
   const prefix = getManagedToolNpmPrefix(options.tool, options.dataPath);
@@ -1052,32 +1247,45 @@ async function ensureManagedToolInstalledWithManagedNode(options: {
     installedPackageVersion !== null &&
     installedPackageVersion !== CODEX_PACKAGE_VERSION;
   const codexNeedsInstall = options.tool.toolId === CODEX_TOOL_ID && installedPackageVersion !== CODEX_PACKAGE_VERSION;
-  if (await pathExists(commandPath)) {
+  const commandEnv = buildManagedCommandEnv(options.tool, options.dataPath, nodeExecutable);
+  commandEnv.npm_config_prefix = prefix;
+  commandEnv.npm_config_registry = MANAGED_NPM_REGISTRY;
+  commandEnv.NPM_CONFIG_PREFIX = prefix;
+  commandEnv.NPM_CONFIG_REGISTRY = MANAGED_NPM_REGISTRY;
+  commandEnv.PATH = [
+    getManagedToolGlobalBinDir(options.tool, options.dataPath),
+    nodeBinDir,
+    process.env.PATH ?? process.env.Path ?? '',
+  ]
+    .filter(Boolean)
+    .join(path.delimiter);
+  if (process.platform === 'win32') {
+    commandEnv.Path = commandEnv.PATH;
+  }
+  if (options.tool.toolId === OPENCODE_TOOL_ID) {
+    commandEnv.OPENCODE_CONFIG_DIR = getOpenCodeConfigDir(options.dataPath);
+  }
+
+  if (!options.forceInstall && (await pathExists(commandPath))) {
     const packageIsReady = options.tool.toolId !== DWS_TOOL_ID || (await pathExists(getDwsBinaryPath(prefix)));
     if (packageIsReady && !codexNeedsInstall) {
       await ensureManagedToolLauncherUsesManagedNode(options.tool, options.dataPath, nodeExecutable);
-      return;
+      if (await validateManagedToolVersion(options.tool, options.dataPath, nodeExecutable, options.commandRunner)) {
+        return;
+      }
     }
   }
 
-  const npmCliPath = getNpmCliPath(nodeExecutable);
+  const npmCliPath = options.nodeRuntime.npmCliPath;
   if (!(await pathExists(npmCliPath))) {
     throw new Error('managed npm CLI was not found');
   }
 
   await fs.mkdir(prefix, { recursive: true });
   const binDir = addManagedToolGlobalBinToPath(options.tool, options.dataPath);
-  const commandEnv: NodeJS.ProcessEnv = {
-    ...process.env,
-    npm_config_prefix: prefix,
-    npm_config_registry: MANAGED_NPM_REGISTRY,
-    NPM_CONFIG_PREFIX: prefix,
-    NPM_CONFIG_REGISTRY: MANAGED_NPM_REGISTRY,
-    PATH: [binDir, nodeBinDir, process.env.PATH ?? process.env.Path ?? ''].filter(Boolean).join(path.delimiter),
-  };
-  if (options.tool.toolId === OPENCODE_TOOL_ID) {
-    commandEnv.OPENCODE_CONFIG_DIR = getOpenCodeConfigDir(options.dataPath);
-  }
+  commandEnv.PATH = [binDir, nodeBinDir, process.env.PATH ?? process.env.Path ?? '']
+    .filter(Boolean)
+    .join(path.delimiter);
   if (process.platform === 'win32') {
     commandEnv.Path = commandEnv.PATH;
   }
@@ -1131,6 +1339,9 @@ async function ensureManagedToolInstalledWithManagedNode(options: {
     throw new Error(`${options.tool.displayName} command was not created after installation`);
   }
   await ensureManagedToolLauncherUsesManagedNode(options.tool, options.dataPath, nodeExecutable);
+  if (!(await validateManagedToolVersion(options.tool, options.dataPath, nodeExecutable, options.commandRunner))) {
+    throw new Error(`${options.tool.displayName} version check failed after installation`);
+  }
 }
 
 function shouldEnsureManagedToolOnStartup(tool: ManagedAcpTool, env: OpenCodeStartupEnv = process.env): boolean {
@@ -1204,12 +1415,13 @@ async function ensureManagedToolReady(
       hadTool ? `Checking ${tool.displayName} installation` : `Installing ${tool.displayName} with managed Node runtime`
     );
 
-    // The managed Node runtime is shared by the desktop process and Core. When
-    // it is already present, avoid an authenticated Core request before using it.
-    const nodeResult = (await findManagedNodeExecutable(dataPath))
-      ? { ready: true }
-      : await ensureNodeRuntime({ scope });
-    if (nodeResult.ready !== true) {
+    const nodeRuntime = await ensureManagedNodeRuntimeReady({
+      commandRunner,
+      dataPath,
+      ensureNodeRuntime,
+      scope,
+    });
+    if (!nodeRuntime) {
       emitToolRuntimeStatus(emitStatus, scopedTool, 'failed', 'managed Node runtime is not ready');
       return { status: 'failed', error: 'managed Node runtime is not ready' };
     }
@@ -1217,6 +1429,8 @@ async function ensureManagedToolReady(
     await ensureManagedToolInstalledWithManagedNode({
       commandRunner,
       dataPath,
+      forceInstall: !hadTool,
+      nodeRuntime,
       tool: {
         ...scopedTool,
         packageName,
