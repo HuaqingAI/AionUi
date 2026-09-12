@@ -10,6 +10,8 @@ import type { TConversationRuntimeSummary } from '@/common/config/storage';
 import { parseError, uuid } from '@/common/utils';
 import { emitter } from '@/renderer/utils/emitter';
 import { type ChatFileRef, isChatFileRef, uploadFileRef } from '@/common/types/chatFile';
+import { Message } from '@arco-design/web-react';
+import { assertManagedEnvironmentReady, ManagedEnvironmentNotReadyError } from '@/renderer/utils/managedEnvironment';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getConversationRuntimeWorkspaceErrorMessage } from '../../utils/conversationCreateError';
@@ -70,6 +72,7 @@ export const useAcpInitialMessage = ({
               .filter(isChatFileRef)
           : [];
 
+        await assertManagedEnvironmentReady();
         markSendStarted?.();
         setAiProcessing(true);
 
@@ -84,6 +87,15 @@ export const useAcpInitialMessage = ({
         // Initial message sent successfully
         emitter.emit('chat.history.refresh');
       } catch (error) {
+        if (error instanceof ManagedEnvironmentNotReadyError) {
+          const message = t('conversation.runtimePreparing.notReady');
+          Message.warning(message);
+          sessionStorage.setItem(storageKey, storedMessage);
+          markSendFailed?.({ kind: 'ordinary', reason: message });
+          resetState();
+          setAiProcessing(false);
+          return;
+        }
         const errorMessageText =
           getConversationRuntimeWorkspaceErrorMessage(error, t) || parseError(error) || t('common.unknownError');
         const busyError = classifyConversationBusyError(error);

@@ -47,6 +47,7 @@ import { emitter, useAddEventListener } from '@/renderer/utils/emitter';
 import { type ChatFileRef, isChatFileRef, uploadFileRef } from '@/common/types/chatFile';
 import { localSelectionItems, mergeFileSelectionItems } from '@/renderer/utils/file/fileSelection';
 import { collectChatFileRefs, splitChatFileRefs } from '@/renderer/utils/file/messageFiles';
+import { assertManagedEnvironmentReady, ManagedEnvironmentNotReadyError } from '@/renderer/utils/managedEnvironment';
 import type { AgentModeOption } from '@/renderer/utils/model/agentTypes';
 import { Button, Message, Tag } from '@arco-design/web-react';
 import { Brain, Lightning, MagicHat, Shield } from '@icon-park/react';
@@ -271,6 +272,7 @@ const AionrsSendBox: React.FC<{
       // ChatFileRef to an absolute path and injects the [[AION_FILES]] marker at
       // the send edge — the front-end no longer builds paths nor the marker.
       try {
+        await assertManagedEnvironmentReady();
         void checkAndUpdateTitle(conversation_id, input);
         if (teamSendMessage) {
           await teamSendMessage({ input, files });
@@ -298,6 +300,13 @@ const AionrsSendBox: React.FC<{
           emitter.emit('aionrs.workspace.refresh');
         }
       } catch (error) {
+        if (error instanceof ManagedEnvironmentNotReadyError) {
+          const message = t('conversation.runtimePreparing.notReady');
+          Message.warning(message);
+          markSendFailed({ kind: 'ordinary', reason: message });
+          resetState();
+          throw error;
+        }
         const errorMessage =
           getConversationRuntimeWorkspaceErrorMessage(error, t) ||
           (error instanceof Error ? error.message : String(error));
@@ -325,6 +334,7 @@ const AionrsSendBox: React.FC<{
       markSendAccepted,
       markSendFailed,
       markSendStarted,
+      resetState,
       setActiveMsgId,
       setWaitingResponse,
       t,
@@ -380,6 +390,11 @@ const AionrsSendBox: React.FC<{
           : [];
         await executeCommand({ input, files: initialRefs });
       } catch (error) {
+        if (error instanceof ManagedEnvironmentNotReadyError) {
+          sessionStorage.setItem(storageKey, storedMessage);
+          sessionStorage.removeItem(processedKey);
+          return;
+        }
         console.error('[AionrsSendBox] Failed to send initial message:', error);
         sessionStorage.removeItem(processedKey);
       }
@@ -408,12 +423,29 @@ const AionrsSendBox: React.FC<{
       return false;
     }
 
+    try {
+      await assertManagedEnvironmentReady();
+    } catch (error) {
+      if (error instanceof ManagedEnvironmentNotReadyError) {
+        Message.warning(t('conversation.runtimePreparing.notReady'));
+        return false;
+      }
+      throw error;
+    }
+
     const filesToSend = collectChatFileRefs(uploadFile, atPath);
     const sessions = selectedSessions.length > 0 ? selectedSessions : undefined;
     clearFiles();
     setSelectedSessions([]);
     emitter.emit('aionrs.selected.file.clear');
-    await executeCommand({ input: message, files: filesToSend, sessions });
+    try {
+      await executeCommand({ input: message, files: filesToSend, sessions });
+    } catch (error) {
+      if (error instanceof ManagedEnvironmentNotReadyError) {
+        return false;
+      }
+      throw error;
+    }
   };
 
   const [interrupting, setInterrupting] = useState(false);

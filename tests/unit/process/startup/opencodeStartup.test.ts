@@ -252,6 +252,38 @@ describe('opencode startup bootstrap', () => {
     expect(emitStatus).not.toHaveBeenCalledWith(expect.objectContaining({ phase: 'failed' }));
   });
 
+  it('passes Windows cmd version probes without letting Node escape the /c command line', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+    const fixture = await createManagedNodeFixture();
+    await mkdir(path.dirname(fixture.commandPath), { recursive: true });
+    await writeFile(fixture.commandPath, '@echo off\r\nnode opencode.js %*\r\n');
+
+    const commandRunner = vi.fn(async (_file: string, args: string[]) => {
+      if (args.length === 1 && args[0] === '-v') {
+        return { stdout: 'v24.11.0' };
+      }
+      if (args[0] === fixture.npmCliPath && args[1] === '--version') {
+        return { stdout: '10.0.0' };
+      }
+      return { stdout: '1.0.0' };
+    });
+
+    await expect(
+      ensureOpenCodeReady({
+        commandRunner,
+        dataPath: fixture.dataPath,
+        emitStatus: vi.fn(),
+        ensureNodeRuntime: async () => ({ ready: true }),
+        env: {},
+      })
+    ).resolves.toEqual({ status: 'ready' });
+
+    const versionProbe = commandRunner.mock.calls.at(-1);
+    expect(versionProbe?.[0]).toBe(process.env.ComSpec || 'cmd.exe');
+    expect(versionProbe?.[1]).toEqual(['/d', '/s', '/c', `""${fixture.commandPath}" "--version""`]);
+    expect(versionProbe?.[2]).toEqual(expect.objectContaining({ windowsVerbatimArguments: true }));
+  });
+
   it('writes the environment marker after all enabled managed tools are present', async () => {
     const fixture = await createManagedNodeFixture();
     await mkdir(path.dirname(fixture.commandPath), { recursive: true });

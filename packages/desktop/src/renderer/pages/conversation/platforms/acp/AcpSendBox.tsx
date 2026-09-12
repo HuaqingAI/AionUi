@@ -45,6 +45,7 @@ import { useCrossSessionMessageEnabled } from '@/renderer/hooks/chat/useCrossSes
 import { emitter, useAddEventListener } from '@/renderer/utils/emitter';
 import { localSelectionItems, mergeFileSelectionItems } from '@/renderer/utils/file/fileSelection';
 import { collectChatFileRefs, splitChatFileRefs } from '@/renderer/utils/file/messageFiles';
+import { assertManagedEnvironmentReady, ManagedEnvironmentNotReadyError } from '@/renderer/utils/managedEnvironment';
 import type { ChatFileRef } from '@/common/types/chatFile';
 import { Button, Message, Tag } from '@arco-design/web-react';
 import { Brain, Lightning, MagicHat, Shield } from '@icon-park/react';
@@ -294,6 +295,7 @@ const AcpSendBox: React.FC<{
       // Plain user text; the backend resolves each ChatFileRef and injects the
       // [[AION_FILES]] marker at the send edge (no front-end path/marker building).
       try {
+        await assertManagedEnvironmentReady();
         if (teamPermission) await teamPermission.warmupSession();
         void checkAndUpdateTitle(conversation_id, input);
         if (teamSendMessage) {
@@ -318,6 +320,14 @@ const AcpSendBox: React.FC<{
         markSendAccepted(result.turn_id, result.runtime, result.msg_id);
         emitter.emit('chat.history.refresh');
       } catch (error: unknown) {
+        if (error instanceof ManagedEnvironmentNotReadyError) {
+          const message = t('conversation.runtimePreparing.notReady');
+          Message.warning(message);
+          markSendFailed({ kind: 'ordinary', reason: message });
+          resetState();
+          setAiProcessing(false);
+          throw error;
+        }
         const errorMsg =
           getConversationRuntimeWorkspaceErrorMessage(error, t) || parseError(error) || t('common.unknownError');
         const busyError = classifyConversationBusyError(error);
@@ -460,12 +470,29 @@ Please check your local CLI tool authentication status`,
       return false;
     }
 
+    try {
+      await assertManagedEnvironmentReady();
+    } catch (error) {
+      if (error instanceof ManagedEnvironmentNotReadyError) {
+        Message.warning(t('conversation.runtimePreparing.notReady'));
+        return false;
+      }
+      throw error;
+    }
+
     const allFiles = collectChatFileRefs(uploadFile, atPath);
     const sessions = selectedSessions.length > 0 ? selectedSessions : undefined;
     clearFiles();
     setSelectedSessions([]);
     emitter.emit('acp.selected.file.clear');
-    await executeCommand({ input: message, files: allFiles, sessions });
+    try {
+      await executeCommand({ input: message, files: allFiles, sessions });
+    } catch (error) {
+      if (error instanceof ManagedEnvironmentNotReadyError) {
+        return false;
+      }
+      throw error;
+    }
   };
 
   const [interrupting, setInterrupting] = useState(false);

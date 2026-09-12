@@ -20,6 +20,7 @@ import { uuid } from '@/common/utils';
 import type { TMessage } from '@/common/chat/chatLib';
 import type { IDirOrFile } from '@/common/adapter/ipcBridge';
 import { loadLatestConversationMessages } from '@/renderer/utils/chat/messagePagination';
+import { assertManagedEnvironmentReady, ManagedEnvironmentNotReadyError } from '@/renderer/utils/managedEnvironment';
 
 interface SkillRuleGeneratorProps {
   conversation_id: string;
@@ -96,6 +97,7 @@ ${content}
 Please acknowledge receiving this rule/skill and confirm you will apply it.
       `.trim();
 
+      await assertManagedEnvironmentReady();
       await ipcBridge.conversation.sendMessage.invoke({
         input: prompt,
         conversation_id: conversation_id,
@@ -104,6 +106,10 @@ Please acknowledge receiving this rule/skill and confirm you will apply it.
       Message.success(t('conversation.skill_generator.rule_loaded', { defaultValue: 'Rule loaded successfully' }));
       onCancel();
     } catch (error) {
+      if (error instanceof ManagedEnvironmentNotReadyError) {
+        Message.warning(t('conversation.runtimePreparing.notReady'));
+        return;
+      }
       console.error('Failed to read file:', error);
       Message.error(t('conversation.skill_generator.read_error', { defaultValue: 'Failed to read file' }));
     } finally {
@@ -231,6 +237,8 @@ Requirements:
 - After saving, reply with a brief confirmation.
       `.trim();
 
+      await assertManagedEnvironmentReady();
+
       const msg_id = uuid();
       let capturedContent = '';
 
@@ -260,6 +268,10 @@ Requirements:
       setPresetName('');
       Message.success(t('conversation.skill_generator.request_sent', { defaultValue: 'Request sent to agent' }));
     } catch (error) {
+      if (error instanceof ManagedEnvironmentNotReadyError) {
+        Message.warning(t('conversation.runtimePreparing.notReady'));
+        return;
+      }
       console.error('Failed to generate skill/rule:', error);
       Message.error(t('conversation.skill_generator.failed', { defaultValue: 'Failed to generate' }));
     } finally {

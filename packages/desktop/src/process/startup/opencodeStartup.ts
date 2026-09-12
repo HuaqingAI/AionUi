@@ -78,6 +78,7 @@ type CommandRunner = (
     cwd?: string;
     env?: NodeJS.ProcessEnv;
     timeout?: number;
+    windowsVerbatimArguments?: boolean;
   }
 ) => Promise<{ stderr?: string; stdout?: string }>;
 type RuntimeStatusEmitter = (event: IRuntimeStatusEvent) => void;
@@ -711,14 +712,26 @@ function buildManagedCommandEnv(
   return commandEnv;
 }
 
-function getCommandInvocation(file: string, args: string[]): { file: string; args: string[] } {
+function getCommandInvocation(
+  file: string,
+  args: string[]
+): {
+  file: string;
+  args: string[];
+  windowsVerbatimArguments?: boolean;
+} {
   if (process.platform !== 'win32' || path.extname(file).toLowerCase() !== '.cmd') {
     return { file, args };
   }
   const commandLine = [file, ...args].map(windowsBatchQuote).join(' ');
   return {
     file: process.env.ComSpec || 'cmd.exe',
-    args: ['/d', '/s', '/c', commandLine],
+    // /s /c strips the first and last quote pair. Wrap the complete command
+    // line so quotes around the executable and each argument survive intact.
+    args: ['/d', '/s', '/c', `"${commandLine}"`],
+    // The /c command line already contains its required quoting. Without this,
+    // Node escapes the embedded quotes while spawning cmd.exe on Windows.
+    windowsVerbatimArguments: true,
   };
 }
 
@@ -742,6 +755,7 @@ async function runVersionCommand(
       cwd: options.cwd,
       env: options.env,
       timeout: options.timeout ?? MANAGED_TOOL_VERSION_CHECK_TIMEOUT_MS,
+      ...(invocation.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
     });
     if (!commandResultHasOutput(result)) {
       return false;
@@ -1122,12 +1136,14 @@ async function runCommand(
     cwd?: string;
     env?: NodeJS.ProcessEnv;
     timeout?: number;
+    windowsVerbatimArguments?: boolean;
   }
 ): Promise<{ stderr?: string; stdout?: string }> {
   const { stderr, stdout } = await execFileAsync(file, args, {
     cwd: options.cwd,
     env: options.env,
     timeout: options.timeout,
+    windowsVerbatimArguments: options.windowsVerbatimArguments,
     windowsHide: true,
   });
   return {
