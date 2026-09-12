@@ -24,6 +24,8 @@ vi.mock('@/common', () => ({
   ipcBridge: {
     acpConversation: {
       refreshCustomAgents: { invoke: vi.fn().mockResolvedValue(undefined) },
+      checkManagedAgentHealthById: { invoke: vi.fn().mockResolvedValue({}) },
+      managedAgentHealthChanged: { on: vi.fn().mockReturnValue(() => undefined) },
     },
   },
 }));
@@ -33,7 +35,11 @@ vi.mock('@/renderer/utils/model/agentTypes', () => ({
   fetchManagedAgents: vi.fn(),
 }));
 
-import { getManagedAgents, useManagedAgents } from '@/renderer/hooks/agent/useManagedAgents';
+import {
+  checkOpenCodeAndCodexManagedAgentHealthAfterAuth,
+  getManagedAgents,
+  useManagedAgents,
+} from '@/renderer/hooks/agent/useManagedAgents';
 import { ipcBridge } from '@/common';
 import useSWR, { mutate } from 'swr';
 import { fetchManagedAgents } from '@/renderer/utils/model/agentTypes';
@@ -107,6 +113,25 @@ describe('useManagedAgents', () => {
 
     expect(ipcBridge.acpConversation.refreshCustomAgents.invoke).toHaveBeenCalled();
     expect(mutate).toHaveBeenCalledWith('agents.managed');
+    expect(mutate).toHaveBeenCalledWith('assistants.list');
+  });
+
+  it('checks only enabled installed OpenCode and Codex agents after authentication', async () => {
+    const agents = [
+      { id: 'agent-opencode', backend: 'opencode', enabled: true, installed: true },
+      { id: 'agent-codex', backend: 'codex', enabled: true, installed: true },
+      { id: 'agent-officecli', backend: 'officecli', enabled: true, installed: true },
+      { id: 'disabled', backend: 'opencode', enabled: false, installed: true },
+      { id: 'missing', backend: 'codex', enabled: true, installed: false },
+    ];
+    (fetchManagedAgents as any).mockResolvedValue(agents);
+
+    await checkOpenCodeAndCodexManagedAgentHealthAfterAuth();
+
+    expect(ipcBridge.acpConversation.checkManagedAgentHealthById.invoke).toHaveBeenCalledTimes(2);
+    expect(ipcBridge.acpConversation.checkManagedAgentHealthById.invoke).toHaveBeenCalledWith({ id: 'agent-opencode' });
+    expect(ipcBridge.acpConversation.checkManagedAgentHealthById.invoke).toHaveBeenCalledWith({ id: 'agent-codex' });
+    expect(mutate).toHaveBeenCalledWith('agents.managed', agents, { revalidate: false });
     expect(mutate).toHaveBeenCalledWith('assistants.list');
   });
 

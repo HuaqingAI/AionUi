@@ -25,6 +25,36 @@ export async function refreshManagedAgentCatalogAndAssistants(): Promise<Managed
   return agents;
 }
 
+const STARTUP_HEALTH_CHECK_BACKENDS = new Set(['opencode', 'codex']);
+
+/**
+ * Run the OpenCode and Codex live health probes after the renderer has an
+ * authenticated Core session. Main-process startup can reach the Core before
+ * HTH login and get a 401, so this pass is the first authenticated probe for a
+ * fresh session.
+ */
+export async function checkOpenCodeAndCodexManagedAgentHealthAfterAuth(): Promise<void> {
+  const agents = await getManagedAgents();
+  const candidates = agents.filter(
+    (agent) =>
+      agent.enabled !== false &&
+      agent.installed === true &&
+      agent.backend &&
+      STARTUP_HEALTH_CHECK_BACKENDS.has(agent.backend)
+  );
+
+  const results = await Promise.allSettled(
+    candidates.map((agent) => ipcBridge.acpConversation.checkManagedAgentHealthById.invoke({ id: agent.id }))
+  );
+  results.forEach((result, index) => {
+    if (result.status === 'rejected') {
+      console.warn(`[Agents] automatic health check failed for ${candidates[index]?.id ?? 'unknown'}`, result.reason);
+    }
+  });
+
+  await refreshManagedAgentCatalogAndAssistants();
+}
+
 /**
  * Hook for the Agent settings management surface only. Reads the dedicated
  * `/api/agents/management` diagnostics view (`MANAGED_AGENTS_SWR_KEY`) so

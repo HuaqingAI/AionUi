@@ -3,6 +3,7 @@ import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-d
 import { ipcBridge } from '@/common';
 import AppLoader from '@renderer/components/layout/AppLoader';
 import { useAuth } from '@renderer/hooks/context/AuthContext';
+import { checkOpenCodeAndCodexManagedAgentHealthAfterAuth } from '@renderer/hooks/agent/useManagedAgents';
 import { useDeepLink } from '@renderer/hooks/system/useDeepLink';
 import { TEAM_MODE_ENABLED } from '@/common/config/constants';
 const Conversation = React.lazy(() => import('@renderer/pages/conversation'));
@@ -50,6 +51,7 @@ const ProtectedLayout: React.FC<{ layout: React.ReactElement }> = ({ layout }) =
   const { status } = useAuth();
   const location = useLocation();
   const [hthLoggedIn, setHTHLoggedIn] = React.useState<boolean | null>(null);
+  const managedAgentHealthStartedRef = React.useRef(false);
 
   React.useEffect(() => {
     if (status !== 'authenticated') {
@@ -75,6 +77,26 @@ const ProtectedLayout: React.FC<{ layout: React.ReactElement }> = ({ layout }) =
       disposed = true;
     };
   }, [location.pathname, status]);
+
+  React.useEffect(() => {
+    if (status !== 'authenticated') {
+      managedAgentHealthStartedRef.current = false;
+      return;
+    }
+    if (hthLoggedIn !== true) {
+      return;
+    }
+    if (managedAgentHealthStartedRef.current) {
+      return;
+    }
+
+    managedAgentHealthStartedRef.current = true;
+    void checkOpenCodeAndCodexManagedAgentHealthAfterAuth().catch((error) => {
+      // The settings page can still be opened when a single health probe is
+      // unavailable; keep this background check non-blocking for navigation.
+      console.warn('[Router] Automatic managed-agent health check failed:', error);
+    });
+  }, [hthLoggedIn, status]);
 
   if (status === 'checking') {
     return <AppLoader />;
