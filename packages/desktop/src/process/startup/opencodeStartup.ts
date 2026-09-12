@@ -193,6 +193,9 @@ const ZINIAO_OPEN_STARTUP_SCOPE: IRuntimeStatusScope = {
 };
 const HEALTH_CHECK_TIMEOUT_MS = 30000;
 const OPENCODE_INSTALL_TIMEOUT_MS = 180000;
+const MANAGED_TOOL_VERSION_CHECK_TIMEOUT_MS = 30000;
+const MANAGED_TOOL_VERSION_CHECK_RETRY_INTERVAL_MS = 1000;
+const MANAGED_TOOL_VERSION_CHECK_RETRY_WINDOW_MS = 90000;
 export const MANAGED_NODE_ENVIRONMENT_MARKER = '.hqbuddy-environment-ready';
 const MANAGED_NPM_REGISTRY = 'https://registry.npmmirror.com';
 const MANAGED_NODE_LAUNCHER_MARKER = 'AionUi managed Node launcher';
@@ -731,14 +734,14 @@ async function runVersionCommand(
   commandRunner: CommandRunner,
   file: string,
   args: string[],
-  options: { cwd: string; env: NodeJS.ProcessEnv; requireNodeVersion?: boolean }
+  options: { cwd: string; env: NodeJS.ProcessEnv; requireNodeVersion?: boolean; timeout?: number }
 ): Promise<boolean> {
   try {
     const invocation = getCommandInvocation(file, args);
     const result = await commandRunner(invocation.file, invocation.args, {
       cwd: options.cwd,
       env: options.env,
-      timeout: OPENCODE_INSTALL_TIMEOUT_MS,
+      timeout: options.timeout ?? MANAGED_TOOL_VERSION_CHECK_TIMEOUT_MS,
     });
     if (!commandResultHasOutput(result)) {
       return false;
@@ -833,7 +836,8 @@ async function validateManagedToolVersion(
   tool: ManagedAcpTool,
   dataPath: string,
   nodeExecutable: string,
-  commandRunner: CommandRunner
+  commandRunner: CommandRunner,
+  timeout = MANAGED_TOOL_VERSION_CHECK_TIMEOUT_MS
 ): Promise<boolean> {
   const commandPath = getManagedToolCommandPath(tool, dataPath);
   if (!(await pathExists(commandPath))) {
@@ -843,7 +847,37 @@ async function validateManagedToolVersion(
   return runVersionCommand(commandRunner, commandPath, [...tool.versionArgs], {
     cwd: dataPath,
     env: commandEnv,
+    timeout,
   });
+}
+
+async function waitForManagedToolVersion(
+  tool: ManagedAcpTool,
+  dataPath: string,
+  nodeExecutable: string,
+  commandRunner: CommandRunner
+): Promise<boolean> {
+  const deadline = Date.now() + MANAGED_TOOL_VERSION_CHECK_RETRY_WINDOW_MS;
+  while (Date.now() < deadline) {
+    const remaining = deadline - Date.now();
+    // eslint-disable-next-line no-await-in-loop -- one CLI must finish before its next readiness probe starts.
+    const versionReady = await validateManagedToolVersion(
+      tool,
+      dataPath,
+      nodeExecutable,
+      commandRunner,
+      Math.min(MANAGED_TOOL_VERSION_CHECK_TIMEOUT_MS, remaining)
+    );
+    if (versionReady) {
+      return true;
+    }
+    const retryDelay = Math.min(MANAGED_TOOL_VERSION_CHECK_RETRY_INTERVAL_MS, deadline - Date.now());
+    if (retryDelay > 0) {
+      // eslint-disable-next-line no-await-in-loop -- retrying a single CLI is intentionally sequential.
+      await new Promise<void>((resolve) => setTimeout(resolve, retryDelay));
+    }
+  }
+  return false;
 }
 
 async function findManagedToolPackageBinTarget(tool: ManagedAcpTool, dataPath = getDataPath()): Promise<string | null> {
@@ -1339,7 +1373,7 @@ async function ensureManagedToolInstalledWithManagedNode(options: {
     throw new Error(`${options.tool.displayName} command was not created after installation`);
   }
   await ensureManagedToolLauncherUsesManagedNode(options.tool, options.dataPath, nodeExecutable);
-  if (!(await validateManagedToolVersion(options.tool, options.dataPath, nodeExecutable, options.commandRunner))) {
+  if (!(await waitForManagedToolVersion(options.tool, options.dataPath, nodeExecutable, options.commandRunner))) {
     throw new Error(`${options.tool.displayName} version check failed after installation`);
   }
 }

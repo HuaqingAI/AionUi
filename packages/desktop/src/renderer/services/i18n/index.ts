@@ -5,6 +5,7 @@ import { configService } from '@/common/config/configService';
 import { ipcBridge } from '@/common';
 import i18nConfig from '@/common/config/i18n-config.json';
 import {
+  DEFAULT_INITIAL_LANGUAGE,
   DEFAULT_LANGUAGE,
   normalizeLanguageCode,
   mergeWithFallback,
@@ -92,7 +93,7 @@ function getInitialLanguage(): SupportedLanguage {
   const hint = backendStartupFailed
     ? injectedLanguage || localStorageLanguage || systemLanguage
     : localStorageLanguage || injectedLanguage;
-  return normalizeLanguageCode(hint || DEFAULT_LANGUAGE);
+  return normalizeLanguageCode(hint || DEFAULT_INITIAL_LANGUAGE);
 }
 
 async function loadLocaleModules(locale: string): Promise<Record<string, unknown>> {
@@ -145,8 +146,13 @@ async function initLanguage(): Promise<void> {
   try {
     await configService.whenReady();
     const savedLanguage = configService.get('language');
-    const language = savedLanguage || normalizeLanguageCode(navigator.language || DEFAULT_LANGUAGE);
+    const hasSavedLanguage = typeof savedLanguage === 'string' && savedLanguage.trim() !== '';
+    const language = hasSavedLanguage ? normalizeLanguageCode(savedLanguage) : DEFAULT_INITIAL_LANGUAGE;
     await ensureAndSwitch(i18n, language, loadLocaleModules);
+    if (!hasSavedLanguage) {
+      await configService.set('language', language);
+      ipcBridge.systemSettings.changeLanguage.invoke({ language }).catch(() => {});
+    }
     // Sync to localStorage so next page load can use it as a fast hint
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem('i18nextLng', normalizeLanguageCode(language));

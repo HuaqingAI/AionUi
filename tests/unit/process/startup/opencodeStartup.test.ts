@@ -215,6 +215,43 @@ describe('opencode startup bootstrap', () => {
     expect(commandEnv?.PATH?.split(path.delimiter)).toContain(path.dirname(fixture.nodeExecutable));
   });
 
+  it('keeps preparing OpenCode until a newly installed CLI answers its version command', async () => {
+    const fixture = await createManagedNodeFixture();
+    let versionCheckCount = 0;
+    const emitStatus = vi.fn();
+    const commandRunner = vi.fn(async (_file: string, args: string[]) => {
+      if (args.length === 1 && args[0] === '-v') {
+        return { stdout: 'v24.11.0' };
+      }
+      if (args[0] === fixture.npmCliPath && args[1] === '--version') {
+        return { stdout: '10.0.0' };
+      }
+      if (args.includes('install')) {
+        await mkdir(path.dirname(fixture.commandPath), { recursive: true });
+        await writeFile(fixture.commandPath, '');
+        return {};
+      }
+      if (args.join(' ').includes('--version')) {
+        versionCheckCount += 1;
+        return { stdout: versionCheckCount === 1 ? '' : '1.0.0' };
+      }
+      return {};
+    });
+
+    await expect(
+      ensureOpenCodeReady({
+        commandRunner,
+        dataPath: fixture.dataPath,
+        emitStatus,
+        ensureNodeRuntime: async () => ({ ready: true }),
+        env: {},
+      })
+    ).resolves.toEqual({ status: 'ready' });
+
+    expect(versionCheckCount).toBe(2);
+    expect(emitStatus).not.toHaveBeenCalledWith(expect.objectContaining({ phase: 'failed' }));
+  });
+
   it('writes the environment marker after all enabled managed tools are present', async () => {
     const fixture = await createManagedNodeFixture();
     await mkdir(path.dirname(fixture.commandPath), { recursive: true });

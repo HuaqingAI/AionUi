@@ -57,10 +57,7 @@ describe('managed uv bootstrap', () => {
     const pythonDirectory = path.join(dataPath, 'runtime', 'uv-python', 'cpython-3.14.0-test');
     const pythonName = process.platform === 'win32' ? 'python.exe' : 'python3.14';
     const pythonPath = path.join(pythonDirectory, pythonName);
-    await Promise.all([
-      mkdir(pythonDirectory, { recursive: true }),
-      mkdir(uvDirectory, { recursive: true }),
-    ]);
+    await Promise.all([mkdir(pythonDirectory, { recursive: true }), mkdir(uvDirectory, { recursive: true })]);
     await Promise.all([
       writeFile(pythonPath, 'python'),
       writeFile(path.join(uvDirectory, `uv${extension}`), 'uv'),
@@ -90,10 +87,15 @@ describe('managed uv bootstrap', () => {
       await writeFile(path.join(destination, path.basename(fixture.uvPath)), 'uv');
       await writeFile(path.join(destination, path.basename(fixture.uvxPath)), 'uvx');
     });
+    const commandRunner = vi.fn(async (_file: string, args: string[]) => {
+      expect(args).toEqual(['--version']);
+      return { stdout: 'uv 0.11.31' };
+    });
 
     const result = await ensureUvReady({
       bundledArtifactPath,
       copyArtifact,
+      commandRunner,
       dataPath: fixture.dataPath,
       env: {},
       extractArtifact,
@@ -101,6 +103,11 @@ describe('managed uv bootstrap', () => {
 
     expect(result).toEqual({ status: 'ready' });
     expect(copyArtifact).toHaveBeenCalledWith(bundledArtifactPath, expect.stringContaining('uv-v0.11.31-'));
+    expect(commandRunner).toHaveBeenCalledWith(
+      fixture.uvPath,
+      ['--version'],
+      expect.objectContaining({ cwd: fixture.dataPath, timeout: 180000 })
+    );
     await expect(access(fixture.uvPath)).resolves.toBeUndefined();
     await expect(access(fixture.uvxPath)).resolves.toBeUndefined();
     await expect(access(fixture.ziniaoPath)).rejects.toBeDefined();
@@ -111,15 +118,34 @@ describe('managed uv bootstrap', () => {
     await mkdir(path.dirname(fixture.uvPath), { recursive: true });
     await Promise.all([writeFile(fixture.uvPath, 'uv'), writeFile(fixture.uvxPath, 'uvx')]);
     const copyArtifact = vi.fn();
+    const commandRunner = vi.fn(async () => ({ stdout: 'uv 0.11.31' }));
 
     const result = await ensureUvReady({
       copyArtifact,
+      commandRunner,
       dataPath: fixture.dataPath,
       env: {},
     });
 
     expect(result).toEqual({ status: 'ready' });
     expect(copyArtifact).not.toHaveBeenCalled();
+  });
+
+  it('returns a failed result when uv reports an unexpected version', async () => {
+    const fixture = await createRuntimeFixture();
+    await mkdir(path.dirname(fixture.uvPath), { recursive: true });
+    await Promise.all([writeFile(fixture.uvPath, 'uv'), writeFile(fixture.uvxPath, 'uvx')]);
+
+    const result = await ensureUvReady({
+      commandRunner: async () => ({ stdout: 'uv 0.10.0' }),
+      dataPath: fixture.dataPath,
+      env: {},
+    });
+
+    expect(result).toEqual({
+      status: 'failed',
+      error: 'managed uv version check failed; expected uv 0.11.31',
+    });
   });
 
   it('returns a failed result when the bundled release artifact cannot be copied', async () => {
@@ -164,7 +190,10 @@ describe('managed uv bootstrap', () => {
   it('uses an installed managed Python without downloading and prioritizes it in PATH', async () => {
     const fixture = await createManagedPythonFixture();
     const env: NodeJS.ProcessEnv = { PATH: 'C:\\existing\\bin' };
-    const commandRunner = vi.fn(async (_file: string, args: string[]) => {
+    const commandRunner = vi.fn(async (file: string, args: string[]) => {
+      if (args[0] === '--version' && file !== fixture.pythonPath) {
+        return { stdout: 'uv 0.11.31' };
+      }
       if (args[1] === 'find') {
         return { stdout: fixture.pythonPath };
       }
@@ -177,7 +206,7 @@ describe('managed uv bootstrap', () => {
     const result = await ensureManagedPython({ commandRunner, dataPath: fixture.dataPath, env });
 
     expect(result).toEqual({ status: 'ready' });
-    expect(commandRunner).toHaveBeenCalledTimes(2);
+    expect(commandRunner).toHaveBeenCalledTimes(3);
     expect(env.PATH?.split(path.delimiter).slice(0, 2)).toEqual([
       path.dirname(fixture.pythonPath),
       fixture.commandDirectory,
@@ -191,7 +220,10 @@ describe('managed uv bootstrap', () => {
     const fixture = await createManagedPythonFixture();
     const phases: string[] = [];
     let installed = false;
-    const commandRunner = vi.fn(async (_file: string, args: string[]) => {
+    const commandRunner = vi.fn(async (file: string, args: string[]) => {
+      if (args[0] === '--version' && file !== fixture.pythonPath) {
+        return { stdout: 'uv 0.11.31' };
+      }
       if (args[1] === 'find') {
         if (!installed) {
           throw new Error('Python 3.14 was not found');
@@ -215,7 +247,9 @@ describe('managed uv bootstrap', () => {
     });
 
     expect(result).toEqual({ status: 'ready' });
-    expect(commandRunner.mock.calls.filter(([, args]) => args[0] === 'python').map(([, args]) => args.slice(0, 2))).toEqual([
+    expect(
+      commandRunner.mock.calls.filter(([, args]) => args[0] === 'python').map(([, args]) => args.slice(0, 2))
+    ).toEqual([
       ['python', 'find'],
       ['python', 'install'],
       ['python', 'find'],
@@ -234,7 +268,12 @@ describe('managed uv bootstrap', () => {
     const env: NodeJS.ProcessEnv = { PATH: 'C:\\existing\\bin' };
 
     const result = await ensureManagedPython({
-      commandRunner: async () => ({ stdout: externalPython }),
+      commandRunner: async (file, args) => {
+        if (args[0] === '--version') {
+          return { stdout: file === externalPython ? 'Python 3.14.0' : 'uv 0.11.31' };
+        }
+        return { stdout: externalPython };
+      },
       dataPath: fixture.dataPath,
       env,
     });
@@ -249,8 +288,10 @@ describe('managed uv bootstrap', () => {
     const env: NodeJS.ProcessEnv = { PATH: 'C:\\existing\\bin' };
 
     const result = await ensureManagedPython({
-      commandRunner: async (_file, args) =>
-        args[1] === 'find' ? { stdout: fixture.pythonPath } : { stdout: 'Python 3.13.9' },
+      commandRunner: async (file, args) => {
+        if (args[1] === 'find') return { stdout: fixture.pythonPath };
+        return { stdout: file === fixture.pythonPath ? 'Python 3.13.9' : 'uv 0.11.31' };
+      },
       dataPath: fixture.dataPath,
       env,
     });
@@ -265,9 +306,9 @@ describe('managed uv bootstrap', () => {
     const firstFind = new Promise<{ stdout: string }>((resolve) => {
       resolveFind = resolve;
     });
-    const concurrentRunner = vi.fn((_file: string, args: string[]) => {
+    const concurrentRunner = vi.fn((file: string, args: string[]) => {
       if (args[0] === '--version') {
-        return Promise.resolve({ stdout: 'Python 3.14.0' });
+        return Promise.resolve({ stdout: file === fixture.pythonPath ? 'Python 3.14.0' : 'uv 0.11.31' });
       }
       return firstFind;
     });
@@ -276,13 +317,16 @@ describe('managed uv bootstrap', () => {
     const firstRequest = ensureManagedPythonOnce({ commandRunner: concurrentRunner, dataPath: fixture.dataPath, env });
     const secondRequest = ensureManagedPythonOnce({ commandRunner: concurrentRunner, dataPath: fixture.dataPath, env });
     expect(secondRequest).toBe(firstRequest);
-    await vi.waitFor(() => expect(concurrentRunner).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(concurrentRunner).toHaveBeenCalledTimes(2));
     resolveFind?.({ stdout: fixture.pythonPath });
     await expect(firstRequest).resolves.toEqual({ status: 'ready' });
 
     let installed = false;
     let installAttempts = 0;
-    const retryRunner = vi.fn(async (_file: string, args: string[]) => {
+    const retryRunner = vi.fn(async (file: string, args: string[]) => {
+      if (args[0] === '--version' && file !== fixture.pythonPath) {
+        return { stdout: 'uv 0.11.31' };
+      }
       if (args[1] === 'find') {
         if (!installed) {
           throw new Error('Python 3.14 was not found');

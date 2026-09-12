@@ -7,6 +7,7 @@
 import i18n from 'i18next';
 import { ProcessConfig } from '@process/utils/initStorage';
 import {
+  DEFAULT_INITIAL_LANGUAGE,
   DEFAULT_LANGUAGE,
   normalizeLanguageCode,
   mergeWithFallback,
@@ -64,7 +65,9 @@ export const i18nReady = (async (): Promise<void> => {
   await i18n.init({
     resources: {
       [DEFAULT_LANGUAGE]: { translation: getLocaleModules(DEFAULT_LANGUAGE) },
+      [DEFAULT_INITIAL_LANGUAGE]: { translation: getLocaleModules(DEFAULT_INITIAL_LANGUAGE) },
     },
+    lng: DEFAULT_INITIAL_LANGUAGE,
     fallbackLng: DEFAULT_LANGUAGE,
     debug: false,
     interpolation: { escapeValue: false },
@@ -83,9 +86,7 @@ export const i18nReady = (async (): Promise<void> => {
  */
 export async function setInitialLanguage(language: string | undefined): Promise<void> {
   await i18nReady;
-  if (language) {
-    await ensureAndSwitch(i18n, language, getLocaleModules);
-  }
+  await ensureAndSwitch(i18n, language || DEFAULT_INITIAL_LANGUAGE, getLocaleModules);
 }
 
 /**

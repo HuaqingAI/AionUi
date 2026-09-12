@@ -5,9 +5,13 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { normalizeLanguageCode, DEFAULT_LANGUAGE } from '@/common/config/i18n';
+import { normalizeLanguageCode, DEFAULT_INITIAL_LANGUAGE, DEFAULT_LANGUAGE } from '@/common/config/i18n';
 
 describe('i18n', () => {
+  it('uses Simplified Chinese as the default language for new profiles', () => {
+    expect(DEFAULT_INITIAL_LANGUAGE).toBe('zh-CN');
+  });
+
   describe('normalizeLanguageCode', () => {
     it('passes through exact supported tags', () => {
       expect(normalizeLanguageCode('en-US')).toBe('en-US');

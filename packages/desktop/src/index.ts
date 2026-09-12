@@ -47,6 +47,7 @@ import { ensureManagedPythonOnStartup, ensureUvReadyOnStartup } from './process/
 import { installQuitCleanup } from './process/startup/quitCleanup';
 import { shouldRegisterBackendStartup } from './process/startup/singleInstanceGating';
 import { ProcessConfig } from './process/utils/initStorage';
+import { DEFAULT_INITIAL_LANGUAGE } from './common/config/i18n';
 import type { BackendStartupFailureInfo } from './common/types/platform/electron';
 import { registerWindowMaximizeListeners } from '@process/bridge';
 import { BackendLifecycleManager } from '@aionui/web-host';
@@ -915,7 +916,7 @@ const handleAppReady = async (): Promise<void> => {
 
   try {
     await initializeProcess();
-    rendererInitialLanguage = ProcessConfig.getSync('language') ?? null;
+    rendererInitialLanguage = ProcessConfig.getSync('language') ?? DEFAULT_INITIAL_LANGUAGE;
     mark('initializeProcess');
   } catch (error) {
     console.error('Failed to initialize process:', error);

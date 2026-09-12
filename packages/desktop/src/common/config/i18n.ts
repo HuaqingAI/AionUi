@@ -13,6 +13,9 @@ import i18nConfig from '@/common/config/i18n-config.json';
 export const SUPPORTED_LANGUAGES = i18nConfig.supportedLanguages;
 export const DEFAULT_LANGUAGE = i18nConfig.fallbackLanguage;
 export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
+// The fallback locale stays English for incomplete translations. New profiles
+// use Simplified Chinese until a user explicitly selects another language.
+export const DEFAULT_INITIAL_LANGUAGE: SupportedLanguage = 'zh-CN';
 
 /**
  * Normalize a language code to a supported BCP 47 tag.

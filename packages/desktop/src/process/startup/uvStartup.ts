@@ -41,6 +41,7 @@ export type ManagedPythonCommandRunner = (
 export type EnsureUvReadyOptions = {
   bundledArtifactPath?: string;
   copyArtifact?: CopyArtifact;
+  commandRunner?: ManagedPythonCommandRunner;
   dataPath?: string;
   env?: UvStartupEnv;
   extractArtifact?: ExtractArtifact;
@@ -183,8 +184,7 @@ function isManagedPythonCommandDirectorySafe(dataPath: string): boolean {
     const commandDirectoryStats = lstatSync(commandDirectory);
     if (process.platform === 'win32') {
       return (
-        commandDirectoryStats.isSymbolicLink() &&
-        isPathInside(managedInstallDirectory, realpathSync(commandDirectory))
+        commandDirectoryStats.isSymbolicLink() && isPathInside(managedInstallDirectory, realpathSync(commandDirectory))
       );
     }
     if (!commandDirectoryStats.isDirectory() || commandDirectoryStats.isSymbolicLink()) {
@@ -497,7 +497,7 @@ export async function ensureManagedPython(
   const commandRunner = options.commandRunner ?? runCommand;
 
   try {
-    const uvResult = await ensureUvReady({ dataPath, env });
+    const uvResult = await ensureUvReady({ commandRunner, dataPath, env });
     if (uvResult.status !== 'ready') {
       const message = uvResult.error ?? 'managed uv runtime is not ready';
       emitManagedPythonStatus(options.emitStatus, 'failed', 'validation_failed', message);
@@ -615,6 +615,23 @@ async function ensureUvInstalled(options: {
   }
 }
 
+async function validateUvVersion(
+  dataPath: string,
+  env: NodeJS.ProcessEnv,
+  commandRunner: ManagedPythonCommandRunner
+): Promise<void> {
+  const result = await commandRunner(getUvExecutablePath(dataPath), ['--version'], {
+    cwd: dataPath,
+    env,
+    timeout: UV_INSTALL_TIMEOUT_MS,
+  });
+  const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`.trim();
+  const expectedVersion = UV_VERSION.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (!new RegExp(`\\buv\\s+${expectedVersion}(?:\\s|$)`, 'i').test(output)) {
+    throw new Error(`managed uv version check failed; expected uv ${UV_VERSION}`);
+  }
+}
+
 export async function ensureUvReady(options: EnsureUvReadyOptions = {}): Promise<UvBootstrapResult> {
   const env = options.env ?? process.env;
   if (!shouldEnsureUvOnStartup(env)) {
@@ -623,6 +640,7 @@ export async function ensureUvReady(options: EnsureUvReadyOptions = {}): Promise
 
   const dataPath = options.dataPath ?? getDataPath();
   const copyArtifact = options.copyArtifact ?? fs.copyFile;
+  const commandRunner = options.commandRunner ?? runCommand;
   const extractArtifact = options.extractArtifact ?? extractBundledArtifact;
 
   try {
@@ -633,6 +651,7 @@ export async function ensureUvReady(options: EnsureUvReadyOptions = {}): Promise
       dataPath,
       extractArtifact,
     });
+    await validateUvVersion(dataPath, env, commandRunner);
     return { status: 'ready' };
   } catch (error) {
     const message = normalizeError(error);
