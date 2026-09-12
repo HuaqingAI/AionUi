@@ -102,6 +102,10 @@ export type EnsureOpenCodeReadyOptions = {
   dataPath?: string;
   emitStatus?: RuntimeStatusEmitter;
   ensureNodeRuntime?: EnsureNodeRuntime;
+  /** Maximum time to wait for AionCore's background Node preparation. */
+  managedNodeRuntimeRetryWindowMs?: number;
+  /** Delay between local managed Node readiness probes. */
+  managedNodeRuntimeRetryIntervalMs?: number;
   env?: OpenCodeStartupEnv;
   packageName?: string;
   scope?: IRuntimeStatusScope;
@@ -197,6 +201,9 @@ const OPENCODE_INSTALL_TIMEOUT_MS = 180000;
 const MANAGED_TOOL_VERSION_CHECK_TIMEOUT_MS = 30000;
 const MANAGED_TOOL_VERSION_CHECK_RETRY_INTERVAL_MS = 1000;
 const MANAGED_TOOL_VERSION_CHECK_RETRY_WINDOW_MS = 90000;
+const MANAGED_NODE_RUNTIME_RETRY_INTERVAL_MS = 500;
+const MANAGED_NODE_RUNTIME_RETRY_WINDOW_MS = 120000;
+const MANAGED_NODE_RUNTIME_TRIGGER_TIMEOUT_MS = 5000;
 export const MANAGED_NODE_ENVIRONMENT_MARKER = '.hqbuddy-environment-ready';
 const MANAGED_NPM_REGISTRY = 'https://registry.npmmirror.com';
 const MANAGED_NODE_LAUNCHER_MARKER = 'AionUi managed Node launcher';
@@ -340,6 +347,8 @@ type ManagedNodeRuntimeCheckOptions = {
   dataPath: string;
   ensureNodeRuntime: EnsureNodeRuntime;
   scope: IRuntimeStatusScope;
+  retryWindowMs?: number;
+  retryIntervalMs?: number;
 };
 
 const managedNodeReadinessPromises = new Map<string, Promise<ManagedNodeRuntime | null>>();
@@ -625,6 +634,8 @@ export async function ensureManagedNodeEnvironmentMarker(
     dataPath?: string;
     env?: OpenCodeStartupEnv;
     ensureNodeRuntime?: EnsureNodeRuntime;
+    managedNodeRuntimeRetryWindowMs?: number;
+    managedNodeRuntimeRetryIntervalMs?: number;
   } = {}
 ): Promise<boolean> {
   const dataPath = options.dataPath ?? getDataPath();
@@ -643,6 +654,8 @@ export async function ensureManagedNodeEnvironmentMarker(
     dataPath,
     ensureNodeRuntime: options.ensureNodeRuntime ?? ipcBridge.systemSettings.ensureNodeRuntime.invoke,
     scope: NODE_RUNTIME_SCOPE,
+    retryWindowMs: options.managedNodeRuntimeRetryWindowMs,
+    retryIntervalMs: options.managedNodeRuntimeRetryIntervalMs,
   });
   if (!nodeRuntime) {
     await fs.rm(getManagedNodeEnvironmentMarkerPath(dataPath), { force: true });
@@ -808,6 +821,30 @@ async function probeManagedNodeRuntime(
   return npmReady ? { nodeExecutable, npmCliPath } : null;
 }
 
+async function waitForManagedNodeRuntime(
+  options: Omit<ManagedNodeRuntimeCheckOptions, 'ensureNodeRuntime' | 'scope'>
+): Promise<ManagedNodeRuntime | null> {
+  const retryWindowMs = Math.max(0, options.retryWindowMs ?? MANAGED_NODE_RUNTIME_RETRY_WINDOW_MS);
+  const retryIntervalMs = Math.max(1, options.retryIntervalMs ?? MANAGED_NODE_RUNTIME_RETRY_INTERVAL_MS);
+  const deadline = Date.now() + retryWindowMs;
+
+  while (true) {
+    // eslint-disable-next-line no-await-in-loop -- each probe must observe the latest filesystem state.
+    const runtime = await probeManagedNodeRuntime(options);
+    if (runtime) {
+      return runtime;
+    }
+
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      return null;
+    }
+
+    // eslint-disable-next-line no-await-in-loop -- the runtime files are created by AionCore asynchronously.
+    await new Promise<void>((resolve) => setTimeout(resolve, Math.min(retryIntervalMs, remaining)));
+  }
+}
+
 async function ensureManagedNodeRuntimeReady(
   options: ManagedNodeRuntimeCheckOptions
 ): Promise<ManagedNodeRuntime | null> {
@@ -825,16 +862,41 @@ async function ensureManagedNodeRuntimeReady(
     // AionCore owns activation/download of the managed runtime. Its explicit
     // ready response is followed by local node/npm probes to catch incomplete
     // files left by an interrupted activation.
-    let nodeResult: { ready: boolean };
+    let nodeResult: { ready: boolean } | null = null;
     try {
-      nodeResult = await options.ensureNodeRuntime({ scope: options.scope });
-    } catch {
-      return null;
+      const triggerPromise = options.ensureNodeRuntime({ scope: options.scope });
+      let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+      try {
+        nodeResult = await Promise.race([
+          triggerPromise,
+          new Promise<never>((_, reject) => {
+            timeoutHandle = setTimeout(
+              () => reject(new Error('AionCore node runtime trigger timed out')),
+              MANAGED_NODE_RUNTIME_TRIGGER_TIMEOUT_MS
+            );
+          }),
+        ]);
+      } finally {
+        if (timeoutHandle) {
+          clearTimeout(timeoutHandle);
+        }
+      }
+    } catch (error) {
+      // AionCore starts managed runtime preparation in the background. The
+      // startup HTTP call can be rejected before the local runtime is ready
+      // (for example, before the Core session has a CSRF token), so continue
+      // by observing the filesystem instead of failing every CLI immediately.
+      console.warn('[Managed Node] readiness trigger failed; waiting for local runtime:', normalizeError(error));
     }
-    if (nodeResult?.ready !== true) {
-      return null;
+
+    if (nodeResult?.ready === true) {
+      const runtime = await probeManagedNodeRuntime(options);
+      if (runtime) {
+        return runtime;
+      }
     }
-    return probeManagedNodeRuntime(options);
+
+    return waitForManagedNodeRuntime(options);
   })();
   managedNodeReadinessPromises.set(options.dataPath, check);
   try {
@@ -1470,6 +1532,8 @@ async function ensureManagedToolReady(
       dataPath,
       ensureNodeRuntime,
       scope,
+      retryWindowMs: options.managedNodeRuntimeRetryWindowMs,
+      retryIntervalMs: options.managedNodeRuntimeRetryIntervalMs,
     });
     if (!nodeRuntime) {
       emitToolRuntimeStatus(emitStatus, scopedTool, 'failed', 'managed Node runtime is not ready');

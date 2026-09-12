@@ -352,6 +352,7 @@ describe('opencode startup bootstrap', () => {
         ensureNodeRuntime: async () => {
           throw new Error('AionCore unavailable');
         },
+        managedNodeRuntimeRetryWindowMs: 0,
         env: {},
       })
     ).resolves.toBe(false);
@@ -385,6 +386,7 @@ describe('opencode startup bootstrap', () => {
         commandRunner,
         dataPath: fixture.dataPath,
         ensureNodeRuntime: async () => ({ ready: true }),
+        managedNodeRuntimeRetryWindowMs: 0,
         env,
       })
     ).resolves.toBe(false);
@@ -479,6 +481,69 @@ describe('opencode startup bootstrap', () => {
     ).resolves.toEqual({ status: 'ready' });
     expect(ensureNodeRuntime).toHaveBeenCalledOnce();
     expect(phases.indexOf('install')).toBeGreaterThan(phases.lastIndexOf('node'));
+  });
+
+  it('continues after a failed runtime trigger when AionCore creates Node locally', async () => {
+    const dataPath = await mkdtemp(path.join(tmpdir(), 'aionui-opencode-delayed-node-'));
+    const nodeRoot = path.join(dataPath, 'runtime', 'node', 'node-v24.11.0-test');
+    const nodeExecutable =
+      process.platform === 'win32' ? path.join(nodeRoot, 'node.exe') : path.join(nodeRoot, 'bin', 'node');
+    const npmCliPath =
+      process.platform === 'win32'
+        ? path.join(nodeRoot, 'node_modules', 'npm', 'bin', 'npm-cli.js')
+        : path.join(nodeRoot, 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js');
+    const npmRoot = path.dirname(path.dirname(npmCliPath));
+    const commandPath = path.join(
+      dataPath,
+      'runtime',
+      'npm-global',
+      'opencode',
+      process.platform === 'win32' ? 'opencode.cmd' : 'bin/opencode'
+    );
+
+    const createRuntime = async () => {
+      await mkdir(path.dirname(nodeExecutable), { recursive: true });
+      await mkdir(path.dirname(npmCliPath), { recursive: true });
+      await mkdir(path.join(npmRoot, 'lib'), { recursive: true });
+      await writeFile(nodeExecutable, '');
+      await writeFile(npmCliPath, '');
+      await writeFile(path.join(npmRoot, 'package.json'), JSON.stringify({ version: '10.0.0' }));
+      await writeFile(path.join(npmRoot, 'lib', 'cli.js'), '');
+    };
+    setTimeout(() => void createRuntime(), 25);
+
+    const ensureNodeRuntime = vi.fn(async () => {
+      throw new Error('HTTP 403 CSRF_INVALID');
+    });
+    const commandRunner = vi.fn(async (_file: string, args: string[]) => {
+      if (args.length === 1 && args[0] === '-v') return { stdout: 'v24.11.0' };
+      if (args[0] === npmCliPath && args[1] === '--version') return { stdout: '10.0.0' };
+      if (args.includes('install')) {
+        await mkdir(path.dirname(commandPath), { recursive: true });
+        await writeFile(commandPath, '');
+        return {};
+      }
+      return { stdout: '1.0.0' };
+    });
+
+    await expect(
+      ensureOpenCodeReady({
+        commandRunner,
+        dataPath,
+        emitStatus: vi.fn(),
+        ensureNodeRuntime,
+        managedNodeRuntimeRetryWindowMs: 1000,
+        managedNodeRuntimeRetryIntervalMs: 10,
+        env: {},
+      })
+    ).resolves.toEqual({ status: 'ready' });
+
+    expect(ensureNodeRuntime).toHaveBeenCalledOnce();
+    expect(commandRunner).toHaveBeenCalledWith(
+      nodeExecutable,
+      expect.arrayContaining([npmCliPath, 'install', '--global', 'opencode-ai']),
+      expect.any(Object)
+    );
   });
 
   it('allows E2E mode to bypass managed environment installation checks', async () => {
@@ -678,6 +743,7 @@ describe('opencode startup bootstrap', () => {
       dataPath: await mkdtemp(path.join(tmpdir(), 'aionui-codex-runtime-failure-')),
       emitStatus: vi.fn(),
       ensureNodeRuntime: async () => ({ ready: false }),
+      managedNodeRuntimeRetryWindowMs: 0,
       env: {},
     });
 
@@ -1391,6 +1457,7 @@ describe('opencode startup bootstrap', () => {
       commandRunner,
       emitStatus: vi.fn(),
       ensureNodeRuntime,
+      managedNodeRuntimeRetryWindowMs: 0,
       env: {},
     });
 
@@ -1409,6 +1476,7 @@ describe('opencode startup bootstrap', () => {
       dataPath,
       emitStatus: vi.fn(),
       ensureNodeRuntime: async () => ({ ready: true }),
+      managedNodeRuntimeRetryWindowMs: 0,
       env: {},
     });
 
