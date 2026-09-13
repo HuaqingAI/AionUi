@@ -62,6 +62,8 @@ import type {
   HTHSyncAgentConfigsRequest,
   HTHSyncProgressEvent,
   HTHSyncResult,
+  HTHUploadClientLogsRequest,
+  HTHUploadClientLogsResult,
 } from '../types/hth';
 import type {
   ITeamAgentRemovedEvent,
@@ -770,6 +772,9 @@ export const hth = {
   ),
   quotaSummary: bridge.buildProvider<HTHQuotaSummary | null, void>('hth.quota-summary'),
   refreshQuotaSummary: bridge.buildProvider<HTHQuotaSummary, void>('hth.refresh-quota-summary'),
+  uploadClientLogs: bridge.buildProvider<HTHUploadClientLogsResult, HTHUploadClientLogsRequest>(
+    'hth.upload-client-logs'
+  ),
 };
 
 // ---------------------------------------------------------------------------

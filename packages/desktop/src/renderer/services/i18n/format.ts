@@ -134,11 +134,20 @@ const BYTE_UNITS = ['B', 'KB', 'MB', 'GB', 'TB'] as const;
  * Format a byte count as "12.5 MB", with the number in the app language
  * (de-DE renders "12,5 MB"). Binary (1024) units, matching the rest of the app.
  */
-export function formatByteSize(bytes: number, language?: string | null, maximumFractionDigits = 1): string {
+export function formatByteSize(
+  bytes: number,
+  language?: string | null,
+  maximumFractionDigits = 1,
+  minimumUnit: (typeof BYTE_UNITS)[number] = 'B'
+): string {
+  const minimumExponent = BYTE_UNITS.indexOf(minimumUnit);
   if (!Number.isFinite(bytes) || bytes <= 0) {
-    return `0 ${BYTE_UNITS[0]}`;
+    return `0 ${BYTE_UNITS[minimumExponent]}`;
   }
-  const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), BYTE_UNITS.length - 1);
+  const exponent = Math.max(
+    minimumExponent,
+    Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), BYTE_UNITS.length - 1)
+  );
   const value = bytes / 1024 ** exponent;
   return `${formatNumber(value, language, { maximumFractionDigits })} ${BYTE_UNITS[exponent]}`;
 }

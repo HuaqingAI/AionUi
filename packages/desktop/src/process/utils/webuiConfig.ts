@@ -7,7 +7,7 @@
 import { app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
-import { resolvePreferredLanIPv4 } from '@process/services/hth/clientEnvironment';
+import { resolvePreferredLanIPv4 } from '@process/services/hth/client/clientEnvironment';
 import { getSystemDir } from './initStorage';
 import { httpRequest } from '@/common/adapter/httpBridge';
 import { startWebHost, type WebHostHandle } from '@aionui/web-host';

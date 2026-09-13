@@ -16,7 +16,7 @@ import http from 'http';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import { getHTHAuthFilePath, normalizeHTHBaseUrl, resolveDefaultHTHBaseUrl } from './baseUrl';
-import { resolveMacInstallationId } from './clientEnvironment';
+import { resolveMacInstallationId } from './client/clientEnvironment';
 
 type StoredAuth = {
   baseUrl: string;

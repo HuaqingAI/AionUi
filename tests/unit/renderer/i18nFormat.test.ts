@@ -105,6 +105,12 @@ describe('formatByteSize / formatByteRate', () => {
     expect(formatByteSize(2 * 1024 ** 3, 'en-US')).toBe('2 GB');
   });
 
+  it('can keep small upload sizes in KB', () => {
+    expect(formatByteSize(512, 'en-US', 1, 'KB')).toBe('0.5 KB');
+    expect(formatByteSize(0, 'en-US', 1, 'KB')).toBe('0 KB');
+    expect(formatByteSize(1024 * 1024, 'en-US', 1, 'KB')).toBe('1 MB');
+  });
+
   it('localises the decimal separator', () => {
     expect(formatByteSize(12_800, 'de-DE')).toBe('12,5 KB');
     expect(formatByteRate(12_800, 'de-DE')).toBe('12,5 KB/s');

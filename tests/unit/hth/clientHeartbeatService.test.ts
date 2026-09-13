@@ -13,13 +13,13 @@ vi.mock('electron', () => ({
 }));
 
 import type { HTHAuthService } from '@/process/services/hth/authService';
-import { HTHClientHeartbeatService } from '@/process/services/hth/clientHeartbeatService';
+import { HTHClientHeartbeatService } from '@/process/services/hth/client/clientHeartbeatService';
 import {
   resolveAionUiClientPlatform,
   resolveMacInstallationId,
   resolvePreferredLanIPv4,
   shouldRunClientHeartbeat,
-} from '@/process/services/hth/clientEnvironment';
+} from '@/process/services/hth/client/clientEnvironment';
 
 afterEach(() => {
   vi.useRealTimers();

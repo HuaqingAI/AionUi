@@ -4,13 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Typography, Button, Message } from '@arco-design/web-react';
+import { Typography, Button, DatePicker, Message, Modal } from '@arco-design/web-react';
+import dayjs, { type Dayjs } from 'dayjs';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import classNames from 'classnames';
 import { useSettingsViewMode } from '../settingsViewContext';
 import { isElectronDesktop } from '@/renderer/utils/platform';
 import { ipcBridge } from '@/common';
+import { formatByteSize } from '@/renderer/services/i18n/format';
 import { runUpdateCheck } from '@/renderer/components/settings/checkForUpdatesShared';
 import { UPDATE_AVAILABLE_EVENT } from '@/renderer/components/settings/useUpdateNotificationController';
 import {
@@ -27,13 +29,15 @@ import {
 declare const __APP_VERSION__: string;
 
 const AboutModalContent: React.FC = () => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const viewMode = useSettingsViewMode();
   const isPageMode = viewMode === 'page';
   const isElectron = isElectronDesktop();
 
   const [updateReadyState, setLocalUpdateReadyState] = useState<UpdateReadyState>(() => getUpdateReadyState());
   const [checking, setChecking] = useState(false);
+  const [clientLogDate, setClientLogDate] = useState<Dayjs | undefined>(() => dayjs());
+  const [uploadingClientLogs, setUploadingClientLogs] = useState(false);
 
   useEffect(() => subscribeUpdateReadyState(setLocalUpdateReadyState), []);
 
@@ -74,6 +78,56 @@ const AboutModalContent: React.FC = () => {
     }
   };
 
+  const uploadClientLogs = async (date: string) => {
+    setUploadingClientLogs(true);
+    try {
+      const result = await ipcBridge.hth.uploadClientLogs.invoke({ date });
+      if (result.outcome === 'uploaded') {
+        Message.success(
+          t('settings.clientLogUpload.success', {
+            count: result.fileCount,
+            bytes: formatByteSize(result.totalBytes, i18n.language, 1, 'KB'),
+          })
+        );
+      } else if (result.outcome === 'no-files') {
+        Message.info(t('settings.clientLogUpload.noFiles'));
+      } else if (result.outcome === 'not-logged-in') {
+        Message.warning(t('settings.clientLogUpload.notLoggedIn'));
+      } else if (result.code === 'invalid-date') {
+        Message.error(t('settings.clientLogUpload.invalidDate'));
+      } else if (result.code === 'local-limit') {
+        Message.error(t('settings.clientLogUpload.localLimit'));
+      } else if (result.code === 'rate-limited') {
+        Message.warning(
+          result.retryAfterSeconds === undefined
+            ? t('settings.clientLogUpload.rateLimited')
+            : t('settings.clientLogUpload.rateLimitedWithRetry', { seconds: result.retryAfterSeconds })
+        );
+      } else if (result.code === 'server-rejected') {
+        Message.error(t('settings.clientLogUpload.serverRejected'));
+      } else if (result.code === 'network') {
+        Message.error(t('settings.clientLogUpload.networkError'));
+      } else {
+        Message.error(t('settings.clientLogUpload.serverError'));
+      }
+    } catch {
+      Message.error(t('settings.clientLogUpload.networkError'));
+    } finally {
+      setUploadingClientLogs(false);
+    }
+  };
+
+  const confirmClientLogUpload = () => {
+    if (!clientLogDate || uploadingClientLogs) return;
+    const date = clientLogDate.format('YYYY-MM-DD');
+    Modal.confirm({
+      title: t('settings.clientLogUpload.confirmTitle'),
+      content: t('settings.clientLogUpload.confirmContent'),
+      okText: t('settings.clientLogUpload.action'),
+      onOk: () => uploadClientLogs(date),
+    });
+  };
+
   return (
     <div className='flex flex-col h-full w-full'>
       {/* Content Area */}
@@ -100,22 +154,45 @@ const AboutModalContent: React.FC = () => {
 
             {/* Check Update Section */}
             {isElectron && (
-              <div className='flex flex-col items-center gap-12px w-full max-w-300px bg-fill-2 p-16px rounded-lg'>
-                <Button
-                  type='primary'
-                  long
-                  loading={checking || updateReadyState.preparing}
-                  disabled={updateReadyState.preparing}
-                  onClick={() => void checkUpdate()}
-                >
-                  {updateReadyState.preparing
-                    ? t('update.preparingInstall')
-                    : updateReadyState.ready
-                      ? t('settings.updateReadyInstall', { version: updateReadyState.version })
-                      : checking
-                        ? t('settings.checkingForUpdates')
-                        : t('settings.checkForUpdates')}
-                </Button>
+              <div className='flex flex-col items-center gap-12px w-full max-w-300px'>
+                <div className='w-full bg-fill-2 p-16px rounded-lg'>
+                  <Button
+                    type='primary'
+                    long
+                    loading={checking || updateReadyState.preparing}
+                    disabled={updateReadyState.preparing}
+                    onClick={() => void checkUpdate()}
+                  >
+                    {updateReadyState.preparing
+                      ? t('update.preparingInstall')
+                      : updateReadyState.ready
+                        ? t('settings.updateReadyInstall', { version: updateReadyState.version })
+                        : checking
+                          ? t('settings.checkingForUpdates')
+                          : t('settings.checkForUpdates')}
+                  </Button>
+                </div>
+                <div className='flex flex-col gap-8px w-full pt-12px border-t border-b-base'>
+                  <Typography.Text className='text-14px text-t-primary'>
+                    {t('settings.clientLogUpload.title')}
+                  </Typography.Text>
+                  <DatePicker
+                    allowClear={false}
+                    disabled={uploadingClientLogs}
+                    disabledDate={(current) => Boolean(current && current.isAfter(dayjs(), 'day'))}
+                    format='YYYY-MM-DD'
+                    value={clientLogDate}
+                    onChange={(_dateString, date) => setClientLogDate(date)}
+                  />
+                  <Button
+                    long
+                    loading={uploadingClientLogs}
+                    disabled={!clientLogDate || uploadingClientLogs}
+                    onClick={confirmClientLogUpload}
+                  >
+                    {t('settings.clientLogUpload.action')}
+                  </Button>
+                </div>
               </div>
             )}
           </div>

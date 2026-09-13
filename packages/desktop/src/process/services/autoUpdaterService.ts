@@ -25,7 +25,7 @@ import {
   recordAutoUpdateStatus,
 } from './autoUpdateDiagnostics';
 import { HTHAuthService } from './hth/authService';
-import { resolveAionUiClientPlatform } from './hth/clientEnvironment';
+import { resolveAionUiClientPlatform } from './hth/client/clientEnvironment';
 import { buildCdnFeedOptions, resolveUpdateFeedBaseUrl } from './updateFeed';
 
 const DEBUG_AUTO_UPDATE_CURRENT_VERSION_ENV = 'AIONUI_DEBUG_AUTO_UPDATE_CURRENT_VERSION';

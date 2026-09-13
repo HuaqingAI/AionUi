@@ -15,8 +15,9 @@ import { initApplicationBridgeCore } from './applicationBridgeCore';
 import type { IStartOnBootStatus } from '@/common/adapter/ipcBridge';
 import { restartApplication } from './restartApplication';
 import { HTHAuthService } from '@process/services/hth/authService';
-import { HTHClientHeartbeatService } from '@process/services/hth/clientHeartbeatService';
-import { shouldRunClientHeartbeat } from '@process/services/hth/clientEnvironment';
+import { HTHClientHeartbeatService } from '@process/services/hth/client/clientHeartbeatService';
+import { HTHClientLogUploadService } from '@process/services/hth/client/clientLogUploadService';
+import { shouldRunClientHeartbeat } from '@process/services/hth/client/clientEnvironment';
 import { HTHCoreIdentityService } from '@process/services/hth/coreIdentityService';
 import { HTHConfigSyncService } from '@process/services/hth/configSyncService';
 import { HTHQuotaService } from '@process/services/hth/quotaService';
@@ -280,6 +281,7 @@ export function initApplicationBridge(): void {
     },
   });
   clientHeartbeatService = new HTHClientHeartbeatService(hthAuthService);
+  const clientLogUploadService = new HTHClientLogUploadService(hthAuthService);
   if (shouldRunClientHeartbeat()) {
     void app.whenReady().then(() => clientHeartbeatService.start());
     powerMonitor.on('resume', () => clientHeartbeatService.resume());
@@ -344,4 +346,5 @@ export function initApplicationBridge(): void {
   );
   ipcBridge.hth.quotaSummary.provider(() => hthQuotaService.getSummary());
   ipcBridge.hth.refreshQuotaSummary.provider(() => hthQuotaService.refreshSummary());
+  ipcBridge.hth.uploadClientLogs.provider((request) => clientLogUploadService.upload(request));
 }

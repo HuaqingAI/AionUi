@@ -14,20 +14,26 @@ const mocks = vi.hoisted(() => ({
   updateCheckMock: vi.fn(),
   messageInfoMock: vi.fn(),
   messageErrorMock: vi.fn(),
+  messageSuccessMock: vi.fn(),
+  modalConfirmMock: vi.fn(),
+  uploadClientLogsMock: vi.fn(),
 }));
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, params?: Record<string, string>) =>
+    i18n: { language: 'en-US' },
+    t: (key: string, params?: Record<string, string | number>) =>
       key === 'login.brand'
         ? '华青智能助手'
         : key === 'settings.appDescription'
           ? '一个桌面。你的 AI 智能体，真正实现协同工作。'
-        : key === 'update.preparingInstall'
-        ? '准备安装...'
-        : key === 'settings.updateReadyInstall'
-          ? `${params?.version} 已就绪, 立即安装`
-          : key,
+          : key === 'update.preparingInstall'
+            ? '准备安装...'
+            : key === 'settings.updateReadyInstall'
+              ? `${params?.version} 已就绪, 立即安装`
+              : key === 'settings.clientLogUpload.success'
+                ? `${key}:${params?.bytes}`
+                : key,
   }),
 }));
 
@@ -35,7 +41,13 @@ vi.mock('@arco-design/web-react', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@arco-design/web-react')>();
   return {
     ...actual,
-    Message: { ...actual.Message, info: mocks.messageInfoMock, error: mocks.messageErrorMock },
+    Message: {
+      ...actual.Message,
+      info: mocks.messageInfoMock,
+      error: mocks.messageErrorMock,
+      success: mocks.messageSuccessMock,
+    },
+    Modal: { ...actual.Modal, confirm: mocks.modalConfirmMock },
   };
 });
 
@@ -49,6 +61,9 @@ vi.mock('@/common', () => ({
     },
     update: {
       check: { invoke: mocks.updateCheckMock },
+    },
+    hth: {
+      uploadClientLogs: { invoke: mocks.uploadClientLogsMock },
     },
   },
 }));
@@ -77,6 +92,12 @@ describe('AboutModalContent update ready state', () => {
     mocks.updateCheckMock.mockResolvedValue({
       success: true,
       data: { currentVersion: '2.1.13', updateAvailable: false, latest: null },
+    });
+    mocks.uploadClientLogsMock.mockResolvedValue({
+      outcome: 'uploaded',
+      date: '2026-09-10',
+      fileCount: 2,
+      totalBytes: 268_560,
     });
   });
 
@@ -203,5 +224,25 @@ describe('AboutModalContent update ready state', () => {
     expect(availableListener).not.toHaveBeenCalled();
 
     window.removeEventListener('aionui-update-available', availableListener);
+  });
+
+  it('confirms and delegates the selected client log date through the IPC bridge', async () => {
+    render(<AboutModalContent />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'settings.clientLogUpload.action' }));
+
+    expect(mocks.modalConfirmMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'settings.clientLogUpload.confirmTitle',
+        content: 'settings.clientLogUpload.confirmContent',
+      })
+    );
+    const confirmation = mocks.modalConfirmMock.mock.calls[0][0] as { onOk: () => Promise<void> };
+    await act(async () => {
+      await confirmation.onOk();
+    });
+
+    expect(mocks.uploadClientLogsMock).toHaveBeenCalledWith({ date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) });
+    expect(mocks.messageSuccessMock).toHaveBeenCalledWith('settings.clientLogUpload.success:262.3 KB');
   });
 });

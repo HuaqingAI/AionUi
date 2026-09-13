@@ -5,7 +5,7 @@
  */
 
 import { app } from 'electron';
-import type { HTHAuthService } from './authService';
+import type { HTHAuthService } from '../authService';
 import { resolveAionUiClientPlatform, resolvePreferredLanIPv4 } from './clientEnvironment';
 
 const HEARTBEAT_INTERVAL_MS = 30 * 60 * 1000;

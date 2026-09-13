@@ -38,3 +38,29 @@ export type HTHExchangeLoginCodeRequest = {
   code: string;
   state: string;
 };
+
+export type HTHUploadClientLogsRequest = {
+  date: string;
+};
+
+export type HTHUploadClientLogsResult =
+  | {
+      outcome: 'uploaded';
+      date: string;
+      fileCount: number;
+      totalBytes: number;
+    }
+  | {
+      outcome: 'no-files';
+      date: string;
+    }
+  | {
+      outcome: 'not-logged-in';
+      date: string;
+    }
+  | {
+      outcome: 'failed';
+      date: string;
+      code: 'invalid-date' | 'local-limit' | 'rate-limited' | 'server-rejected' | 'network' | 'server';
+      retryAfterSeconds?: number;
+    };
