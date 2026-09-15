@@ -66,7 +66,7 @@ afterEach(() => {
 });
 
 describe('opencode startup bootstrap', () => {
-  async function createManagedNodeFixture(): Promise<{
+  async function createManagedNodeFixture(dataPathLeaf?: string): Promise<{
     beisenCliCommandPath: string;
     beisenCliPrefix: string;
     commandPath: string;
@@ -89,7 +89,8 @@ describe('opencode startup bootstrap', () => {
     ziniaoCliCommandPath: string;
     ziniaoCliPrefix: string;
   }> {
-    const dataPath = await mkdtemp(path.join(tmpdir(), 'aionui-opencode-startup-'));
+    const fixtureRoot = await mkdtemp(path.join(tmpdir(), 'aionui-opencode-startup-'));
+    const dataPath = dataPathLeaf ? path.join(fixtureRoot, dataPathLeaf) : fixtureRoot;
     const nodeRoot = path.join(dataPath, 'runtime', 'node', 'node-v24.11.0-test');
     const nodeExecutable =
       process.platform === 'win32' ? path.join(nodeRoot, 'node.exe') : path.join(nodeRoot, 'bin', 'node');
@@ -1154,7 +1155,7 @@ describe('opencode startup bootstrap', () => {
 
   it('rewrites a newly installed Windows Codex launcher to use managed Node directly', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
-    const fixture = await createManagedNodeFixture();
+    const fixture = await createManagedNodeFixture('华青科技');
     const packageRoot = path.join(fixture.codexPrefix, 'node_modules', '@openai', 'codex');
     const cliPath = path.join(packageRoot, 'bin', 'codex.js');
     const commandRunner = vi.fn(async (_file: string, args: string[]) => {
@@ -1188,7 +1189,14 @@ describe('opencode startup bootstrap', () => {
     expect(result).toEqual({ status: 'ready' });
     expect(commandRunner).toHaveBeenCalledTimes(4);
     expect(launcher).toContain('REM AionUi managed Node launcher');
-    expect(launcher).toContain(`"${fixture.nodeExecutable}" "${cliPath}" %*`);
+    expect(launcher).toContain(
+      `"%~dp0${path
+        .relative(path.dirname(fixture.codexCommandPath), fixture.nodeExecutable)
+        .replaceAll('/', '\\')}" "%~dp0${path
+        .relative(path.dirname(fixture.codexCommandPath), cliPath)
+        .replaceAll('/', '\\')}" %*`
+    );
+    expect(launcher).not.toContain(fixture.dataPath);
   });
 
   it('prepends managed Node before existing PATH during startup path setup', async () => {
@@ -1263,7 +1271,13 @@ describe('opencode startup bootstrap', () => {
 
     const launcher = await readFile(fixture.codexCommandPath, 'utf8');
     expect(launcher).toContain('REM AionUi managed Node launcher');
-    expect(launcher).toContain(`"${fixture.nodeExecutable}" "${cliPath}" %*`);
+    expect(launcher).toContain(
+      `"%~dp0${path
+        .relative(path.dirname(fixture.codexCommandPath), fixture.nodeExecutable)
+        .replaceAll('/', '\\')}" "%~dp0${path
+        .relative(path.dirname(fixture.codexCommandPath), cliPath)
+        .replaceAll('/', '\\')}" %*`
+    );
   });
 
   it('repairs the macOS OpenCode launcher to execute the native binary directly', async () => {

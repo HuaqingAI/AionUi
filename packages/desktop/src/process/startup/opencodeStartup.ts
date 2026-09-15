@@ -1024,14 +1024,17 @@ function windowsBatchQuote(value: string): string {
   return `"${value.replaceAll('%', '%%')}"`;
 }
 
-function buildManagedNodeLauncher(nodeExecutable: string, targetPath: string): string {
+function buildManagedNodeLauncher(commandPath: string, nodeExecutable: string, targetPath: string): string {
   const encodedTarget = Buffer.from(targetPath, 'utf8').toString('base64');
   if (process.platform === 'win32') {
+    // Keep the batch file ASCII-safe; cmd.exe may decode UTF-8 absolute paths using the legacy code page.
+    const relativeToLauncher = (filePath: string): string =>
+      path.relative(path.dirname(commandPath), filePath).replaceAll('/', '\\').replaceAll('%', '%%');
     return [
       '@echo off',
       `REM ${MANAGED_NODE_LAUNCHER_MARKER}`,
       `REM target_b64=${encodedTarget}`,
-      `${windowsBatchQuote(nodeExecutable)} ${windowsBatchQuote(targetPath)} %*`,
+      `"%~dp0${relativeToLauncher(nodeExecutable)}" "%~dp0${relativeToLauncher(targetPath)}" %*`,
       '',
     ].join('\r\n');
   }
@@ -1104,16 +1107,20 @@ function isManagedToolNodeScriptTargetSync(targetPath: string): boolean {
   }
 }
 
-async function buildManagedToolLauncher(nodeExecutable: string, targetPath: string): Promise<string | null> {
+async function buildManagedToolLauncher(
+  commandPath: string,
+  nodeExecutable: string,
+  targetPath: string
+): Promise<string | null> {
   if (await isManagedToolNodeScriptTarget(targetPath)) {
-    return buildManagedNodeLauncher(nodeExecutable, targetPath);
+    return buildManagedNodeLauncher(commandPath, nodeExecutable, targetPath);
   }
   return process.platform === 'win32' ? null : buildManagedDirectLauncher(targetPath);
 }
 
-function buildManagedToolLauncherSync(nodeExecutable: string, targetPath: string): string | null {
+function buildManagedToolLauncherSync(commandPath: string, nodeExecutable: string, targetPath: string): string | null {
   if (isManagedToolNodeScriptTargetSync(targetPath)) {
-    return buildManagedNodeLauncher(nodeExecutable, targetPath);
+    return buildManagedNodeLauncher(commandPath, nodeExecutable, targetPath);
   }
   return process.platform === 'win32' ? null : buildManagedDirectLauncher(targetPath);
 }
@@ -1137,7 +1144,7 @@ async function ensureManagedToolLauncherUsesManagedNode(
     return;
   }
 
-  const launcher = await buildManagedToolLauncher(nodeExecutable, targetPath);
+  const launcher = await buildManagedToolLauncher(commandPath, nodeExecutable, targetPath);
   if (!launcher) {
     return;
   }
@@ -1174,7 +1181,7 @@ function ensureManagedToolLauncherUsesManagedNodeSync(
     return;
   }
 
-  const launcher = buildManagedToolLauncherSync(nodeExecutable, targetPath);
+  const launcher = buildManagedToolLauncherSync(commandPath, nodeExecutable, targetPath);
   if (!launcher) {
     return;
   }
