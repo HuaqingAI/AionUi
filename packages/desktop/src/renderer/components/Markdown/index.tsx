@@ -16,7 +16,8 @@ import { openExternalUrl } from '@/renderer/utils/platform';
 import { parseHttpUrl } from '@/renderer/utils/url';
 import { useOptionalPreviewContext } from '@/renderer/pages/conversation/Preview/context/PreviewContext';
 import classNames from 'classnames';
-import React, { useCallback, useMemo } from 'react';
+import { Button, Image } from '@arco-design/web-react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { convertLatexDelimiters } from '@renderer/utils/chat/latexDelimiters';
 import LocalImageView from '@renderer/components/media/LocalImageView';
@@ -48,6 +49,16 @@ const MarkdownView: React.FC<MarkdownViewProps> = React.memo(
   ({ hiddenCodeCopyButton, codeStyle, className, onRef, onLocalFileLink, allowHtml, children: childrenProp }) => {
     const { t } = useTranslation();
     const preview = useOptionalPreviewContext();
+    const [imagePreview, setImagePreview] = useState<{ src: string; alt: string } | null>(null);
+
+    const handleImagePreview = useCallback((e: Event) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!(e.currentTarget instanceof HTMLElement)) return;
+      const image = e.currentTarget.querySelector('img');
+      if (!image?.getAttribute('src')) return;
+      setImagePreview({ src: image.currentSrc || image.src, alt: image.alt });
+    }, []);
 
     const normalizedChildren = useMemo(() => {
       if (typeof childrenProp === 'string') {
@@ -115,14 +126,26 @@ const MarkdownView: React.FC<MarkdownViewProps> = React.memo(
         td: MarkdownTd,
         img: ({ node: _node, ...rest }: Record<string, unknown>) => {
           const imgProps = rest as React.ImgHTMLAttributes<HTMLImageElement>;
-          if (isLocalFilePath(imgProps.src || '')) {
-            const src = decodeURIComponent(imgProps.src || '');
-            return <LocalImageView src={src} alt={imgProps.alt || ''} className={imgProps.className} />;
-          }
-          return <img {...imgProps} alt={imgProps.alt || ''} />;
+          return (
+            <Button
+              className='markdown-image-preview'
+              aria-label={imgProps.alt || t('preview.preview')}
+              onClick={handleImagePreview}
+            >
+              {isLocalFilePath(imgProps.src || '') ? (
+                <LocalImageView
+                  src={decodeURIComponent(imgProps.src || '')}
+                  alt={imgProps.alt || ''}
+                  className={imgProps.className}
+                />
+              ) : (
+                <img {...imgProps} alt={imgProps.alt || ''} />
+              )}
+            </Button>
+          );
         },
       }),
-      [codeStyle, hiddenCodeCopyButton, handleLinkClick, onLocalFileLink]
+      [codeStyle, hiddenCodeCopyButton, handleLinkClick, handleImagePreview, onLocalFileLink, t]
     );
 
     const rehypePlugins = useMemo(() => (allowHtml ? [rehypeRaw, rehypeKatex] : [rehypeKatex]), [allowHtml]);
@@ -141,6 +164,19 @@ const MarkdownView: React.FC<MarkdownViewProps> = React.memo(
             </ReactMarkdown>
           </div>
         </ShadowView>
+        {imagePreview && (
+          <Image.PreviewGroup
+            srcList={[imagePreview.src]}
+            current={0}
+            className='[&_.arco-image-preview-arrow]:hidden'
+            imgAttributes={{ alt: imagePreview.alt }}
+            visible
+            actionsLayout={['zoomIn', 'zoomOut', 'originalSize', 'rotateLeft', 'rotateRight']}
+            onVisibleChange={(visible) => {
+              if (!visible) setImagePreview(null);
+            }}
+          />
+        )}
       </div>
     );
   }

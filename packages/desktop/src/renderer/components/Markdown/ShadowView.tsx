@@ -231,6 +231,30 @@ export const createInitStyle = (
     max-width: 100%;
     height: auto;
   }
+  .markdown-image-preview {
+    display: inline-flex;
+    max-width: min(100%, 480px);
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    vertical-align: middle;
+    cursor: zoom-in;
+  }
+  .markdown-image-preview:focus-visible {
+    outline: 2px solid var(--primary, var(--text-primary));
+    outline-offset: 3px;
+  }
+  .markdown-image-preview img {
+    display: block;
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: min(360px, 40vh);
+    object-fit: contain;
+    border-radius: inherit;
+  }
    /* Table border styles */
   table {
     border-collapse: collapse;
