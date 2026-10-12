@@ -1,6 +1,8 @@
 {
   "loading": "Загрузка...",
   "downloadFile": "Скачать файл",
+  "copyImage": "Копировать изображение",
+  "saveImageAs": "Сохранить изображение как",
   "closePreview": "Закрыть предпросмотр",
   "collapsePanel": "Свернуть панель",
   "maximizePanel": "Развернуть",

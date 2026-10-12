@@ -1,6 +1,8 @@
 {
   "loading": "Carregando...",
   "downloadFile": "Baixar arquivo",
+  "copyImage": "Copiar imagem",
+  "saveImageAs": "Salvar imagem como",
   "closePreview": "Fechar visualização",
   "collapsePanel": "Recolher painel",
   "maximizePanel": "Maximizar",

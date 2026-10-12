@@ -1,6 +1,8 @@
 {
   "loading": "در حال بارگذاری...",
   "downloadFile": "دانلود فایل",
+  "copyImage": "کپی تصویر",
+  "saveImageAs": "ذخیرهٔ تصویر با نام",
   "closePreview": "بستن پیش‌نمایش",
   "collapsePanel": "جمع کردن پنل",
   "maximizePanel": "بزرگ‌نمایی",

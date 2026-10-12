@@ -1,6 +1,8 @@
 {
   "loading": "載入中...",
   "downloadFile": "下載檔案",
+  "copyImage": "複製圖片",
+  "saveImageAs": "圖片另存新檔",
   "closePreview": "關閉預覽",
   "collapsePanel": "收起面板",
   "maximizePanel": "最大化",

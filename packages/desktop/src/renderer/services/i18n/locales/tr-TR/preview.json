@@ -1,6 +1,8 @@
 {
   "loading": "Yükleniyor...",
   "downloadFile": "Dosyayı İndir",
+  "copyImage": "Resmi kopyala",
+  "saveImageAs": "Resmi farklı kaydet",
   "closePreview": "Önizlemeyi Kapat",
   "collapsePanel": "Paneli Daralt",
   "maximizePanel": "Büyüt",

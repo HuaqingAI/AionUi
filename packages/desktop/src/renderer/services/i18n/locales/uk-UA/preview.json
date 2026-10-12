@@ -1,6 +1,8 @@
 {
   "loading": "Завантаження...",
   "downloadFile": "Завантажити файл",
+  "copyImage": "Копіювати зображення",
+  "saveImageAs": "Зберегти зображення як",
   "closePreview": "Закрити перегляд",
   "collapsePanel": "Згорнути панель",
   "maximizePanel": "Розгорнути",

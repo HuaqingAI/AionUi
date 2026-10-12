@@ -1,6 +1,8 @@
 {
   "loading": "로딩 중...",
   "downloadFile": "파일 다운로드",
+  "copyImage": "이미지 복사",
+  "saveImageAs": "이미지를 다른 이름으로 저장",
   "closePreview": "미리보기 닫기",
   "collapsePanel": "패널 접기",
   "maximizePanel": "최대화",
