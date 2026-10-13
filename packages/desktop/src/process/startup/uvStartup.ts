@@ -190,23 +190,42 @@ function isPathInside(parentPath: string, childPath: string): boolean {
 
 function isManagedPythonCommandDirectorySafe(dataPath: string): boolean {
   const commandDirectory = getManagedPythonCommandDirectory(dataPath);
-  const managedInstallDirectory = path.resolve(getManagedPythonInstallDirectory(dataPath));
+  const managedInstallDirectory = getManagedPythonInstallDirectory(dataPath);
 
+  let commandDirectoryStats: ReturnType<typeof lstatSync>;
   try {
-    const commandDirectoryStats = lstatSync(commandDirectory);
-    if (process.platform === 'win32') {
-      return (
-        commandDirectoryStats.isSymbolicLink() && isPathInside(managedInstallDirectory, realpathSync(commandDirectory))
-      );
-    }
-    if (!commandDirectoryStats.isDirectory() || commandDirectoryStats.isSymbolicLink()) {
-      return false;
-    }
-
-    const commandPath = path.join(commandDirectory, 'python');
-    return lstatSync(commandPath).isSymbolicLink() && isPathInside(managedInstallDirectory, realpathSync(commandPath));
+    commandDirectoryStats = lstatSync(commandDirectory);
   } catch (error) {
     return (error as NodeJS.ErrnoException).code === 'ENOENT';
+  }
+
+  let resolvedManagedInstallDirectory: string;
+  try {
+    // macOS may use a CLI-safe symlink for dataPath; compare canonical paths
+    // so the symlink path and its Application Support target are equivalent.
+    resolvedManagedInstallDirectory = realpathSync(managedInstallDirectory);
+  } catch {
+    return false;
+  }
+
+  if (process.platform === 'win32') {
+    return (
+      commandDirectoryStats.isSymbolicLink() &&
+      isPathInside(resolvedManagedInstallDirectory, realpathSync(commandDirectory))
+    );
+  }
+  if (!commandDirectoryStats.isDirectory() || commandDirectoryStats.isSymbolicLink()) {
+    return false;
+  }
+
+  try {
+    const commandPath = path.join(commandDirectory, 'python');
+    return (
+      lstatSync(commandPath).isSymbolicLink() &&
+      isPathInside(resolvedManagedInstallDirectory, realpathSync(commandPath))
+    );
+  } catch {
+    return false;
   }
 }
 
@@ -260,18 +279,24 @@ async function validateManagedPythonExecutable(
   }
 
   const managedInstallDirectory = path.resolve(getManagedPythonInstallDirectory(dataPath));
-  const declaredExecutablePath = path.resolve(trimmedPath);
-  if (!isPathInside(managedInstallDirectory, declaredExecutablePath)) {
-    throw new Error('uv reported a Python executable outside the managed runtime directory');
-  }
-
   const installStats = await fs.lstat(managedInstallDirectory);
   if (installStats.isSymbolicLink()) {
     throw new Error('managed Python installation directory must not be a symlink');
   }
 
+  // uv may report either the CLI-safe symlink path or its canonical target.
+  // Canonical containment is the security boundary for both forms.
   const installDirectory = await fs.realpath(managedInstallDirectory);
-  const executablePath = await fs.realpath(trimmedPath);
+  let executablePath: string;
+  try {
+    executablePath = await fs.realpath(trimmedPath);
+  } catch (error) {
+    const declaredExecutablePath = path.resolve(trimmedPath);
+    if (!isPathInside(managedInstallDirectory, declaredExecutablePath)) {
+      throw new Error('uv reported a Python executable outside the managed runtime directory');
+    }
+    throw error;
+  }
   if (!isPathInside(installDirectory, executablePath)) {
     throw new Error('uv reported a Python executable outside the managed runtime directory');
   }

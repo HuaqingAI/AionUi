@@ -5,7 +5,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { access, chmod, mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { access, chmod, mkdir, mkdtemp, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
@@ -20,6 +20,8 @@ import {
   getUvExecutablePathForDiagnostics,
   isUvBootstrapEnabled,
 } from '@process/startup/uvStartup';
+
+const HOST_PLATFORM = process.platform;
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -233,6 +235,56 @@ describe('managed uv bootstrap', () => {
     await expect(
       access(path.join(fixture.commandDirectory, process.platform === 'win32' ? 'python.exe' : 'python'))
     ).resolves.toBeUndefined();
+  });
+
+  it('accepts a managed Python installed through the macOS CLI-safe data symlink', async () => {
+    if (HOST_PLATFORM !== 'darwin') {
+      return;
+    }
+
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
+    vi.spyOn(process, 'arch', 'get').mockReturnValue('x64');
+
+    const realDataPath = await mkdtemp(path.join(tmpdir(), 'aionui-macos-runtime-'));
+    const symlinkParent = await mkdtemp(path.join(tmpdir(), 'aionui-macos-link-'));
+    const dataPath = path.join(symlinkParent, '.HQBuddy');
+    await symlink(realDataPath, dataPath, 'dir');
+
+    const uvPath = getUvExecutablePathForDiagnostics(dataPath);
+    const uvxPath = getUvExecutablePathForDiagnostics(dataPath, 'uvx');
+    const pythonPath = path.join(
+      realDataPath,
+      'runtime',
+      'uv-python',
+      'cpython-3.14.6-macos-x86_64-none',
+      'bin',
+      'python3.14'
+    );
+    await Promise.all([
+      mkdir(path.dirname(uvPath), { recursive: true }),
+      mkdir(path.dirname(pythonPath), { recursive: true }),
+      writeFile(uvPath, 'uv'),
+      writeFile(uvxPath, 'uvx'),
+      writeFile(pythonPath, 'python'),
+    ]);
+    await chmod(pythonPath, 0o755);
+
+    const env: NodeJS.ProcessEnv = { PATH: '' };
+    const commandRunner = vi.fn(async (file: string, args: string[]) => {
+      if (args[1] === 'find') {
+        return { stdout: pythonPath };
+      }
+      if (args[0] === '--version') {
+        return { stdout: file === pythonPath ? 'Python 3.14.6' : 'uv 0.11.31' };
+      }
+      throw new Error(`unexpected command: ${args.join(' ')}`);
+    });
+
+    const result = await ensureManagedPython({ commandRunner, dataPath, env });
+
+    expect(result).toEqual({ status: 'ready' });
+    addManagedUvBinsToPath(dataPath, env);
+    expect(env.PATH?.split(path.delimiter)).toContain(getManagedPythonCommandDirectory(dataPath));
   });
 
   it('installs Python when discovery reports no managed runtime', async () => {
