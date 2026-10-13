@@ -812,6 +812,54 @@
     "networkError": "به‌دلیل خطای شبکه، گزارش‌ها بارگذاری نشدند.",
     "serverError": "سرویس بارگذاری گزارش‌ها موقتاً در دسترس نیست."
   },
+  "runtimeDiagnostics": {
+    "title": "Runtime diagnostics",
+    "description": "Check the local CLI tools and managed runtimes required at startup.",
+    "summary": "{{total}} components, {{ready}} ready, {{repair}} need repair, {{unsupported}} unsupported.",
+    "checkAll": "Check all",
+    "repairUnavailable": "Repair unavailable",
+    "copySummary": "Copy summary",
+    "copied": "Diagnostic summary copied",
+    "copyFailed": "Failed to copy diagnostic summary",
+    "loadFailed": "Failed to load runtime diagnostics",
+    "checkFailed": "Runtime check failed",
+    "repairFailed": "Some components could not be repaired",
+    "noVersionOutput": "No version output yet",
+    "noPath": "No managed path",
+    "summaryTitle": "Runtime diagnostics",
+    "summaryAppVersion": "App version",
+    "summaryCheckedAt": "Checked at",
+    "summaryCommand": "Command",
+    "summaryOutput": "Output",
+    "summaryPath": "Path",
+    "summaryError": "Error",
+    "columns": {
+      "command": "Command",
+      "version": "Version",
+      "path": "Path",
+      "lastChecked": "Last checked"
+    },
+    "kind": {
+      "uv": "uv",
+      "python": "Python",
+      "managed-node-tool": "CLI"
+    },
+    "status": {
+      "unknown": "Not checked",
+      "checking": "Checking",
+      "installing": "Installing",
+      "ready": "Ready",
+      "missing": "Missing",
+      "broken": "Broken",
+      "unsupported": "Unsupported",
+      "skipped": "Skipped",
+      "failed": "Failed"
+    },
+    "actions": {
+      "check": "Check",
+      "repair": "Install/repair"
+    }
+  },
   "helpDocumentation": "مستندات راهنما",
   "updateLog": "تاریخچه به‌روزرسانی",
   "feedback": "بازخورد",
@@ -1216,8 +1264,8 @@
       "managed_runtime_unavailable": "{{resource}} را ترمیم یا دوباره نصب کنید، سپس آزمایش اتصال را دوباره انجام دهید.",
       "auth_required": "ایجنت در دسترس است اما نیاز به ورود دارد. از طریق CLI وارد شوید، یا کلید API لازم را در متغیرهای محیطی اضافه کنید، سپس آزمایش اتصال را دوباره انجام دهید.",
       "no_provider": "ارائه‌دهنده مدلی پیکربندی نشده است. یک ارائه‌دهنده را در تنظیمات اضافه و فعال کنید، سپس آزمایش اتصال را دوباره انجام دهید.",
-      "version_drift_older": "نسخهٔ نصب‌شدهٔ CLI قدیمی‌تر از نسخهٔ تأییدشده توسط AionUi است؛ ممکن است برخی قابلیت‌ها نباشند. ارتقا توصیه می‌شود.",
-      "version_drift_newer": "نسخهٔ نصب‌شدهٔ CLI جدیدتر از نسخهٔ تأییدشده توسط AionUi است. معمولاً کار می‌کند؛ رفتار غیرعادی را گزارش کنید."
+      "version_drift_older": "نسخهٔ نصب‌شدهٔ CLI قدیمی‌تر از نسخهٔ تأییدشده است؛ ممکن است برخی قابلیت‌ها نباشند. ارتقا توصیه می‌شود.",
+      "version_drift_newer": "نسخهٔ نصب‌شدهٔ CLI جدیدتر از نسخهٔ تأییدشده است. معمولاً کار می‌کند؛ رفتار غیرعادی را گزارش کنید."
     },
     "boundAssistantsTitle": "دستیارهای استفاده‌کننده از این ایجنت",
     "boundAssistantsCount": "{{count}} دستیار",

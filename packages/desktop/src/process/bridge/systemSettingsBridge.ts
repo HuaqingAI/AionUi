@@ -21,9 +21,22 @@ import { readCloseToTraySetting, writeCloseToTraySetting } from '@process/utils/
 import { DESKTOP_PET_FEATURE_ENABLED } from '@/common/config/constants';
 import { ensureManagedNodeEnvironmentMarker } from '@process/startup/opencodeStartup';
 import { ensureManagedPythonOnStartup, getLatestManagedPythonStatus } from '@process/startup/uvStartup';
+import { createRuntimeDiagnosticsService, type RuntimeDiagnosticsService } from '@process/services/runtime-diagnostics';
 
 type LanguageChangeListener = () => void;
 let _languageChangeListener: LanguageChangeListener | null = null;
+let runtimeDiagnosticsService: RuntimeDiagnosticsService | null = null;
+
+function getRuntimeDiagnosticsService(): RuntimeDiagnosticsService {
+  if (!runtimeDiagnosticsService) {
+    runtimeDiagnosticsService = createRuntimeDiagnosticsService({
+      dataPath: getSystemDir().workDir,
+      emitDiagnosticsStatus: ipcBridge.systemSettings.runtimeDiagnosticsStatusChanged.emit,
+      emitRuntimeStatus: ipcBridge.runtime.localStatusChanged.emit,
+    });
+  }
+  return runtimeDiagnosticsService;
+}
 
 /**
  * 注册语言变更监听器（供主进程 index.ts 使用）
@@ -136,4 +149,14 @@ export function initSystemSettingsBridge(): void {
   });
 
   ipcBridge.systemSettings.getManagedPythonRuntimeStatus.provider(() => getLatestManagedPythonStatus());
+
+  ipcBridge.systemSettings.runtimeDiagnosticsList.provider(() => getRuntimeDiagnosticsService().list());
+
+  ipcBridge.systemSettings.runtimeDiagnosticsProbe.provider((params = {}) =>
+    getRuntimeDiagnosticsService().probe(params.ids)
+  );
+
+  ipcBridge.systemSettings.runtimeDiagnosticsInstall.provider((params) =>
+    getRuntimeDiagnosticsService().install(params?.ids ?? [])
+  );
 }

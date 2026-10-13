@@ -812,6 +812,54 @@
     "networkError": "网络异常，无法上传日志。",
     "serverError": "日志上传服务暂时不可用。"
   },
+  "runtimeDiagnostics": {
+    "title": "运行时诊断",
+    "description": "检测启动所需的本地 CLI 工具和托管运行时。",
+    "summary": "共 {{total}} 个组件，{{ready}} 个可用，{{repair}} 个需要修复，{{unsupported}} 个不支持。",
+    "checkAll": "全部检测",
+    "repairUnavailable": "修复不可用项",
+    "copySummary": "复制诊断摘要",
+    "copied": "诊断摘要已复制",
+    "copyFailed": "复制诊断摘要失败",
+    "loadFailed": "加载运行时诊断失败",
+    "checkFailed": "运行时检测失败",
+    "repairFailed": "部分组件修复失败",
+    "noVersionOutput": "暂无版本输出",
+    "noPath": "暂无托管路径",
+    "summaryTitle": "运行时诊断",
+    "summaryAppVersion": "应用版本",
+    "summaryCheckedAt": "检测时间",
+    "summaryCommand": "命令",
+    "summaryOutput": "输出",
+    "summaryPath": "路径",
+    "summaryError": "错误",
+    "columns": {
+      "command": "命令",
+      "version": "版本",
+      "path": "路径",
+      "lastChecked": "最近检测"
+    },
+    "kind": {
+      "uv": "uv",
+      "python": "Python",
+      "managed-node-tool": "CLI"
+    },
+    "status": {
+      "unknown": "未检测",
+      "checking": "检测中",
+      "installing": "安装中",
+      "ready": "正常",
+      "missing": "缺失",
+      "broken": "异常",
+      "unsupported": "不支持",
+      "skipped": "已跳过",
+      "failed": "失败"
+    },
+    "actions": {
+      "check": "检测",
+      "repair": "安装/修复"
+    }
+  },
   "helpDocumentation": "帮助文档",
   "updateLog": "更新日志",
   "feedback": "意见反馈",
@@ -1219,8 +1267,8 @@
       "managed_runtime_unavailable": "请修复或重新安装 {{resource}}，然后重新测试连接。",
       "auth_required": "Agent 可连接，但需要先登录。请在 CLI 中登录，或在「环境变量」中补充所需的 API 密钥，然后重新测试连接。",
       "no_provider": "尚未配置模型供应商。请在设置中添加并启用一个供应商，然后重新测试连接。",
-      "version_drift_older": "已安装的 CLI 低于AionUi 验证过的版本，部分功能可能缺失。建议升级。",
-      "version_drift_newer": "已安装的 CLI 高于AionUi 验证过的版本。通常仍可正常使用；如遇异常行为请反馈。"
+      "version_drift_older": "已安装的 CLI 低于验证过的版本，部分功能可能缺失。建议升级。",
+      "version_drift_newer": "已安装的 CLI 高于验证过的版本。通常仍可正常使用；如遇异常行为请反馈。"
     },
     "boundAssistantsTitle": "绑定此 Agent 的助手",
     "boundAssistantsCount": "{{count}} 个助手",

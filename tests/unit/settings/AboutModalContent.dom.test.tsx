@@ -7,6 +7,7 @@
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { RuntimeDiagnosticItem, RuntimeDiagnosticStatus } from '@/common/adapter/ipcBridge';
 
 const mocks = vi.hoisted(() => ({
   quitAndInstallMock: vi.fn(),
@@ -17,6 +18,13 @@ const mocks = vi.hoisted(() => ({
   messageSuccessMock: vi.fn(),
   modalConfirmMock: vi.fn(),
   uploadClientLogsMock: vi.fn(),
+  runtimeDiagnosticsListMock: vi.fn(),
+  runtimeDiagnosticsProbeMock: vi.fn(),
+  runtimeDiagnosticsInstallMock: vi.fn(),
+  runtimeDiagnosticsStatusOnMock: vi.fn(),
+  runtimeLocalStatusOnMock: vi.fn(),
+  clipboardWriteTextMock: vi.fn(),
+  shellOpenFileMock: vi.fn(),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -65,6 +73,18 @@ vi.mock('@/common', () => ({
     hth: {
       uploadClientLogs: { invoke: mocks.uploadClientLogsMock },
     },
+    shell: {
+      openFile: { invoke: mocks.shellOpenFileMock },
+    },
+    runtime: {
+      localStatusChanged: { on: mocks.runtimeLocalStatusOnMock },
+    },
+    systemSettings: {
+      runtimeDiagnosticsList: { invoke: mocks.runtimeDiagnosticsListMock },
+      runtimeDiagnosticsProbe: { invoke: mocks.runtimeDiagnosticsProbeMock },
+      runtimeDiagnosticsInstall: { invoke: mocks.runtimeDiagnosticsInstallMock },
+      runtimeDiagnosticsStatusChanged: { on: mocks.runtimeDiagnosticsStatusOnMock },
+    },
   },
 }));
 
@@ -84,6 +104,75 @@ vi.mock('@/renderer/components/settings/SettingsModal/contents/FeedbackReportMod
 import AboutModalContent from '@/renderer/components/settings/SettingsModal/contents/AboutModalContent';
 import { setUpdateReadyState } from '@/renderer/components/settings/updateReadyState';
 
+function createDiagnosticItems(): RuntimeDiagnosticItem[] {
+  const toolItems: Array<{
+    args: string[];
+    command: string;
+    id: string;
+    label: string;
+    status: RuntimeDiagnosticStatus;
+  }> = [
+    { id: 'beisen-cli', label: 'Beisen CLI', command: 'beisen-cli', args: ['version'], status: 'ready' },
+    { id: 'codex', label: 'Codex', command: 'codex', args: ['--version'], status: 'broken' },
+    { id: 'dws', label: 'DingTalk DWS', command: 'dws', args: ['--version'], status: 'ready' },
+    { id: 'googleworkspace-cli', label: 'Google Workspace CLI', command: 'gws', args: ['--version'], status: 'ready' },
+    {
+      id: 'noxinfluencer-cli',
+      label: 'Noxinfluencer CLI',
+      command: 'noxinfluencer',
+      args: ['--version'],
+      status: 'ready',
+    },
+    { id: 'officecli', label: 'OfficeCLI', command: 'officecli', args: ['--version'], status: 'ready' },
+    { id: 'opencode', label: 'OpenCode', command: 'opencode', args: ['--version'], status: 'ready' },
+    { id: 'shopify-cli', label: 'Shopify CLI', command: 'shopify', args: ['--version'], status: 'ready' },
+    { id: 'ziniao-open', label: 'Ziniao Open', command: 'ziniao-cli', args: ['--version'], status: 'ready' },
+  ];
+
+  return [
+    {
+      args: ['--version'],
+      command: 'uv',
+      expectedPath: 'C:\\AionUi\\runtime\\uv\\uv.exe',
+      id: 'uv',
+      installable: true,
+      kind: 'uv',
+      label: 'uv',
+      lastCheckedAt: 1_800_000_000_000,
+      resolvedPath: 'C:\\AionUi\\runtime\\uv\\uv.exe',
+      status: 'ready',
+      versionOutput: 'uv 0.11.31',
+    },
+    {
+      args: ['--version'],
+      command: 'python',
+      expectedPath: 'C:\\AionUi\\runtime\\uv-python-bin\\python.exe',
+      id: 'python',
+      installable: true,
+      kind: 'python',
+      label: 'Python 3.14',
+      status: 'ready',
+      versionOutput: 'Python 3.14.0',
+    },
+    ...toolItems.map(({ args, command, id, label, status }) => ({
+      args,
+      command,
+      expectedPath: `C:\\AionUi\\runtime\\npm-global\\${id}\\${command}.cmd`,
+      id,
+      installable: true,
+      kind: 'managed-node-tool',
+      label,
+      status,
+      versionOutput: status === 'ready' ? `${command} 1.0.0` : undefined,
+      error: status === 'broken' ? 'version command failed' : undefined,
+    })),
+  ];
+}
+
+function expandRuntimeDiagnostics() {
+  fireEvent.click(screen.getByText('settings.runtimeDiagnostics.title'));
+}
+
 describe('AboutModalContent update ready state', () => {
   beforeEach(() => {
     vi.stubGlobal('__APP_VERSION__', '2.1.13');
@@ -98,6 +187,29 @@ describe('AboutModalContent update ready state', () => {
       date: '2026-09-10',
       fileCount: 2,
       totalBytes: 268_560,
+    });
+    mocks.runtimeDiagnosticsStatusOnMock.mockReturnValue(() => {});
+    mocks.runtimeLocalStatusOnMock.mockReturnValue(() => {});
+    mocks.runtimeDiagnosticsListMock.mockResolvedValue(createDiagnosticItems());
+    mocks.runtimeDiagnosticsProbeMock.mockResolvedValue(createDiagnosticItems());
+    mocks.runtimeDiagnosticsInstallMock.mockResolvedValue({
+      failedIds: [],
+      items: createDiagnosticItems().map((item) => {
+        if (item.id !== 'codex') {
+          return item;
+        }
+        return Object.assign({}, item, {
+          error: undefined,
+          status: 'ready' as const,
+          versionOutput: 'codex 0.151.0',
+        });
+      }),
+    });
+    mocks.clipboardWriteTextMock.mockResolvedValue(undefined);
+    Object.defineProperty(window, 'isSecureContext', { configurable: true, value: true });
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: mocks.clipboardWriteTextMock },
     });
   });
 
@@ -244,5 +356,59 @@ describe('AboutModalContent update ready state', () => {
 
     expect(mocks.uploadClientLogsMock).toHaveBeenCalledWith({ date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) });
     expect(mocks.messageSuccessMock).toHaveBeenCalledWith('settings.clientLogUpload.success:262.3 KB');
+  });
+
+  it('keeps runtime diagnostics collapsed until the user expands it', async () => {
+    render(<AboutModalContent />);
+
+    expect(screen.getByText('settings.runtimeDiagnostics.title')).toBeInTheDocument();
+    expect(mocks.runtimeDiagnosticsListMock).not.toHaveBeenCalled();
+    expect(mocks.runtimeDiagnosticsProbeMock).not.toHaveBeenCalled();
+    expect(screen.queryByText('uv 0.11.31')).not.toBeInTheDocument();
+
+    expandRuntimeDiagnostics();
+
+    await waitFor(() => {
+      expect(mocks.runtimeDiagnosticsListMock).toHaveBeenCalledTimes(1);
+      expect(mocks.runtimeDiagnosticsProbeMock).toHaveBeenCalledWith({
+        ids: expect.arrayContaining(['uv', 'python', 'codex', 'ziniao-open']),
+      });
+    });
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'settings.runtimeDiagnostics.checkAll' })).not.toBeDisabled();
+    });
+    expect(screen.getByText('uv 0.11.31')).toBeInTheDocument();
+    expect(screen.getByText('version command failed')).toBeInTheDocument();
+  });
+
+  it('repairs unavailable runtime diagnostic items', async () => {
+    render(<AboutModalContent />);
+    expandRuntimeDiagnostics();
+
+    const repairButton = await screen.findByRole('button', { name: 'settings.runtimeDiagnostics.repairUnavailable' });
+    await waitFor(() => {
+      expect(repairButton).not.toBeDisabled();
+    });
+    fireEvent.click(repairButton);
+
+    await waitFor(() => {
+      expect(mocks.runtimeDiagnosticsInstallMock).toHaveBeenCalledWith({ ids: ['codex'] });
+    });
+  });
+
+  it('copies the runtime diagnostic summary', async () => {
+    render(<AboutModalContent />);
+    expandRuntimeDiagnostics();
+
+    const copyButton = await screen.findByRole('button', { name: 'settings.runtimeDiagnostics.copySummary' });
+    await waitFor(() => {
+      expect(copyButton).not.toBeDisabled();
+    });
+    fireEvent.click(copyButton);
+
+    await waitFor(() => {
+      expect(mocks.clipboardWriteTextMock).toHaveBeenCalledWith(expect.stringContaining('uv'));
+      expect(mocks.messageSuccessMock).toHaveBeenCalledWith('settings.runtimeDiagnostics.copied');
+    });
   });
 });

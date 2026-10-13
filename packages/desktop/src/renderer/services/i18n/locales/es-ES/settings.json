@@ -800,6 +800,54 @@
     "networkError": "No se pudieron subir los registros debido a un error de red.",
     "serverError": "El servicio de subida de registros no está disponible temporalmente."
   },
+  "runtimeDiagnostics": {
+    "title": "Runtime diagnostics",
+    "description": "Check the local CLI tools and managed runtimes required at startup.",
+    "summary": "{{total}} components, {{ready}} ready, {{repair}} need repair, {{unsupported}} unsupported.",
+    "checkAll": "Check all",
+    "repairUnavailable": "Repair unavailable",
+    "copySummary": "Copy summary",
+    "copied": "Diagnostic summary copied",
+    "copyFailed": "Failed to copy diagnostic summary",
+    "loadFailed": "Failed to load runtime diagnostics",
+    "checkFailed": "Runtime check failed",
+    "repairFailed": "Some components could not be repaired",
+    "noVersionOutput": "No version output yet",
+    "noPath": "No managed path",
+    "summaryTitle": "Runtime diagnostics",
+    "summaryAppVersion": "App version",
+    "summaryCheckedAt": "Checked at",
+    "summaryCommand": "Command",
+    "summaryOutput": "Output",
+    "summaryPath": "Path",
+    "summaryError": "Error",
+    "columns": {
+      "command": "Command",
+      "version": "Version",
+      "path": "Path",
+      "lastChecked": "Last checked"
+    },
+    "kind": {
+      "uv": "uv",
+      "python": "Python",
+      "managed-node-tool": "CLI"
+    },
+    "status": {
+      "unknown": "Not checked",
+      "checking": "Checking",
+      "installing": "Installing",
+      "ready": "Ready",
+      "missing": "Missing",
+      "broken": "Broken",
+      "unsupported": "Unsupported",
+      "skipped": "Skipped",
+      "failed": "Failed"
+    },
+    "actions": {
+      "check": "Check",
+      "repair": "Install/repair"
+    }
+  },
   "helpDocumentation": "Documentación de ayuda",
   "updateLog": "Registro de actualizaciones",
   "feedback": "Comentarios",
@@ -1204,8 +1252,8 @@
       "managed_runtime_unavailable": "Repair or reinstall {{resource}}, then retry the connection test.",
       "auth_required": "The agent is reachable but requires sign-in. Log in via the CLI, or add the required API key under Environment Variables, then retry the connection test.",
       "no_provider": "No model provider is configured. Add and enable a provider in Settings, then retry the connection test.",
-      "version_drift_older": "La CLI instalada es anterior a la versión verificada por AionUi; puede que falten funciones. Se recomienda actualizarla.",
-      "version_drift_newer": "La CLI instalada es posterior a la versión verificada por AionUi. Debería seguir funcionando; informa de cualquier comportamiento extraño."
+      "version_drift_older": "La CLI instalada es anterior a la versión verificada; puede que falten funciones. Se recomienda actualizarla.",
+      "version_drift_newer": "La CLI instalada es posterior a la versión verificada. Debería seguir funcionando; informa de cualquier comportamiento extraño."
     },
     "boundAssistantsTitle": "Assistants using this agent",
     "boundAssistantsCount": "{{count}} assistant(s)",

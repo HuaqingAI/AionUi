@@ -334,6 +334,34 @@ const STARTUP_TOOLS = [
   ZINIAO_OPEN_TOOL,
 ] as const;
 
+export type ManagedStartupToolId = ManagedAcpTool['toolId'];
+
+export type ManagedStartupToolPublicDefinition = {
+  commandName: string;
+  displayName: string;
+  packageName: string;
+  packageSpec?: string;
+  requiredVersion?: string;
+  toolId: ManagedStartupToolId;
+  versionArgs: readonly string[];
+};
+
+function getStartupToolById(toolId: string): ManagedAcpTool | null {
+  return STARTUP_TOOLS.find((tool) => tool.toolId === toolId) ?? null;
+}
+
+export function getManagedStartupToolsForDiagnostics(): readonly ManagedStartupToolPublicDefinition[] {
+  return STARTUP_TOOLS.map((tool) => ({
+    commandName: tool.commandName,
+    displayName: tool.displayName,
+    packageName: tool.packageName,
+    ...(tool.packageSpec ? { packageSpec: tool.packageSpec } : {}),
+    ...(tool.toolId === CODEX_TOOL_ID ? { requiredVersion: CODEX_PACKAGE_VERSION } : {}),
+    toolId: tool.toolId,
+    versionArgs: tool.versionArgs,
+  }));
+}
+
 const execFileAsync = promisify(execFile);
 
 let startupPromise: Promise<OpenCodeBootstrapResult> | null = null;
@@ -483,6 +511,35 @@ function findManagedNodeExecutableSync(dataPath = getDataPath()): string | null 
   return candidates.find((candidate) => existsSync(candidate)) ?? null;
 }
 
+export function buildManagedStartupToolEnvForDiagnostics(
+  toolId: ManagedStartupToolId,
+  dataPath = getDataPath(),
+  env: NodeJS.ProcessEnv = process.env
+): NodeJS.ProcessEnv | null {
+  const tool = getStartupToolById(toolId);
+  if (!tool) {
+    return null;
+  }
+
+  const nodeExecutable = findManagedNodeExecutableSync(dataPath);
+  const pathEntries = [
+    getManagedToolGlobalBinDir(tool, dataPath),
+    nodeExecutable ? path.dirname(nodeExecutable) : null,
+    env.PATH ?? env.Path ?? '',
+  ].filter((entry): entry is string => Boolean(entry));
+  const commandEnv: NodeJS.ProcessEnv = {
+    ...env,
+    PATH: pathEntries.join(path.delimiter),
+  };
+  if (tool.toolId === OPENCODE_TOOL_ID) {
+    commandEnv.OPENCODE_CONFIG_DIR = getOpenCodeConfigDir(dataPath);
+  }
+  if (process.platform === 'win32') {
+    commandEnv.Path = commandEnv.PATH;
+  }
+  return commandEnv;
+}
+
 function addManagedNodeBinToPath(dataPath = getDataPath(), env: NodeJS.ProcessEnv = process.env): string | null {
   const nodeExecutable = findManagedNodeExecutableSync(dataPath);
   if (!nodeExecutable) {
@@ -567,11 +624,27 @@ function getManagedToolCommandPath(tool: ManagedAcpTool, dataPath = getDataPath(
   return path.join(binDir, process.platform === 'win32' ? `${tool.commandName}.cmd` : tool.commandName);
 }
 
+export function getManagedStartupToolCommandPathForDiagnostics(
+  toolId: ManagedStartupToolId,
+  dataPath = getDataPath()
+): string | null {
+  const tool = getStartupToolById(toolId);
+  return tool ? getManagedToolCommandPath(tool, dataPath) : null;
+}
+
 function getManagedToolPackageRoot(tool: ManagedAcpTool, dataPath = getDataPath()): string {
   const prefix = getManagedToolNpmPrefix(tool, dataPath);
   return process.platform === 'win32'
     ? path.join(prefix, 'node_modules', tool.packageName)
     : path.join(prefix, 'lib', 'node_modules', tool.packageName);
+}
+
+export function getManagedStartupToolPackageRootForDiagnostics(
+  toolId: ManagedStartupToolId,
+  dataPath = getDataPath()
+): string | null {
+  const tool = getStartupToolById(toolId);
+  return tool ? getManagedToolPackageRoot(tool, dataPath) : null;
 }
 
 async function pathExists(filePath: string): Promise<boolean> {
@@ -591,6 +664,14 @@ async function readManagedToolPackageVersion(tool: ManagedAcpTool, dataPath = ge
   } catch {
     return null;
   }
+}
+
+export async function readManagedStartupToolPackageVersionForDiagnostics(
+  toolId: ManagedStartupToolId,
+  dataPath = getDataPath()
+): Promise<string | null> {
+  const tool = getStartupToolById(toolId);
+  return tool ? readManagedToolPackageVersion(tool, dataPath) : null;
 }
 
 async function findManagedNodeExecutable(dataPath = getDataPath()): Promise<string | null> {
@@ -746,6 +827,17 @@ function getCommandInvocation(
     // Node escapes the embedded quotes while spawning cmd.exe on Windows.
     windowsVerbatimArguments: true,
   };
+}
+
+export function getManagedStartupToolCommandInvocationForDiagnostics(
+  file: string,
+  args: string[]
+): {
+  file: string;
+  args: string[];
+  windowsVerbatimArguments?: boolean;
+} {
+  return getCommandInvocation(file, args);
 }
 
 function commandResultHasOutput(result: { stderr?: string; stdout?: string }): boolean {
@@ -1231,6 +1323,17 @@ function getDwsBinaryPath(prefix: string): string {
   return path.join(getDwsPackageRoot(prefix), 'vendor', process.platform === 'win32' ? 'dws.exe' : 'dws');
 }
 
+export function getManagedStartupToolDwsBinaryPathForDiagnostics(
+  toolId: ManagedStartupToolId,
+  dataPath = getDataPath()
+): string | null {
+  const tool = getStartupToolById(toolId);
+  if (!tool || tool.toolId !== DWS_TOOL_ID) {
+    return null;
+  }
+  return getDwsBinaryPath(getManagedToolNpmPrefix(tool, dataPath));
+}
+
 function getDwsArchiveName(): string {
   const archiveName = DWS_PLATFORM_ARCHIVES[`${process.platform}-${process.arch}`];
   if (!archiveName) {
@@ -1608,6 +1711,20 @@ export function ensureShopifyCliReady(options: EnsureOpenCodeReadyOptions = {}):
 
 export function ensureZiniaoOpenReady(options: EnsureOpenCodeReadyOptions = {}): Promise<OpenCodeBootstrapResult> {
   return ensureManagedToolReady(ZINIAO_OPEN_TOOL, options);
+}
+
+export function ensureManagedStartupToolReadyForDiagnostics(
+  toolId: ManagedStartupToolId,
+  options: EnsureOpenCodeReadyOptions = {}
+): Promise<OpenCodeBootstrapResult> {
+  const tool = getStartupToolById(toolId);
+  if (!tool) {
+    return Promise.resolve({
+      status: 'failed',
+      error: `unknown managed startup tool: ${toolId}`,
+    });
+  }
+  return ensureManagedToolReady(tool, options);
 }
 
 export function ensureOpenCodeReadyOnce(options: EnsureOpenCodeReadyOptions = {}): Promise<OpenCodeBootstrapResult> {

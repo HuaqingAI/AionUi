@@ -28,6 +28,9 @@ import {
   ensureCodexReadyOnStartup,
   ensureDwsReady,
   ensureGoogleWorkspaceCliReady,
+  getManagedStartupToolCommandPathForDiagnostics,
+  getManagedStartupToolPackageRootForDiagnostics,
+  getManagedStartupToolsForDiagnostics,
   ensureNoxinfluencerCliReady,
   ensureOfficeCliReady,
   ensureOpenCodeReady,
@@ -444,6 +447,40 @@ describe('opencode startup bootstrap', () => {
     for (const command of ['codex', 'dws', 'gws', 'noxinfluencer', 'officecli', 'opencode', 'shopify', 'ziniao-cli']) {
       expect(commandLines.some((line) => line.includes(command) && line.includes('--version'))).toBe(true);
     }
+  });
+
+  it('exposes startup tool definitions and managed paths for diagnostics', async () => {
+    const fixture = await createManagedNodeFixture();
+
+    const definitions = getManagedStartupToolsForDiagnostics();
+
+    expect(definitions.map((definition) => definition.toolId)).toEqual([
+      'opencode',
+      'beisen-cli',
+      'codex',
+      'dws',
+      'googleworkspace-cli',
+      'noxinfluencer-cli',
+      'officecli',
+      'shopify-cli',
+      'ziniao-open',
+    ]);
+    expect(definitions.find((definition) => definition.toolId === 'beisen-cli')?.versionArgs).toEqual(['version']);
+    expect(definitions.find((definition) => definition.toolId === 'codex')).toEqual(
+      expect.objectContaining({
+        packageSpec: '@openai/codex@0.151.0',
+        requiredVersion: '0.151.0',
+      })
+    );
+    expect(getManagedStartupToolCommandPathForDiagnostics('codex', fixture.dataPath)).toBe(fixture.codexCommandPath);
+    expect(getManagedStartupToolPackageRootForDiagnostics('codex', fixture.dataPath)).toBe(
+      path.join(
+        fixture.codexPrefix,
+        process.platform === 'win32' ? 'node_modules' : 'lib/node_modules',
+        '@openai',
+        'codex'
+      )
+    );
   });
 
   it('waits for a successful managed node -v probe before installing a CLI', async () => {

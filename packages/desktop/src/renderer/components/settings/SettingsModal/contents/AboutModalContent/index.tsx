@@ -9,7 +9,7 @@ import dayjs, { type Dayjs } from 'dayjs';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import classNames from 'classnames';
-import { useSettingsViewMode } from '../settingsViewContext';
+import { useSettingsViewMode } from '../../settingsViewContext';
 import { isElectronDesktop } from '@/renderer/utils/platform';
 import { ipcBridge } from '@/common';
 import { formatByteSize } from '@/renderer/services/i18n/format';
@@ -21,6 +21,7 @@ import {
   subscribeUpdateReadyState,
   type UpdateReadyState,
 } from '@/renderer/components/settings/updateReadyState';
+import CliRuntimeDiagnostics from './CliRuntimeDiagnostics';
 
 // __APP_VERSION__ is injected by electron.vite.config.ts `define:` from the
 // repo-root package.json. The previous `import packageJson from
@@ -137,7 +138,7 @@ const AboutModalContent: React.FC = () => {
           isPageMode && 'px-0 overflow-visible'
         )}
       >
-        <div className='flex flex-col max-w-500px mx-auto'>
+        <div className='flex flex-col max-w-900px mx-auto'>
           {/* App Info Section */}
           <div className='flex flex-col items-center pb-24px'>
             <Typography.Title heading={3} className='text-24px font-bold text-t-primary mb-8px'>
@@ -154,8 +155,8 @@ const AboutModalContent: React.FC = () => {
 
             {/* Check Update Section */}
             {isElectron && (
-              <div className='flex flex-col items-center gap-12px w-full max-w-300px'>
-                <div className='w-full bg-fill-2 p-16px rounded-lg'>
+              <div className='flex flex-col items-center gap-16px w-full'>
+                <div className='w-full max-w-300px bg-fill-2 p-16px rounded-lg'>
                   <Button
                     type='primary'
                     long
@@ -172,7 +173,7 @@ const AboutModalContent: React.FC = () => {
                           : t('settings.checkForUpdates')}
                   </Button>
                 </div>
-                <div className='flex flex-col gap-8px w-full pt-12px border-t border-b-base'>
+                <div className='flex flex-col gap-8px w-full max-w-300px pt-12px border-t border-b-base'>
                   <Typography.Text className='text-14px text-t-primary'>
                     {t('settings.clientLogUpload.title')}
                   </Typography.Text>
@@ -193,6 +194,7 @@ const AboutModalContent: React.FC = () => {
                     {t('settings.clientLogUpload.action')}
                   </Button>
                 </div>
+                <CliRuntimeDiagnostics appVersion={__APP_VERSION__} />
               </div>
             )}
           </div>

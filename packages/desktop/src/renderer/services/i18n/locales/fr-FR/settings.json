@@ -812,6 +812,54 @@
     "networkError": "Les journaux n'ont pas pu être envoyés à cause d'une erreur réseau.",
     "serverError": "Le service d'envoi des journaux est temporairement indisponible."
   },
+  "runtimeDiagnostics": {
+    "title": "Runtime diagnostics",
+    "description": "Check the local CLI tools and managed runtimes required at startup.",
+    "summary": "{{total}} components, {{ready}} ready, {{repair}} need repair, {{unsupported}} unsupported.",
+    "checkAll": "Check all",
+    "repairUnavailable": "Repair unavailable",
+    "copySummary": "Copy summary",
+    "copied": "Diagnostic summary copied",
+    "copyFailed": "Failed to copy diagnostic summary",
+    "loadFailed": "Failed to load runtime diagnostics",
+    "checkFailed": "Runtime check failed",
+    "repairFailed": "Some components could not be repaired",
+    "noVersionOutput": "No version output yet",
+    "noPath": "No managed path",
+    "summaryTitle": "Runtime diagnostics",
+    "summaryAppVersion": "App version",
+    "summaryCheckedAt": "Checked at",
+    "summaryCommand": "Command",
+    "summaryOutput": "Output",
+    "summaryPath": "Path",
+    "summaryError": "Error",
+    "columns": {
+      "command": "Command",
+      "version": "Version",
+      "path": "Path",
+      "lastChecked": "Last checked"
+    },
+    "kind": {
+      "uv": "uv",
+      "python": "Python",
+      "managed-node-tool": "CLI"
+    },
+    "status": {
+      "unknown": "Not checked",
+      "checking": "Checking",
+      "installing": "Installing",
+      "ready": "Ready",
+      "missing": "Missing",
+      "broken": "Broken",
+      "unsupported": "Unsupported",
+      "skipped": "Skipped",
+      "failed": "Failed"
+    },
+    "actions": {
+      "check": "Check",
+      "repair": "Install/repair"
+    }
+  },
   "helpDocumentation": "Documentation d'aide",
   "updateLog": "Journal des mises à jour",
   "feedback": "Retour d'expérience",
@@ -1216,8 +1264,8 @@
       "managed_runtime_unavailable": "Réparez ou réinstallez {{resource}}, puis réessayez le test de connexion.",
       "auth_required": "L'agent est joignable mais nécessite une connexion. Connectez-vous via la CLI ou ajoutez la clé API requise sous Variables d'environnement, puis réessayez le test de connexion.",
       "no_provider": "Aucun fournisseur de modèles n'est configuré. Ajoutez et activez un fournisseur dans Paramètres, puis réessayez le test de connexion.",
-      "version_drift_older": "La CLI installée est antérieure à la version validée par AionUi ; certaines fonctionnalités peuvent manquer. Une mise à jour est conseillée.",
-      "version_drift_newer": "La CLI installée est postérieure à la version validée par AionUi. Cela devrait fonctionner ; signalez tout comportement anormal."
+      "version_drift_older": "La CLI installée est antérieure à la version validée ; certaines fonctionnalités peuvent manquer. Une mise à jour est conseillée.",
+      "version_drift_newer": "La CLI installée est postérieure à la version validée. Cela devrait fonctionner ; signalez tout comportement anormal."
     },
     "boundAssistantsTitle": "Assistants utilisant cet agent",
     "boundAssistantsCount": "{{count}} assistant(s)",

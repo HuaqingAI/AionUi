@@ -647,6 +647,52 @@ export type IManagedPythonBootstrapResult = {
   error?: string;
 };
 
+export type RuntimeDiagnosticKind = 'uv' | 'python' | 'managed-node-tool';
+export type RuntimeDiagnosticStatus =
+  | 'unknown'
+  | 'checking'
+  | 'installing'
+  | 'ready'
+  | 'missing'
+  | 'broken'
+  | 'unsupported'
+  | 'skipped'
+  | 'failed';
+
+export type RuntimeDiagnosticItem = {
+  args: string[];
+  command: string;
+  durationMs?: number;
+  error?: string;
+  expectedPath?: string;
+  guidance?: string;
+  id: string;
+  installable: boolean;
+  kind: RuntimeDiagnosticKind;
+  label: string;
+  lastCheckedAt?: number;
+  lastInstalledAt?: number;
+  packageName?: string;
+  packageSpec?: string;
+  requiredVersion?: string;
+  resolvedPath?: string;
+  status: RuntimeDiagnosticStatus;
+  versionOutput?: string;
+};
+
+export type RuntimeDiagnosticProbeRequest = {
+  ids?: string[];
+};
+
+export type RuntimeDiagnosticInstallRequest = {
+  ids: string[];
+};
+
+export type RuntimeDiagnosticBatchInstallResult = {
+  failedIds: string[];
+  items: RuntimeDiagnosticItem[];
+};
+
 export interface IStartOnBootStatus {
   supported: boolean;
   enabled: boolean;
@@ -1593,6 +1639,18 @@ export const systemSettings = {
   ),
   getManagedPythonRuntimeStatus: bridge.buildProvider<IRuntimeStatusEvent | null, void>(
     'system-settings:get-managed-python-runtime-status'
+  ),
+  runtimeDiagnosticsList: bridge.buildProvider<RuntimeDiagnosticItem[], void>(
+    'system-settings:runtime-diagnostics-list'
+  ),
+  runtimeDiagnosticsProbe: bridge.buildProvider<RuntimeDiagnosticItem[], RuntimeDiagnosticProbeRequest>(
+    'system-settings:runtime-diagnostics-probe'
+  ),
+  runtimeDiagnosticsInstall: bridge.buildProvider<RuntimeDiagnosticBatchInstallResult, RuntimeDiagnosticInstallRequest>(
+    'system-settings:runtime-diagnostics-install'
+  ),
+  runtimeDiagnosticsStatusChanged: bridge.buildEmitter<RuntimeDiagnosticItem>(
+    'system-settings:runtime-diagnostics-status-changed'
   ),
   ensureNodeRuntime: httpPost<{ ready: boolean }, { scope: IRuntimeStatusScope }>('/api/system/ensure-node-runtime'),
 };

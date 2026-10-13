@@ -800,6 +800,54 @@
     "networkError": "Ağ hatası nedeniyle günlükler yüklenemedi.",
     "serverError": "Günlük yükleme hizmeti geçici olarak kullanılamıyor."
   },
+  "runtimeDiagnostics": {
+    "title": "Runtime diagnostics",
+    "description": "Check the local CLI tools and managed runtimes required at startup.",
+    "summary": "{{total}} components, {{ready}} ready, {{repair}} need repair, {{unsupported}} unsupported.",
+    "checkAll": "Check all",
+    "repairUnavailable": "Repair unavailable",
+    "copySummary": "Copy summary",
+    "copied": "Diagnostic summary copied",
+    "copyFailed": "Failed to copy diagnostic summary",
+    "loadFailed": "Failed to load runtime diagnostics",
+    "checkFailed": "Runtime check failed",
+    "repairFailed": "Some components could not be repaired",
+    "noVersionOutput": "No version output yet",
+    "noPath": "No managed path",
+    "summaryTitle": "Runtime diagnostics",
+    "summaryAppVersion": "App version",
+    "summaryCheckedAt": "Checked at",
+    "summaryCommand": "Command",
+    "summaryOutput": "Output",
+    "summaryPath": "Path",
+    "summaryError": "Error",
+    "columns": {
+      "command": "Command",
+      "version": "Version",
+      "path": "Path",
+      "lastChecked": "Last checked"
+    },
+    "kind": {
+      "uv": "uv",
+      "python": "Python",
+      "managed-node-tool": "CLI"
+    },
+    "status": {
+      "unknown": "Not checked",
+      "checking": "Checking",
+      "installing": "Installing",
+      "ready": "Ready",
+      "missing": "Missing",
+      "broken": "Broken",
+      "unsupported": "Unsupported",
+      "skipped": "Skipped",
+      "failed": "Failed"
+    },
+    "actions": {
+      "check": "Check",
+      "repair": "Install/repair"
+    }
+  },
   "helpDocumentation": "Yardım Dokümantasyonu",
   "updateLog": "Güncelleme Günlüğü",
   "feedback": "Geri Bildirim",
@@ -1204,8 +1252,8 @@
       "managed_runtime_unavailable": "Repair or reinstall {{resource}}, then retry the connection test.",
       "auth_required": "Aracıya erişilebilir ancak oturum açılması gerekiyor. CLI üzerinden giriş yapın veya gerekli API anahtarını Ortam Değişkenleri altına ekleyin, ardından bağlantı testini yeniden deneyin.",
       "no_provider": "Yapılandırılmış bir model sağlayıcısı yok. Ayarlar'da bir sağlayıcı ekleyip etkinleştirin, ardından bağlantı testini yeniden deneyin.",
-      "version_drift_older": "Kurulu CLI, AionUi tarafından doğrulanan sürümden eski; bazı özellikler eksik olabilir. Yükseltmeyi düşünün.",
-      "version_drift_newer": "Kurulu CLI, AionUi tarafından doğrulanan sürümden yeni. Genelde çalışır; tuhaf bir davranış görürseniz bildirin."
+      "version_drift_older": "Kurulu CLI doğrulanmış sürümden eski; bazı özellikler eksik olabilir. Yükseltmeyi düşünün.",
+      "version_drift_newer": "Kurulu CLI doğrulanmış sürümden yeni. Genelde çalışır; tuhaf bir davranış görürseniz bildirin."
     },
     "boundAssistantsTitle": "Bu ajanı kullanan asistanlar",
     "boundAssistantsCount": "{{count}} asistan",

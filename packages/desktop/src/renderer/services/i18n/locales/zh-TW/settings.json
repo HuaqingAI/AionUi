@@ -812,6 +812,54 @@
     "networkError": "網路錯誤，無法上傳日誌。",
     "serverError": "日誌上傳服務暫時無法使用。"
   },
+  "runtimeDiagnostics": {
+    "title": "執行階段診斷",
+    "description": "檢測啟動所需的本機 CLI 工具和託管執行階段。",
+    "summary": "共 {{total}} 個元件，{{ready}} 個可用，{{repair}} 個需要修復，{{unsupported}} 個不支援。",
+    "checkAll": "全部檢測",
+    "repairUnavailable": "修復不可用項目",
+    "copySummary": "複製診斷摘要",
+    "copied": "診斷摘要已複製",
+    "copyFailed": "複製診斷摘要失敗",
+    "loadFailed": "載入執行階段診斷失敗",
+    "checkFailed": "執行階段檢測失敗",
+    "repairFailed": "部分元件修復失敗",
+    "noVersionOutput": "暫無版本輸出",
+    "noPath": "暫無託管路徑",
+    "summaryTitle": "執行階段診斷",
+    "summaryAppVersion": "應用程式版本",
+    "summaryCheckedAt": "檢測時間",
+    "summaryCommand": "命令",
+    "summaryOutput": "輸出",
+    "summaryPath": "路徑",
+    "summaryError": "錯誤",
+    "columns": {
+      "command": "命令",
+      "version": "版本",
+      "path": "路徑",
+      "lastChecked": "最近檢測"
+    },
+    "kind": {
+      "uv": "uv",
+      "python": "Python",
+      "managed-node-tool": "CLI"
+    },
+    "status": {
+      "unknown": "未檢測",
+      "checking": "檢測中",
+      "installing": "安裝中",
+      "ready": "正常",
+      "missing": "缺失",
+      "broken": "異常",
+      "unsupported": "不支援",
+      "skipped": "已略過",
+      "failed": "失敗"
+    },
+    "actions": {
+      "check": "檢測",
+      "repair": "安裝/修復"
+    }
+  },
   "helpDocumentation": "幫助文檔",
   "updateLog": "更新日誌",
   "feedback": "意見反饋",
@@ -1220,8 +1268,8 @@
       "managed_runtime_unavailable": "請修復或重新安裝 {{resource}}，然後重新測試連線。",
       "auth_required": "Agent 可連線，但需要先登入。請在 CLI 中登入，或在「環境變數」中補充所需的 API 金鑰，然後重新測試連線。",
       "no_provider": "尚未設定模型供應商。請在設定中新增並啟用一個供應商，然後重新測試連線。",
-      "version_drift_older": "已安裝的 CLI 低於AionUi 驗證過的版本，部分功能可能缺失。建議升級。",
-      "version_drift_newer": "已安裝的 CLI 高於AionUi 驗證過的版本。通常仍可正常使用；如遇異常行為請回報。"
+      "version_drift_older": "已安裝的 CLI 低於驗證過的版本，部分功能可能缺失。建議升級。",
+      "version_drift_newer": "已安裝的 CLI 高於驗證過的版本。通常仍可正常使用；如遇異常行為請回報。"
     },
     "boundAssistantsTitle": "綁定此 Agent 的助手",
     "boundAssistantsCount": "{{count}} 個助手",

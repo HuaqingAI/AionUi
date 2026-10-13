@@ -147,6 +147,18 @@ function getUvExecutablePath(dataPath = getDataPath(), command: 'uv' | 'uvx' = '
   return path.join(getUvRuntimeDirectory(dataPath), `${command}${getUvTarget().executableExtension}`);
 }
 
+export function getUvExecutablePathForDiagnostics(dataPath = getDataPath(), command: 'uv' | 'uvx' = 'uv'): string {
+  return getUvExecutablePath(dataPath, command);
+}
+
+export function getManagedPythonInstallDirectoryForDiagnostics(dataPath = getDataPath()): string {
+  return getManagedPythonInstallDirectory(dataPath);
+}
+
+export function getManagedPythonCommandPathForDiagnostics(dataPath = getDataPath()): string {
+  return path.join(getManagedPythonCommandDirectory(dataPath), process.platform === 'win32' ? 'python.exe' : 'python');
+}
+
 async function pathExists(filePath: string): Promise<boolean> {
   try {
     await fs.access(filePath);
@@ -196,6 +208,10 @@ function isManagedPythonCommandDirectorySafe(dataPath: string): boolean {
   } catch (error) {
     return (error as NodeJS.ErrnoException).code === 'ENOENT';
   }
+}
+
+export function isManagedPythonCommandDirectorySafeForDiagnostics(dataPath = getDataPath()): boolean {
+  return isManagedPythonCommandDirectorySafe(dataPath);
 }
 
 export function addManagedUvBinsToPath(dataPath = getDataPath(), env: NodeJS.ProcessEnv = process.env): void {
@@ -378,6 +394,23 @@ async function findManagedPython(
     throw new ManagedPythonFindCommandError(error);
   }
   return validateManagedPythonExecutable(dataPath, result.stdout ?? '', env, commandRunner);
+}
+
+export async function findManagedPythonForDiagnostics(
+  dataPath = getDataPath(),
+  env: NodeJS.ProcessEnv = process.env,
+  commandRunner: ManagedPythonCommandRunner = runCommand
+): Promise<{ executablePath: string; versionOutput: string }> {
+  const executablePath = await findManagedPython(dataPath, env, commandRunner);
+  const versionResult = await commandRunner(executablePath, ['--version'], {
+    cwd: dataPath,
+    env,
+    timeout: UV_INSTALL_TIMEOUT_MS,
+  });
+  return {
+    executablePath,
+    versionOutput: `${versionResult.stdout ?? ''}\n${versionResult.stderr ?? ''}`.trim(),
+  };
 }
 
 async function extractWindowsZip(archivePath: string, destination: string): Promise<void> {

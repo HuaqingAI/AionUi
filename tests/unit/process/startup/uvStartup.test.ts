@@ -14,7 +14,10 @@ import {
   ensureManagedPythonOnce,
   ensureUvReady,
   getBundledUvArtifactName,
+  getManagedPythonCommandPathForDiagnostics,
   getManagedPythonCommandDirectory,
+  getManagedPythonInstallDirectoryForDiagnostics,
+  getUvExecutablePathForDiagnostics,
   isUvBootstrapEnabled,
 } from '@process/startup/uvStartup';
 
@@ -129,6 +132,22 @@ describe('managed uv bootstrap', () => {
 
     expect(result).toEqual({ status: 'ready' });
     expect(copyArtifact).not.toHaveBeenCalled();
+  });
+
+  it('exposes managed uv and Python paths for diagnostics', async () => {
+    const fixture = await createRuntimeFixture();
+
+    expect(getUvExecutablePathForDiagnostics(fixture.dataPath)).toBe(fixture.uvPath);
+    expect(getUvExecutablePathForDiagnostics(fixture.dataPath, 'uvx')).toBe(fixture.uvxPath);
+    expect(getManagedPythonInstallDirectoryForDiagnostics(fixture.dataPath)).toBe(
+      path.join(fixture.dataPath, 'runtime', 'uv-python')
+    );
+    expect(getManagedPythonCommandPathForDiagnostics(fixture.dataPath)).toBe(
+      path.join(
+        getManagedPythonCommandDirectory(fixture.dataPath),
+        process.platform === 'win32' ? 'python.exe' : 'python'
+      )
+    );
   });
 
   it('returns a failed result when uv reports an unexpected version', async () => {
