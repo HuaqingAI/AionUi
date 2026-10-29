@@ -159,4 +159,13 @@ export function initSystemSettingsBridge(): void {
   ipcBridge.systemSettings.runtimeDiagnosticsInstall.provider((params) =>
     getRuntimeDiagnosticsService().install(params?.ids ?? [])
   );
+
+  ipcBridge.systemSettings.runtimeDiagnosticsSetBootstrap.provider(async (params) => {
+    try {
+      return await getRuntimeDiagnosticsService().setBootstrap(params?.id, params?.enabled);
+    } catch (error) {
+      console.warn('[Runtime Diagnostics] Failed to save CLI bootstrap setting:', error);
+      return null;
+    }
+  });
 }

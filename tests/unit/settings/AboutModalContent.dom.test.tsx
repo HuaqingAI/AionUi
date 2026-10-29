@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   runtimeDiagnosticsListMock: vi.fn(),
   runtimeDiagnosticsProbeMock: vi.fn(),
   runtimeDiagnosticsInstallMock: vi.fn(),
+  runtimeDiagnosticsSetBootstrapMock: vi.fn(),
   runtimeDiagnosticsStatusOnMock: vi.fn(),
   runtimeLocalStatusOnMock: vi.fn(),
   clipboardWriteTextMock: vi.fn(),
@@ -83,6 +84,7 @@ vi.mock('@/common', () => ({
       runtimeDiagnosticsList: { invoke: mocks.runtimeDiagnosticsListMock },
       runtimeDiagnosticsProbe: { invoke: mocks.runtimeDiagnosticsProbeMock },
       runtimeDiagnosticsInstall: { invoke: mocks.runtimeDiagnosticsInstallMock },
+      runtimeDiagnosticsSetBootstrap: { invoke: mocks.runtimeDiagnosticsSetBootstrapMock },
       runtimeDiagnosticsStatusChanged: { on: mocks.runtimeDiagnosticsStatusOnMock },
     },
   },
@@ -156,6 +158,7 @@ function createDiagnosticItems(): RuntimeDiagnosticItem[] {
     },
     ...toolItems.map(({ args, command, id, label, status }) => ({
       args,
+      bootstrapEnabled: id !== 'officecli',
       command,
       expectedPath: `C:\\AionUi\\runtime\\npm-global\\${id}\\${command}.cmd`,
       id,
@@ -192,6 +195,12 @@ describe('AboutModalContent update ready state', () => {
     mocks.runtimeLocalStatusOnMock.mockReturnValue(() => {});
     mocks.runtimeDiagnosticsListMock.mockResolvedValue(createDiagnosticItems());
     mocks.runtimeDiagnosticsProbeMock.mockResolvedValue(createDiagnosticItems());
+    mocks.runtimeDiagnosticsSetBootstrapMock.mockImplementation(
+      async ({ id, enabled }: { id: string; enabled: boolean }) => ({
+        ...createDiagnosticItems().find((item) => item.id === id),
+        bootstrapEnabled: enabled,
+      })
+    );
     mocks.runtimeDiagnosticsInstallMock.mockResolvedValue({
       failedIds: [],
       items: createDiagnosticItems().map((item) => {
@@ -395,6 +404,64 @@ describe('AboutModalContent update ready state', () => {
       expect(mocks.runtimeDiagnosticsInstallMock).toHaveBeenCalledWith({ ids: ['codex'] });
     });
   });
+
+  it('shows automatic check switches for only the nine CLIs with OfficeCLI off', async () => {
+    render(<AboutModalContent />);
+    expandRuntimeDiagnostics();
+
+    await waitFor(() => {
+      expect(screen.getAllByRole('switch')).toHaveLength(9);
+    });
+    expect(screen.getByRole('switch', { name: 'OfficeCLI settings.runtimeDiagnostics.autoCheck' })).not.toBeChecked();
+    expect(screen.getByRole('switch', { name: 'Codex settings.runtimeDiagnostics.autoCheck' })).toBeChecked();
+  });
+
+  it('saves a CLI switch without starting another diagnostic probe', async () => {
+    let finishSave!: (item: RuntimeDiagnosticItem) => void;
+    mocks.runtimeDiagnosticsSetBootstrapMock.mockImplementation(
+      () =>
+        new Promise<RuntimeDiagnosticItem>((resolve) => {
+          finishSave = resolve;
+        })
+    );
+    render(<AboutModalContent />);
+    expandRuntimeDiagnostics();
+    const toggle = await screen.findByRole('switch', { name: 'Codex settings.runtimeDiagnostics.autoCheck' });
+    await waitFor(() => expect(toggle).not.toBeDisabled());
+    fireEvent.click(toggle);
+
+    expect(mocks.runtimeDiagnosticsSetBootstrapMock).toHaveBeenCalledWith({ id: 'codex', enabled: false });
+    expect(toggle).toBeDisabled();
+    await act(async () => {
+      finishSave({ ...createDiagnosticItems().find((item) => item.id === 'codex')!, bootstrapEnabled: false });
+    });
+
+    expect(toggle).not.toBeChecked();
+    expect(toggle).not.toBeDisabled();
+    expect(mocks.runtimeDiagnosticsProbeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['failure response', 'transport error'] as const)(
+    'keeps the saved CLI switch value on %s',
+    async (failure) => {
+      if (failure === 'failure response') {
+        mocks.runtimeDiagnosticsSetBootstrapMock.mockResolvedValue(null);
+      } else {
+        mocks.runtimeDiagnosticsSetBootstrapMock.mockRejectedValue(new Error('settings write failed'));
+      }
+      render(<AboutModalContent />);
+      expandRuntimeDiagnostics();
+      const toggle = await screen.findByRole('switch', { name: 'OfficeCLI settings.runtimeDiagnostics.autoCheck' });
+      await waitFor(() => expect(toggle).not.toBeDisabled());
+      fireEvent.click(toggle);
+
+      await waitFor(() => {
+        expect(mocks.messageErrorMock).toHaveBeenCalledWith('settings.runtimeDiagnostics.saveFailed');
+        expect(toggle).not.toBeDisabled();
+      });
+      expect(toggle).not.toBeChecked();
+    }
+  );
 
   it('copies the runtime diagnostic summary', async () => {
     render(<AboutModalContent />);

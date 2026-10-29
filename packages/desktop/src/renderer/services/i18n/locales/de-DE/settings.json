@@ -803,6 +803,9 @@
     "serverError": "Der Protokoll-Upload-Dienst ist vorübergehend nicht verfügbar."
   },
   "runtimeDiagnostics": {
+    "autoCheck": "Automatische Prüfungen",
+    "autoCheckTooltip": "Diese CLI bei Umgebungsprüfungen zum Start und vor dem Senden einbeziehen. Nach einer Änderung werden die aktivierten CLIs beim Senden der nächsten Nachricht erneut geprüft.",
+    "saveFailed": "Einstellungen für automatische Prüfungen konnten nicht gespeichert werden",
     "title": "Runtime diagnostics",
     "description": "Check the local CLI tools and managed runtimes required at startup.",
     "summary": "{{total}} components, {{ready}} ready, {{repair}} need repair, {{unsupported}} unsupported.",

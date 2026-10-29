@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdir, mkdtemp, readFile, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
@@ -35,6 +35,8 @@ import {
   ensureOfficeCliReady,
   ensureOpenCodeReady,
   ensureManagedNodeEnvironmentMarker,
+  ensureManagedStartupToolReadyForDiagnostics,
+  setManagedStartupToolBootstrapEnabled,
   isManagedNodeEnvironmentReady,
   MANAGED_NODE_ENVIRONMENT_MARKER,
   ensureShopifyCliReady,
@@ -50,9 +52,30 @@ import {
   shouldEnsureZiniaoOpenOnStartup,
 } from '@process/startup/opencodeStartup';
 import { acpConversation } from '@/common/adapter/ipcBridge';
+import type { IConfigStorageRefer, ILegacyConfigStorageRefer } from '@/common/config/storage';
+import { ProcessConfig } from '@process/utils/initStorage';
 
 const originalPath = process.env.PATH;
 const originalLegacyPath = process.env.Path;
+let savedBootstrap: IConfigStorageRefer['runtime.cliBootstrap'];
+
+beforeEach(() => {
+  savedBootstrap = undefined;
+  vi.spyOn(ProcessConfig, 'getSync').mockImplementation(
+    <K extends keyof ILegacyConfigStorageRefer>(key: K): ILegacyConfigStorageRefer[K] =>
+      (key === 'runtime.cliBootstrap' ? savedBootstrap : undefined) as ILegacyConfigStorageRefer[K]
+  );
+  vi.spyOn(ProcessConfig, 'set').mockImplementation(async (key, value) => {
+    if (key === 'runtime.cliBootstrap') {
+      savedBootstrap = value as IConfigStorageRefer['runtime.cliBootstrap'];
+    }
+    return value;
+  });
+  vi.spyOn(ProcessConfig, 'remove').mockImplementation(async () => {
+    savedBootstrap = undefined;
+    return {};
+  });
+});
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -288,7 +311,7 @@ describe('opencode startup bootstrap', () => {
     expect(versionProbe?.[2]).toEqual(expect.objectContaining({ windowsVerbatimArguments: true }));
   });
 
-  it('writes the environment marker after all enabled managed tools are present', async () => {
+  it('writes and reuses the environment marker after all enabled managed tools are present', async () => {
     const fixture = await createManagedNodeFixture();
     await mkdir(path.dirname(fixture.commandPath), { recursive: true });
     await writeFile(fixture.commandPath, '');
@@ -318,6 +341,34 @@ describe('opencode startup bootstrap', () => {
     await expect(
       readFile(path.join(fixture.dataPath, 'runtime', MANAGED_NODE_ENVIRONMENT_MARKER), 'utf8')
     ).resolves.toBe('ready\n');
+
+    commandRunner.mockClear();
+    await expect(
+      ensureManagedNodeEnvironmentMarker({
+        commandRunner,
+        dataPath: fixture.dataPath,
+        env,
+      })
+    ).resolves.toBe(true);
+    expect(commandRunner).not.toHaveBeenCalled();
+  });
+
+  it('trusts an existing environment marker without checking missing Node or CLI installations', async () => {
+    const dataPath = await mkdtemp(path.join(tmpdir(), 'aionui-ready-environment-'));
+    await mkdir(path.join(dataPath, 'runtime'), { recursive: true });
+    await writeFile(path.join(dataPath, 'runtime', MANAGED_NODE_ENVIRONMENT_MARKER), 'ready\n');
+    const commandRunner = vi.fn(async () => {
+      throw new Error('version commands must not run');
+    });
+    const ensureNodeRuntime = vi.fn(async () => {
+      throw new Error('Node runtime preparation must not run');
+    });
+
+    await expect(
+      ensureManagedNodeEnvironmentMarker({ commandRunner, dataPath, ensureNodeRuntime, env: {} })
+    ).resolves.toBe(true);
+    expect(commandRunner).not.toHaveBeenCalled();
+    expect(ensureNodeRuntime).not.toHaveBeenCalled();
   });
 
   it('does not write the environment marker while an enabled tool is missing', async () => {
@@ -347,8 +398,6 @@ describe('opencode startup bootstrap', () => {
 
   it('treats a failed AionCore node readiness request as a pending environment', async () => {
     const fixture = await createManagedNodeFixture();
-    await mkdir(path.join(fixture.dataPath, 'runtime'), { recursive: true });
-    await writeFile(path.join(fixture.dataPath, 'runtime', MANAGED_NODE_ENVIRONMENT_MARKER), 'ready\n');
 
     await expect(
       ensureManagedNodeEnvironmentMarker({
@@ -367,12 +416,11 @@ describe('opencode startup bootstrap', () => {
     const fixture = await createManagedNodeFixture();
     await mkdir(path.dirname(fixture.commandPath), { recursive: true });
     await writeFile(fixture.commandPath, '');
-    await mkdir(path.join(fixture.dataPath, 'runtime'), { recursive: true });
-    await writeFile(path.join(fixture.dataPath, 'runtime', MANAGED_NODE_ENVIRONMENT_MARKER), 'ready\n');
-    const commandRunner = vi.fn(async (_file: string, args: string[]) => {
-      if (args.length === 1 && args[0] === '-v') return { stdout: 'v24.11.0' };
-      if (args.includes('--version')) throw new Error('opencode is broken');
-      return { stdout: '10.0.0' };
+    const commandRunner = vi.fn(async (file: string, args: string[]) => {
+      if (file === fixture.nodeExecutable) {
+        return { stdout: args[0] === '-v' ? 'v24.11.0' : '10.0.0' };
+      }
+      throw new Error('opencode is broken');
     });
     const env = {
       AIONUI_BEISEN_CLI_BOOTSTRAP: '0',
@@ -395,9 +443,13 @@ describe('opencode startup bootstrap', () => {
       })
     ).resolves.toBe(false);
     expect(await isManagedNodeEnvironmentReady(fixture.dataPath)).toBe(false);
+    expect(commandRunner).toHaveBeenCalledTimes(3);
   });
 
-  it('uses the real version command for every enabled managed CLI before writing the marker', async () => {
+  it.each([
+    { name: 'the default eight CLIs', officeCliEnabled: false },
+    { name: 'all nine CLIs with OfficeCLI enabled', officeCliEnabled: true },
+  ])('checks $name before writing the marker', async ({ officeCliEnabled }) => {
     const fixture = await createManagedNodeFixture();
     const commandPaths = [
       fixture.commandPath,
@@ -406,7 +458,7 @@ describe('opencode startup bootstrap', () => {
       fixture.dwsCommandPath,
       fixture.googleWorkspaceCliCommandPath,
       fixture.noxinfluencerCliCommandPath,
-      fixture.officeCliCommandPath,
+      ...(officeCliEnabled ? [fixture.officeCliCommandPath] : []),
       fixture.shopifyCliCommandPath,
       fixture.ziniaoCliCommandPath,
     ];
@@ -439,13 +491,17 @@ describe('opencode startup bootstrap', () => {
         commandRunner,
         dataPath: fixture.dataPath,
         ensureNodeRuntime: async () => ({ ready: true }),
-        env: {},
+        env: officeCliEnabled ? { AIONUI_OFFICECLI_BOOTSTRAP: '1' } : {},
       })
     ).toBe(true);
-    const commandLines = commandRunner.mock.calls.map(([, args]) => args.join(' '));
-    expect(commandLines.some((line) => line.includes('beisen-cli') && line.includes('version'))).toBe(true);
-    for (const command of ['codex', 'dws', 'gws', 'noxinfluencer', 'officecli', 'opencode', 'shopify', 'ziniao-cli']) {
-      expect(commandLines.some((line) => line.includes(command) && line.includes('--version'))).toBe(true);
+    await expect(
+      readFile(path.join(fixture.dataPath, 'runtime', MANAGED_NODE_ENVIRONMENT_MARKER), 'utf8')
+    ).resolves.toBe('ready\n');
+    const commandLines = commandRunner.mock.calls.map(([file, args]) => [file, ...args].join(' '));
+    expect(commandLines.some((line) => line.includes(fixture.officeCliCommandPath))).toBe(officeCliEnabled);
+    for (const commandPath of commandPaths) {
+      const versionArg = commandPath === fixture.beisenCliCommandPath ? 'version' : '--version';
+      expect(commandLines.some((line) => line.includes(commandPath) && line.includes(versionArg))).toBe(true);
     }
   });
 
@@ -481,6 +537,86 @@ describe('opencode startup bootstrap', () => {
         'codex'
       )
     );
+  });
+
+  it('persists concurrent CLI toggles without losing overrides and invalidates the marker', async () => {
+    const fixture = await createManagedNodeFixture();
+    await writeFile(path.join(fixture.dataPath, 'runtime', MANAGED_NODE_ENVIRONMENT_MARKER), 'ready\n');
+
+    await Promise.all([
+      setManagedStartupToolBootstrapEnabled('codex', false, fixture.dataPath),
+      setManagedStartupToolBootstrapEnabled('officecli', true, fixture.dataPath),
+    ]);
+
+    expect(ProcessConfig.getSync('runtime.cliBootstrap')).toEqual({ codex: false, officecli: true });
+    expect(await isManagedNodeEnvironmentReady(fixture.dataPath)).toBe(false);
+    expect(shouldEnsureCodexOnStartup({ AIONUI_CODEX_BOOTSTRAP: '1' })).toBe(false);
+    expect(shouldEnsureOfficeCliOnStartup({ AIONUI_OFFICECLI_BOOTSTRAP: '0' })).toBe(true);
+  });
+
+  it('restores the effective CLI setting when persistence fails and allows a later retry', async () => {
+    const fixture = await createManagedNodeFixture();
+    savedBootstrap = { codex: true };
+    await writeFile(path.join(fixture.dataPath, 'runtime', MANAGED_NODE_ENVIRONMENT_MARKER), 'ready\n');
+    vi.mocked(ProcessConfig.set).mockImplementationOnce(async (_key, value) => {
+      savedBootstrap = value as IConfigStorageRefer['runtime.cliBootstrap'];
+      throw new Error('config disk is unavailable');
+    });
+
+    await expect(setManagedStartupToolBootstrapEnabled('codex', false, fixture.dataPath)).rejects.toThrow(
+      'config disk is unavailable'
+    );
+    expect(shouldEnsureCodexOnStartup({})).toBe(true);
+    expect(await isManagedNodeEnvironmentReady(fixture.dataPath)).toBe(false);
+
+    await setManagedStartupToolBootstrapEnabled('codex', false, fixture.dataPath);
+    expect(shouldEnsureCodexOnStartup({})).toBe(false);
+  });
+
+  it('allows an environment with all CLI toggles disabled without requiring Node', async () => {
+    const dataPath = await mkdtemp(path.join(tmpdir(), 'aionui-disabled-environment-'));
+    savedBootstrap = Object.fromEntries(getManagedStartupToolsForDiagnostics().map((tool) => [tool.toolId, false]));
+    const commandRunner = vi.fn(async () => ({ stdout: 'must not run' }));
+    const ensureNodeRuntime = vi.fn(async () => ({ ready: false }));
+
+    await expect(
+      ensureManagedNodeEnvironmentMarker({ commandRunner, dataPath, ensureNodeRuntime, env: {} })
+    ).resolves.toBe(true);
+    expect(commandRunner).not.toHaveBeenCalled();
+    expect(ensureNodeRuntime).not.toHaveBeenCalled();
+    expect(await isManagedNodeEnvironmentReady(dataPath)).toBe(true);
+  });
+
+  it('rechecks the latest enabled tools when a toggle changes during an older version check', async () => {
+    const fixture = await createManagedNodeFixture();
+    await mkdir(path.dirname(fixture.commandPath), { recursive: true });
+    await writeFile(fixture.commandPath, '');
+    savedBootstrap = Object.fromEntries(getManagedStartupToolsForDiagnostics().map((tool) => [tool.toolId, false]));
+    savedBootstrap.opencode = true;
+    let releaseVersionCheck!: () => void;
+    const versionGate = new Promise<void>((resolve) => {
+      releaseVersionCheck = resolve;
+    });
+    let versionStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      versionStarted = resolve;
+    });
+    const commandRunner = vi.fn(async (file: string, args: string[]) => {
+      if (file === fixture.nodeExecutable) {
+        return { stdout: args[0] === '-v' ? 'v24.11.0' : '10.0.0' };
+      }
+      versionStarted();
+      await versionGate;
+      return { stdout: '1.0.0' };
+    });
+    const pendingCheck = ensureManagedNodeEnvironmentMarker({ commandRunner, dataPath: fixture.dataPath, env: {} });
+    await started;
+
+    await setManagedStartupToolBootstrapEnabled('officecli', true, fixture.dataPath);
+    releaseVersionCheck();
+
+    await expect(pendingCheck).resolves.toBe(false);
+    expect(await isManagedNodeEnvironmentReady(fixture.dataPath)).toBe(false);
   });
 
   it('waits for a successful managed node -v probe before installing a CLI', async () => {
@@ -954,46 +1090,69 @@ describe('opencode startup bootstrap', () => {
     );
   });
 
-  it('uses managed Node npm to install OfficeCLI into npm-global', async () => {
-    const fixture = await createManagedNodeFixture();
-    const commandRunner = vi.fn(async () => {
-      await mkdir(path.dirname(fixture.officeCliCommandPath), { recursive: true });
-      await writeFile(fixture.officeCliCommandPath, '');
-      return {};
-    });
-
-    const result = await ensureOfficeCliReady({
-      commandRunner,
-      dataPath: fixture.dataPath,
-      emitStatus: vi.fn(),
-      ensureNodeRuntime: async () => ({ ready: true }),
-      env: {},
-    });
-
-    expect(result).toEqual({ status: 'ready' });
-    expect(commandRunner).toHaveBeenCalledWith(
-      fixture.nodeExecutable,
-      [
-        fixture.npmCliPath,
-        'install',
-        '--global',
-        '@officecli/officecli',
-        '--prefix',
-        fixture.officeCliPrefix,
-        '--registry',
-        'https://registry.npmmirror.com',
-      ],
-      {
-        cwd: fixture.dataPath,
-        env: expect.objectContaining({
-          NPM_CONFIG_PREFIX: fixture.officeCliPrefix,
-          NPM_CONFIG_REGISTRY: 'https://registry.npmmirror.com',
-          npm_config_prefix: fixture.officeCliPrefix,
-          npm_config_registry: 'https://registry.npmmirror.com',
-        }),
-        timeout: 180000,
+  it.each(['explicit startup', 'manual diagnostics', 'disabled manual diagnostics'] as const)(
+    'uses managed Node npm to install OfficeCLI through %s',
+    async (entrypoint) => {
+      if (entrypoint === 'disabled manual diagnostics') {
+        savedBootstrap = { officecli: false };
       }
-    );
+      const fixture = await createManagedNodeFixture();
+      const commandRunner = vi.fn(async () => {
+        await mkdir(path.dirname(fixture.officeCliCommandPath), { recursive: true });
+        await writeFile(fixture.officeCliCommandPath, '');
+        return {};
+      });
+
+      const options = {
+        commandRunner,
+        dataPath: fixture.dataPath,
+        emitStatus: vi.fn(),
+        ensureNodeRuntime: async () => ({ ready: true }),
+        env:
+          entrypoint === 'explicit startup'
+            ? { AIONUI_OFFICECLI_BOOTSTRAP: '1' }
+            : entrypoint === 'disabled manual diagnostics'
+              ? { AIONUI_OFFICECLI_BOOTSTRAP: '0' }
+              : {},
+      };
+      const result =
+        entrypoint === 'explicit startup'
+          ? await ensureOfficeCliReady(options)
+          : await ensureManagedStartupToolReadyForDiagnostics('officecli', options);
+
+      expect(result).toEqual({ status: 'ready' });
+      expect(commandRunner).toHaveBeenCalledWith(
+        fixture.nodeExecutable,
+        [
+          fixture.npmCliPath,
+          'install',
+          '--global',
+          '@officecli/officecli',
+          '--prefix',
+          fixture.officeCliPrefix,
+          '--registry',
+          'https://registry.npmmirror.com',
+        ],
+        {
+          cwd: fixture.dataPath,
+          env: expect.objectContaining({
+            NPM_CONFIG_PREFIX: fixture.officeCliPrefix,
+            NPM_CONFIG_REGISTRY: 'https://registry.npmmirror.com',
+            npm_config_prefix: fixture.officeCliPrefix,
+            npm_config_registry: 'https://registry.npmmirror.com',
+          }),
+          timeout: 180000,
+        }
+      );
+    }
+  );
+
+  it('skips OfficeCLI startup by default without running commands', async () => {
+    const commandRunner = vi.fn(async () => ({}));
+    const result = await ensureOfficeCliReady({ commandRunner, env: {} });
+
+    expect(result).toEqual({ status: 'skipped' });
+    expect(commandRunner).not.toHaveBeenCalled();
   });
 
   it('uses managed Node npm to install Shopify CLI into npm-global', async () => {
@@ -1558,7 +1717,9 @@ describe('opencode startup bootstrap', () => {
     expect(shouldEnsureNoxinfluencerCliOnStartup({})).toBe(true);
     expect(shouldEnsureOfficeCliOnStartup({ AIONUI_E2E_TEST: '1' })).toBe(false);
     expect(shouldEnsureOfficeCliOnStartup({ AIONUI_OFFICECLI_BOOTSTRAP: '0' })).toBe(false);
-    expect(shouldEnsureOfficeCliOnStartup({})).toBe(true);
+    expect(shouldEnsureOfficeCliOnStartup({})).toBe(false);
+    expect(shouldEnsureOfficeCliOnStartup({ AIONUI_OFFICECLI_BOOTSTRAP: '1' })).toBe(true);
+    expect(shouldEnsureOfficeCliOnStartup({ AIONUI_E2E_TEST: '1', AIONUI_OFFICECLI_BOOTSTRAP: '1' })).toBe(false);
     expect(shouldEnsureShopifyCliOnStartup({ AIONUI_E2E_TEST: '1' })).toBe(false);
     expect(shouldEnsureShopifyCliOnStartup({ AIONUI_SHOPIFY_CLI_BOOTSTRAP: '0' })).toBe(false);
     expect(shouldEnsureShopifyCliOnStartup({})).toBe(true);

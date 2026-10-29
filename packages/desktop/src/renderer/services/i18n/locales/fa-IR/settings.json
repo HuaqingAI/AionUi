@@ -813,6 +813,9 @@
     "serverError": "سرویس بارگذاری گزارش‌ها موقتاً در دسترس نیست."
   },
   "runtimeDiagnostics": {
+    "autoCheck": "بررسی خودکار",
+    "autoCheckTooltip": "این CLI را در بررسی محیط هنگام راه‌اندازی و پیش از ارسال پیام قرار می‌دهد. پس از تغییر، هنگام ارسال پیام بعدی، CLIهای فعال دوباره بررسی می‌شوند.",
+    "saveFailed": "ذخیره تنظیمات بررسی خودکار ممکن نشد",
     "title": "Runtime diagnostics",
     "description": "Check the local CLI tools and managed runtimes required at startup.",
     "summary": "{{total}} components, {{ready}} ready, {{repair}} need repair, {{unsupported}} unsupported.",

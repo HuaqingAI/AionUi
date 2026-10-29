@@ -813,6 +813,9 @@
     "serverError": "日誌上傳服務暫時無法使用。"
   },
   "runtimeDiagnostics": {
+    "autoCheck": "自動檢查",
+    "autoCheckTooltip": "開啟後會參與啟動及傳送前的環境檢查。變更後，下次傳送訊息時會重新檢查已開啟的 CLI。",
+    "saveFailed": "無法儲存自動檢查設定",
     "title": "執行階段診斷",
     "description": "檢測啟動所需的本機 CLI 工具和託管執行階段。",
     "summary": "共 {{total}} 個元件，{{ready}} 個可用，{{repair}} 個需要修復，{{unsupported}} 個不支援。",

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Button, Collapse, Message, Tag, Tooltip, Typography } from '@arco-design/web-react';
+import { Button, Collapse, Message, Switch, Tag, Tooltip, Typography } from '@arco-design/web-react';
 import { Copy, Download, Refresh } from '@icon-park/react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -61,6 +61,7 @@ const CliRuntimeDiagnostics: React.FC<CliRuntimeDiagnosticsProps> = ({ appVersio
   const [loading, setLoading] = useState(false);
   const [checkingIds, setCheckingIds] = useState<Set<string>>(() => new Set());
   const [installingIds, setInstallingIds] = useState<Set<string>>(() => new Set());
+  const [savingIds, setSavingIds] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
     tRef.current = t;
@@ -177,7 +178,30 @@ const CliRuntimeDiagnostics: React.FC<CliRuntimeDiagnosticsProps> = ({ appVersio
     return { ready, repair, total: items.length, unsupported };
   }, [items]);
 
-  const busy = loading || checkingIds.size > 0 || installingIds.size > 0;
+  const busy = loading || checkingIds.size > 0 || installingIds.size > 0 || savingIds.size > 0;
+
+  const setBootstrapEnabled = useCallback(
+    async (id: string, enabled: boolean) => {
+      setSavingIds((prev) => new Set([...prev, id]));
+      try {
+        const item = await ipcBridge.systemSettings.runtimeDiagnosticsSetBootstrap.invoke({ id, enabled });
+        if (!item) {
+          Message.error(tRef.current('settings.runtimeDiagnostics.saveFailed'));
+          return;
+        }
+        mergeItems([item]);
+      } catch {
+        Message.error(tRef.current('settings.runtimeDiagnostics.saveFailed'));
+      } finally {
+        setSavingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      }
+    },
+    [mergeItems]
+  );
 
   const runInstall = useCallback(
     async (ids: string[]) => {
@@ -303,7 +327,8 @@ const CliRuntimeDiagnostics: React.FC<CliRuntimeDiagnosticsProps> = ({ appVersio
                     item.status === 'checking' ||
                     item.status === 'installing' ||
                     checkingIds.has(item.id) ||
-                    installingIds.has(item.id);
+                    installingIds.has(item.id) ||
+                    savingIds.has(item.id);
                   const itemPath = item.resolvedPath ?? item.expectedPath ?? t('settings.runtimeDiagnostics.noPath');
                   const versionOutput =
                     item.versionOutput ?? item.error ?? t('settings.runtimeDiagnostics.noVersionOutput');
@@ -319,7 +344,7 @@ const CliRuntimeDiagnostics: React.FC<CliRuntimeDiagnosticsProps> = ({ appVersio
                             {t(`settings.runtimeDiagnostics.kind.${item.kind}`)}
                           </Typography.Text>
                         </div>
-                        <div className='flex gap-6px'>
+                        <div className='flex flex-wrap items-center gap-6px'>
                           <Button
                             size='mini'
                             icon={<Refresh size={12} />}
@@ -338,6 +363,23 @@ const CliRuntimeDiagnostics: React.FC<CliRuntimeDiagnosticsProps> = ({ appVersio
                           >
                             {t('settings.runtimeDiagnostics.actions.repair')}
                           </Button>
+                          {item.kind === 'managed-node-tool' && typeof item.bootstrapEnabled === 'boolean' && (
+                            <Tooltip content={t('settings.runtimeDiagnostics.autoCheckTooltip')}>
+                              <span className='ms-6px flex items-center gap-6px'>
+                                <Typography.Text className='text-12px text-t-secondary'>
+                                  {t('settings.runtimeDiagnostics.autoCheck')}
+                                </Typography.Text>
+                                <Switch
+                                  size='small'
+                                  aria-label={`${item.label} ${t('settings.runtimeDiagnostics.autoCheck')}`}
+                                  checked={item.bootstrapEnabled}
+                                  loading={savingIds.has(item.id)}
+                                  disabled={itemBusy}
+                                  onChange={(enabled) => void setBootstrapEnabled(item.id, enabled)}
+                                />
+                              </span>
+                            </Tooltip>
+                          )}
                         </div>
                       </div>
 

@@ -813,6 +813,9 @@
     "serverError": "日志上传服务暂时不可用。"
   },
   "runtimeDiagnostics": {
+    "autoCheck": "自动检测",
+    "autoCheckTooltip": "开启后参与启动和发送前的环境检查。更改后，下次发送会重新检查已开启的 CLI。",
+    "saveFailed": "无法保存自动检测设置",
     "title": "运行时诊断",
     "description": "检测启动所需的本地 CLI 工具和托管运行时。",
     "summary": "共 {{total}} 个组件，{{ready}} 个可用，{{repair}} 个需要修复，{{unsupported}} 个不支持。",

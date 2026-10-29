@@ -813,6 +813,9 @@
     "serverError": "Le service d'envoi des journaux est temporairement indisponible."
   },
   "runtimeDiagnostics": {
+    "autoCheck": "Vérifications automatiques",
+    "autoCheckTooltip": "Inclut cette CLI dans les vérifications de l’environnement au démarrage et avant l’envoi des messages. Après une modification, les CLI activées sont vérifiées à nouveau lors de l’envoi du prochain message.",
+    "saveFailed": "Impossible d’enregistrer les paramètres de vérification automatique",
     "title": "Runtime diagnostics",
     "description": "Check the local CLI tools and managed runtimes required at startup.",
     "summary": "{{total}} components, {{ready}} ready, {{repair}} need repair, {{unsupported}} unsupported.",

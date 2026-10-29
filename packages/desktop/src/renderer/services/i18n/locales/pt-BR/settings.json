@@ -813,6 +813,9 @@
     "serverError": "O serviço de envio de logs está temporariamente indisponível."
   },
   "runtimeDiagnostics": {
+    "autoCheck": "Verificações automáticas",
+    "autoCheckTooltip": "Inclui esta CLI nas verificações do ambiente na inicialização e antes do envio de mensagens. Após uma alteração, o próximo envio verifica novamente as CLIs ativadas.",
+    "saveFailed": "Não foi possível salvar as configurações de verificação automática",
     "title": "Runtime diagnostics",
     "description": "Check the local CLI tools and managed runtimes required at startup.",
     "summary": "{{total}} components, {{ready}} ready, {{repair}} need repair, {{unsupported}} unsupported.",

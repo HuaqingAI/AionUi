@@ -16,9 +16,11 @@ import type {
 import {
   buildManagedStartupToolEnvForDiagnostics,
   ensureManagedStartupToolReadyForDiagnostics,
+  getManagedStartupToolBootstrapEnabled,
   getManagedStartupToolCommandInvocationForDiagnostics,
   getManagedStartupToolDwsBinaryPathForDiagnostics,
   readManagedStartupToolPackageVersionForDiagnostics,
+  setManagedStartupToolBootstrapEnabled,
   type EnsureOpenCodeReadyOptions,
   type ManagedStartupToolId,
   type OpenCodeBootstrapResult,
@@ -155,7 +157,18 @@ export class RuntimeDiagnosticsService {
   }
 
   list(): RuntimeDiagnosticItem[] {
-    return this.definitions.map((definition) => this.latest.get(definition.id) ?? this.createBaseItem(definition));
+    return this.definitions.map((definition) =>
+      this.withBootstrapSetting(this.latest.get(definition.id) ?? this.createBaseItem(definition))
+    );
+  }
+
+  async setBootstrap(id: unknown, enabled: unknown): Promise<RuntimeDiagnosticItem> {
+    const definition = this.definitions.find((item) => item.id === id && item.toolId);
+    if (!definition?.toolId || typeof enabled !== 'boolean') {
+      throw new Error('Invalid managed CLI bootstrap setting');
+    }
+    await setManagedStartupToolBootstrapEnabled(definition.toolId, enabled, this.dataPath);
+    return this.publish(this.latest.get(definition.id) ?? this.createBaseItem(definition));
   }
 
   async probe(ids?: string[]): Promise<RuntimeDiagnosticItem[]> {
@@ -258,9 +271,17 @@ export class RuntimeDiagnosticsService {
   }
 
   private publish(item: RuntimeDiagnosticItem): RuntimeDiagnosticItem {
-    this.latest.set(item.id, item);
-    this.emitDiagnosticsStatus?.(item);
-    return item;
+    const current = this.withBootstrapSetting(item);
+    this.latest.set(item.id, current);
+    this.emitDiagnosticsStatus?.(current);
+    return current;
+  }
+
+  private withBootstrapSetting(item: RuntimeDiagnosticItem): RuntimeDiagnosticItem {
+    const definition = this.definitions.find((entry) => entry.id === item.id);
+    return definition?.toolId
+      ? { ...item, bootstrapEnabled: getManagedStartupToolBootstrapEnabled(definition.toolId) }
+      : item;
   }
 
   private async probeManagedNodeTool(

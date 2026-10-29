@@ -801,6 +801,9 @@
     "serverError": "Служба загрузки журналов временно недоступна."
   },
   "runtimeDiagnostics": {
+    "autoCheck": "Автоматическая проверка",
+    "autoCheckTooltip": "Включает этот CLI в проверку среды при запуске и перед отправкой сообщений. После изменения при отправке следующего сообщения включённые CLI будут проверены заново.",
+    "saveFailed": "Не удалось сохранить настройки автоматической проверки",
     "title": "Runtime diagnostics",
     "description": "Check the local CLI tools and managed runtimes required at startup.",
     "summary": "{{total}} components, {{ready}} ready, {{repair}} need repair, {{unsupported}} unsupported.",

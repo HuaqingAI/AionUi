@@ -801,6 +801,9 @@
     "serverError": "ログアップロードサービスは一時的に利用できません。"
   },
   "runtimeDiagnostics": {
+    "autoCheck": "自動チェック",
+    "autoCheckTooltip": "有効にすると、起動時と送信前の環境チェックにこの CLI を含めます。変更後、次のメッセージ送信時に有効な CLI を再チェックします。",
+    "saveFailed": "自動チェック設定を保存できませんでした",
     "title": "Runtime diagnostics",
     "description": "Check the local CLI tools and managed runtimes required at startup.",
     "summary": "{{total}} components, {{ready}} ready, {{repair}} need repair, {{unsupported}} unsupported.",

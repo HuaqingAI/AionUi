@@ -807,6 +807,9 @@
     "serverError": "Служба завантаження журналів тимчасово недоступна."
   },
   "runtimeDiagnostics": {
+    "autoCheck": "Автоматична перевірка",
+    "autoCheckTooltip": "Додає цей CLI до перевірки середовища під час запуску та перед надсиланням повідомлень. Після зміни під час надсилання наступного повідомлення ввімкнені CLI буде перевірено повторно.",
+    "saveFailed": "Не вдалося зберегти налаштування автоматичної перевірки",
     "title": "Runtime diagnostics",
     "description": "Check the local CLI tools and managed runtimes required at startup.",
     "summary": "{{total}} components, {{ready}} ready, {{repair}} need repair, {{unsupported}} unsupported.",

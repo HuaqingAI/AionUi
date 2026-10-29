@@ -14,15 +14,29 @@ import {
   getUvExecutablePathForDiagnostics,
 } from '@process/startup/uvStartup';
 import type { DiagnosticCommandRunner } from '@process/services/runtime-diagnostics';
+import { getManagedStartupToolCommandPathForDiagnostics } from '@process/startup/opencodeStartup';
+import { ProcessConfig } from '@process/utils/initStorage';
+import type { IConfigStorageRefer, ILegacyConfigStorageRefer } from '@/common/config/storage';
 
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
 describe('RuntimeDiagnosticsService', () => {
+  let savedBootstrap: IConfigStorageRefer['runtime.cliBootstrap'];
+
   beforeEach(() => {
+    savedBootstrap = undefined;
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
     vi.spyOn(process, 'arch', 'get').mockReturnValue('x64');
+    vi.spyOn(ProcessConfig, 'getSync').mockImplementation(
+      <K extends keyof ILegacyConfigStorageRefer>(key: K): ILegacyConfigStorageRefer[K] =>
+        (key === 'runtime.cliBootstrap' ? savedBootstrap : undefined) as ILegacyConfigStorageRefer[K]
+    );
+    vi.spyOn(ProcessConfig, 'set').mockImplementation(async (_key, value) => {
+      savedBootstrap = value as IConfigStorageRefer['runtime.cliBootstrap'];
+      return value;
+    });
   });
 
   async function createDataPath(): Promise<string> {
@@ -52,6 +66,78 @@ describe('RuntimeDiagnosticsService', () => {
       'shopify-cli',
       'ziniao-open',
     ]);
+    expect(service.list().filter((item) => item.bootstrapEnabled === true)).toHaveLength(8);
+    expect(service.list().find((item) => item.id === 'officecli')?.bootstrapEnabled).toBe(false);
+    expect(service.list().filter((item) => item.id === 'uv' || item.id === 'python')).toEqual([
+      expect.not.objectContaining({ bootstrapEnabled: expect.anything() }),
+      expect.not.objectContaining({ bootstrapEnabled: expect.anything() }),
+    ]);
+  });
+
+  it('saves a CLI toggle without probing and restores it in a new diagnostics service', async () => {
+    const dataPath = await createDataPath();
+    const commandRunner = vi.fn<DiagnosticCommandRunner>(async () => ({ stdout: 'must not run' }));
+    const emitDiagnosticsStatus = vi.fn();
+    const service = new RuntimeDiagnosticsService({ commandRunner, dataPath, emitDiagnosticsStatus });
+    await service.probe(['codex']);
+
+    const item = await service.setBootstrap('codex', false);
+
+    expect(item).toEqual(expect.objectContaining({ id: 'codex', bootstrapEnabled: false, status: 'missing' }));
+    expect(commandRunner).not.toHaveBeenCalled();
+    expect(emitDiagnosticsStatus).toHaveBeenLastCalledWith(item);
+    expect(new RuntimeDiagnosticsService({ dataPath }).list().find((entry) => entry.id === 'codex')).toEqual(
+      expect.objectContaining({ bootstrapEnabled: false })
+    );
+  });
+
+  it.each([
+    { id: 'uv', enabled: true },
+    { id: 'python', enabled: false },
+    { id: 'toString', enabled: true },
+    { id: '__proto__', enabled: true },
+    { id: undefined, enabled: true },
+    { id: 'codex', enabled: 'false' },
+    { id: 'codex', enabled: undefined },
+  ])('rejects unsupported bootstrap setting $id/$enabled without saving', async ({ id, enabled }) => {
+    const service = new RuntimeDiagnosticsService({ dataPath: await createDataPath() });
+
+    await expect(service.setBootstrap(id, enabled)).rejects.toThrow('Invalid managed CLI bootstrap setting');
+    expect(ProcessConfig.set).not.toHaveBeenCalled();
+  });
+
+  it('keeps the current toggle in a probe result and status event after an in-flight toggle change', async () => {
+    const dataPath = await createDataPath();
+    const commandPath = getManagedStartupToolCommandPathForDiagnostics('beisen-cli', dataPath);
+    const nodeExecutable = path.join(dataPath, 'runtime', 'node', 'node-v24.11.0-test', 'node.exe');
+    await mkdir(path.dirname(commandPath), { recursive: true });
+    await mkdir(path.dirname(nodeExecutable), { recursive: true });
+    await Promise.all([writeFile(commandPath, ''), writeFile(nodeExecutable, '')]);
+    let releaseCommand!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseCommand = resolve;
+    });
+    let commandStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      commandStarted = resolve;
+    });
+    const commandRunner = vi.fn<DiagnosticCommandRunner>(async () => {
+      commandStarted();
+      await gate;
+      return { stdout: '1.0.0' };
+    });
+    const emitDiagnosticsStatus = vi.fn();
+    const service = new RuntimeDiagnosticsService({ commandRunner, dataPath, emitDiagnosticsStatus });
+    const pendingProbe = service.probe(['beisen-cli']);
+    await started;
+
+    await service.setBootstrap('beisen-cli', false);
+    releaseCommand();
+
+    const [item] = await pendingProbe;
+    expect(item).toEqual(expect.objectContaining({ status: 'ready', bootstrapEnabled: false }));
+    expect(emitDiagnosticsStatus).toHaveBeenLastCalledWith(item);
+    expect(service.list().find((entry) => entry.id === 'beisen-cli')?.bootstrapEnabled).toBe(false);
   });
 
   it('reports managed uv as missing when the expected command files are absent', async () => {

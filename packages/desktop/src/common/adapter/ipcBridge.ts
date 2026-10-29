@@ -661,6 +661,7 @@ export type RuntimeDiagnosticStatus =
 
 export type RuntimeDiagnosticItem = {
   args: string[];
+  bootstrapEnabled?: boolean;
   command: string;
   durationMs?: number;
   error?: string;
@@ -1648,6 +1649,9 @@ export const systemSettings = {
   ),
   runtimeDiagnosticsInstall: bridge.buildProvider<RuntimeDiagnosticBatchInstallResult, RuntimeDiagnosticInstallRequest>(
     'system-settings:runtime-diagnostics-install'
+  ),
+  runtimeDiagnosticsSetBootstrap: bridge.buildProvider<RuntimeDiagnosticItem | null, { id: string; enabled: boolean }>(
+    'system-settings:runtime-diagnostics-set-bootstrap'
   ),
   runtimeDiagnosticsStatusChanged: bridge.buildEmitter<RuntimeDiagnosticItem>(
     'system-settings:runtime-diagnostics-status-changed'

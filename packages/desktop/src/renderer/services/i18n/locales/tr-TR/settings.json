@@ -801,6 +801,9 @@
     "serverError": "Günlük yükleme hizmeti geçici olarak kullanılamıyor."
   },
   "runtimeDiagnostics": {
+    "autoCheck": "Otomatik denetimler",
+    "autoCheckTooltip": "Bu CLI'yi başlangıçta ve mesaj göndermeden önce yapılan ortam denetimlerine dahil eder. Değişiklikten sonra, bir sonraki mesaj gönderilirken etkin CLI'ler yeniden denetlenir.",
+    "saveFailed": "Otomatik denetim ayarları kaydedilemedi",
     "title": "Runtime diagnostics",
     "description": "Check the local CLI tools and managed runtimes required at startup.",
     "summary": "{{total}} components, {{ready}} ready, {{repair}} need repair, {{unsupported}} unsupported.",

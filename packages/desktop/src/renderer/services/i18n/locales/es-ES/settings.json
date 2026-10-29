@@ -801,6 +801,9 @@
     "serverError": "El servicio de subida de registros no está disponible temporalmente."
   },
   "runtimeDiagnostics": {
+    "autoCheck": "Comprobaciones automáticas",
+    "autoCheckTooltip": "Incluye esta CLI en las comprobaciones del entorno al iniciar y antes de enviar mensajes. Tras un cambio, el siguiente mensaje vuelve a comprobar las CLI activadas.",
+    "saveFailed": "No se pudieron guardar los ajustes de comprobación automática",
     "title": "Runtime diagnostics",
     "description": "Check the local CLI tools and managed runtimes required at startup.",
     "summary": "{{total}} components, {{ready}} ready, {{repair}} need repair, {{unsupported}} unsupported.",

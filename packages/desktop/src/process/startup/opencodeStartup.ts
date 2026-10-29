@@ -6,6 +6,7 @@
 
 import { ipcBridge } from '@/common';
 import type { IRuntimeStatusEvent, IRuntimeStatusScope } from '@/common/adapter/ipcBridge';
+import type { IConfigStorageRefer } from '@/common/config/storage';
 import { execFile } from 'child_process';
 import {
   chmodSync,
@@ -23,7 +24,7 @@ import { tmpdir } from 'os';
 import path from 'path';
 import { promisify } from 'util';
 import yauzl from 'yauzl';
-import { getSystemDir } from '../utils/initStorage';
+import { getSystemDir, ProcessConfig } from '../utils/initStorage';
 import { getDataPath } from '../utils/utils';
 
 export type OpenCodeBootstrapStatus = 'ready' | 'skipped' | 'failed';
@@ -58,16 +59,7 @@ type ManagedAcpTool = {
   packageSpec?: string;
   versionArgs: readonly string[];
   scope: IRuntimeStatusScope;
-  toolId:
-    | 'beisen-cli'
-    | 'codex'
-    | 'dws'
-    | 'googleworkspace-cli'
-    | 'noxinfluencer-cli'
-    | 'officecli'
-    | 'opencode'
-    | 'shopify-cli'
-    | 'ziniao-open';
+  toolId: ManagedStartupToolId;
 };
 
 type EnsureNodeRuntime = (params: { scope: IRuntimeStatusScope }) => Promise<{ ready: boolean }>;
@@ -334,7 +326,7 @@ const STARTUP_TOOLS = [
   ZINIAO_OPEN_TOOL,
 ] as const;
 
-export type ManagedStartupToolId = ManagedAcpTool['toolId'];
+export type ManagedStartupToolId = keyof NonNullable<IConfigStorageRefer['runtime.cliBootstrap']>;
 
 export type ManagedStartupToolPublicDefinition = {
   commandName: string;
@@ -380,6 +372,46 @@ type ManagedNodeRuntimeCheckOptions = {
 };
 
 const managedNodeReadinessPromises = new Map<string, Promise<ManagedNodeRuntime | null>>();
+let managedBootstrapRevision = 0;
+let managedBootstrapOperations: Promise<unknown> = Promise.resolve();
+
+function coordinateManagedBootstrapSettings<T>(operation: () => Promise<T>): Promise<T> {
+  const result = managedBootstrapOperations.then(operation);
+  managedBootstrapOperations = result.catch((): void => {});
+  return result;
+}
+
+export function getManagedStartupToolBootstrapEnabled(toolId: ManagedStartupToolId): boolean {
+  const tool = getStartupToolById(toolId);
+  return tool ? shouldEnsureManagedToolOnStartup(tool) : false;
+}
+
+export async function setManagedStartupToolBootstrapEnabled(
+  toolId: unknown,
+  enabled: unknown,
+  dataPath = getDataPath()
+): Promise<void> {
+  if (typeof toolId !== 'string' || !getStartupToolById(toolId) || typeof enabled !== 'boolean') {
+    throw new Error('Invalid managed CLI bootstrap setting');
+  }
+  await coordinateManagedBootstrapSettings(async () => {
+    managedBootstrapRevision += 1;
+    const markerPath = getManagedNodeEnvironmentMarkerPath(dataPath);
+    await fs.rm(markerPath, { force: true });
+    const previous = ProcessConfig.getSync('runtime.cliBootstrap');
+    try {
+      await ProcessConfig.set('runtime.cliBootstrap', { ...previous, [toolId]: enabled });
+    } catch (error) {
+      // The store updates its cache before persisting; restore the effective setting on failure.
+      if (previous === undefined) {
+        await ProcessConfig.remove('runtime.cliBootstrap').catch((): void => {});
+      } else {
+        await ProcessConfig.set('runtime.cliBootstrap', previous).catch((): void => {});
+      }
+      throw error;
+    }
+  });
+}
 
 function normalizeError(error: unknown): string {
   if (error instanceof Error) {
@@ -724,53 +756,63 @@ export async function ensureManagedNodeEnvironmentMarker(
   if (env.AIONUI_E2E_TEST === '1') {
     return true;
   }
-  const requiredTools = STARTUP_TOOLS.filter((tool) => shouldEnsureManagedToolOnStartup(tool, env));
-  if (requiredTools.length === 0) {
-    await fs.rm(getManagedNodeEnvironmentMarkerPath(dataPath), { force: true });
-    return false;
+  const snapshot = await coordinateManagedBootstrapSettings(async () => ({
+    ready: await isManagedNodeEnvironmentReady(dataPath),
+    requiredTools: STARTUP_TOOLS.filter((tool) => shouldEnsureManagedToolOnStartup(tool, env)),
+    revision: managedBootstrapRevision,
+  }));
+  if (snapshot.ready) {
+    return true;
   }
-
-  const nodeRuntime = await ensureManagedNodeRuntimeReady({
-    commandRunner: options.commandRunner ?? runCommand,
-    dataPath,
-    ensureNodeRuntime: options.ensureNodeRuntime ?? ipcBridge.systemSettings.ensureNodeRuntime.invoke,
-    scope: NODE_RUNTIME_SCOPE,
-    retryWindowMs: options.managedNodeRuntimeRetryWindowMs,
-    retryIntervalMs: options.managedNodeRuntimeRetryIntervalMs,
-  });
-  if (!nodeRuntime) {
-    await fs.rm(getManagedNodeEnvironmentMarkerPath(dataPath), { force: true });
-    return false;
-  }
-
-  const toolReadiness = await Promise.all(
-    requiredTools.map(async (tool) => {
-      const prefix = getManagedToolNpmPrefix(tool, dataPath);
-      if (tool.toolId === DWS_TOOL_ID && !(await pathExists(getDwsBinaryPath(prefix)))) {
-        return false;
-      }
-      return validateManagedToolVersion(
-        tool,
-        dataPath,
-        nodeRuntime.nodeExecutable,
-        options.commandRunner ?? runCommand
+  let ready = true;
+  if (snapshot.requiredTools.length > 0) {
+    const nodeRuntime = await ensureManagedNodeRuntimeReady({
+      commandRunner: options.commandRunner ?? runCommand,
+      dataPath,
+      ensureNodeRuntime: options.ensureNodeRuntime ?? ipcBridge.systemSettings.ensureNodeRuntime.invoke,
+      scope: NODE_RUNTIME_SCOPE,
+      retryWindowMs: options.managedNodeRuntimeRetryWindowMs,
+      retryIntervalMs: options.managedNodeRuntimeRetryIntervalMs,
+    });
+    ready = Boolean(nodeRuntime);
+    if (nodeRuntime) {
+      const toolReadiness = await Promise.all(
+        snapshot.requiredTools.map(async (tool) => {
+          const prefix = getManagedToolNpmPrefix(tool, dataPath);
+          if (tool.toolId === DWS_TOOL_ID && !(await pathExists(getDwsBinaryPath(prefix)))) {
+            return false;
+          }
+          return validateManagedToolVersion(
+            tool,
+            dataPath,
+            nodeRuntime.nodeExecutable,
+            options.commandRunner ?? runCommand
+          );
+        })
       );
-    })
-  );
-  if (!toolReadiness.every(Boolean)) {
-    await fs.rm(getManagedNodeEnvironmentMarkerPath(dataPath), { force: true });
-    return false;
+      ready = toolReadiness.every(Boolean);
+    }
   }
 
-  const markerPath = getManagedNodeEnvironmentMarkerPath(dataPath);
-  try {
-    await fs.mkdir(path.dirname(markerPath), { recursive: true });
-    await fs.writeFile(markerPath, 'ready\n');
-  } catch {
-    await fs.rm(markerPath, { force: true }).catch((): void => {});
-    return false;
-  }
-  return true;
+  const committed = await coordinateManagedBootstrapSettings(async (): Promise<boolean | null> => {
+    if (snapshot.revision !== managedBootstrapRevision) {
+      return null;
+    }
+    const markerPath = getManagedNodeEnvironmentMarkerPath(dataPath);
+    if (!ready) {
+      await fs.rm(markerPath, { force: true });
+      return false;
+    }
+    try {
+      await fs.mkdir(path.dirname(markerPath), { recursive: true });
+      await fs.writeFile(markerPath, 'ready\n');
+      return true;
+    } catch {
+      await fs.rm(markerPath, { force: true }).catch((): void => {});
+      return false;
+    }
+  });
+  return committed ?? ensureManagedNodeEnvironmentMarker(options);
 }
 
 function getNpmCliPath(nodeExecutable: string): string {
@@ -1567,10 +1609,14 @@ async function ensureManagedToolInstalledWithManagedNode(options: {
 }
 
 function shouldEnsureManagedToolOnStartup(tool: ManagedAcpTool, env: OpenCodeStartupEnv = process.env): boolean {
-  if (env[tool.envDisabledKey] === '0') {
+  if (env.AIONUI_E2E_TEST === '1') {
     return false;
   }
-  return env.AIONUI_E2E_TEST !== '1';
+  const saved = ProcessConfig.getSync('runtime.cliBootstrap')?.[tool.toolId];
+  if (typeof saved === 'boolean') {
+    return saved;
+  }
+  return tool.toolId === OFFICECLI_TOOL_ID ? env[tool.envDisabledKey] === '1' : env[tool.envDisabledKey] !== '0';
 }
 
 export function shouldEnsureOpenCodeOnStartup(env: OpenCodeStartupEnv = process.env): boolean {
@@ -1611,10 +1657,11 @@ export function shouldEnsureZiniaoOpenOnStartup(env: OpenCodeStartupEnv = proces
 
 async function ensureManagedToolReady(
   tool: ManagedAcpTool,
-  options: EnsureOpenCodeReadyOptions = {}
+  options: EnsureOpenCodeReadyOptions = {},
+  manual = false
 ): Promise<OpenCodeBootstrapResult> {
   const env = options.env ?? process.env;
-  if (!shouldEnsureManagedToolOnStartup(tool, env)) {
+  if (manual ? env.AIONUI_E2E_TEST === '1' : !shouldEnsureManagedToolOnStartup(tool, env)) {
     return { status: 'skipped' };
   }
 
@@ -1724,7 +1771,7 @@ export function ensureManagedStartupToolReadyForDiagnostics(
       error: `unknown managed startup tool: ${toolId}`,
     });
   }
-  return ensureManagedToolReady(tool, options);
+  return ensureManagedToolReady(tool, options, true);
 }
 
 export function ensureOpenCodeReadyOnce(options: EnsureOpenCodeReadyOptions = {}): Promise<OpenCodeBootstrapResult> {

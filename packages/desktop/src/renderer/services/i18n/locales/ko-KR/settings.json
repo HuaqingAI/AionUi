@@ -801,6 +801,9 @@
     "serverError": "로그 업로드 서비스를 일시적으로 사용할 수 없습니다."
   },
   "runtimeDiagnostics": {
+    "autoCheck": "자동 검사",
+    "autoCheckTooltip": "이 CLI를 시작 시 및 메시지 전송 전 환경 검사에 포함합니다. 설정을 변경하면 다음 메시지를 전송할 때 활성화된 CLI를 다시 검사합니다.",
+    "saveFailed": "자동 검사 설정을 저장하지 못했습니다",
     "title": "Runtime diagnostics",
     "description": "Check the local CLI tools and managed runtimes required at startup.",
     "summary": "{{total}} components, {{ready}} ready, {{repair}} need repair, {{unsupported}} unsupported.",
