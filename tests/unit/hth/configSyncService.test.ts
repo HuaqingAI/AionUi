@@ -144,6 +144,419 @@ describe('HTHConfigSyncService auth handling', () => {
     expect(hthFetch).toHaveBeenCalledTimes(1);
   });
 
+  it.each([0, 200, 401, 403, 404])(
+    'rejects conversation workspace preparation outside the current Core scope (%s)',
+    async (status) => {
+      if (status) await writeStoredAuth(authFile);
+      (globalThis as typeof globalThis & { __backendPort?: number }).__backendPort = 18181;
+      const coreFetch = vi.fn(async () =>
+        Response.json({ data: { id: 'another-conversation' } }, { status: status || 404 })
+      );
+      const service = new HTHConfigSyncService(
+        new HTHAuthService(authFile),
+        undefined,
+        undefined,
+        undefined,
+        coreFetch
+      );
+      const inject = vi.spyOn(service, 'injectProjectConfig');
+
+      await expect(
+        service.prepareConversationWorkspace({ conversationId: 'private-conversation', workspace: tempDir })
+      ).rejects.toThrow(
+        status === 0 ? 'authRequired' : status === 200 ? 'conversationInvalid' : 'conversationUnavailable'
+      );
+
+      expect(inject).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each(['different', 'missing', 'symlink', 'file', 'child-symlink'] as const)(
+    'rejects conversation workspace preparation for a %s directory',
+    async (kind) => {
+      await writeStoredAuth(authFile);
+      (globalThis as typeof globalThis & { __backendPort?: number }).__backendPort = 18181;
+      const workspace = path.join(tempDir, 'workspace');
+      const other = path.join(tempDir, 'other');
+      await fs.mkdir(workspace);
+      if (kind === 'file') await fs.writeFile(other, 'file');
+      else if (kind !== 'missing') await fs.mkdir(other);
+      const requested =
+        kind === 'child-symlink' ? workspace : kind === 'symlink' ? path.join(tempDir, 'linked-workspace') : other;
+      if (kind === 'symlink') await fs.symlink(other, requested, 'junction');
+      if (kind === 'child-symlink') await fs.symlink(other, path.join(workspace, '.codex'), 'junction');
+      const coreFetch = vi.fn(async () =>
+        Response.json({
+          data: {
+            id: 'conversation-1',
+            extra: { workspace: kind === 'file' ? other : workspace, assistant_id: 'hth-demo' },
+          },
+        })
+      );
+      const service = new HTHConfigSyncService(
+        new HTHAuthService(authFile),
+        undefined,
+        undefined,
+        undefined,
+        coreFetch
+      );
+      const inject = vi.spyOn(service, 'injectProjectConfig');
+
+      await expect(
+        service.prepareConversationWorkspace({ conversationId: 'conversation-1', workspace: requested })
+      ).rejects.toThrow('workspaceMismatch');
+
+      expect(inject).not.toHaveBeenCalled();
+    }
+  );
+
+  it('prepares conversation workspace files from the persisted assistant before the CLI starts', async () => {
+    await writeStoredAuth(authFile, { displayName: 'Alice' });
+    (globalThis as typeof globalThis & { __backendPort?: number }).__backendPort = 18181;
+    const workspace = path.join(tempDir, 'workspace');
+    await fs.mkdir(workspace);
+    const coreFetch = vi.fn(async (url: string) => {
+      if (url.endsWith('/api/conversations/conversation-1')) {
+        return Response.json({
+          data: {
+            id: 'conversation-1',
+            extra: JSON.stringify({
+              workspace,
+              assistant_id: 'manual-codex',
+            }),
+          },
+        });
+      }
+      if (url.endsWith('/api/assistants/manual-codex')) {
+        return Response.json({
+          data: {
+            id: 'manual-codex',
+            source: 'user',
+            engine: { agent: { type: 'codex', source: 'custom' } },
+          },
+        });
+      }
+      return new Response('', { status: 404 });
+    });
+    const service = new HTHConfigSyncService(
+      new HTHAuthService(authFile),
+      undefined,
+      () => path.join(tempDir, 'codex-home'),
+      undefined,
+      coreFetch
+    );
+
+    await service.prepareConversationWorkspace({ conversationId: 'conversation-1', workspace });
+
+    await expect(fs.readFile(path.join(workspace, '.codex', 'config.toml'), 'utf8')).resolves.toContain('姓名：Alice');
+    expect(coreFetch).toHaveBeenCalledWith('http://127.0.0.1:18181/api/conversations/conversation-1');
+  });
+
+  it.each(['snapshot', 'snapshot-over-legacy', 'legacy'] as const)(
+    'materializes the managed OpenCode project using the %s conversation assistant identity',
+    async (identity) => {
+      await writeStoredAuth(authFile, { displayName: 'Alice' });
+      (globalThis as typeof globalThis & { __backendPort?: number }).__backendPort = 18181;
+      const workspace = path.join(tempDir, 'workspace');
+      const extractDir = path.join(tempDir, 'package');
+      await fs.mkdir(workspace);
+      await fs.mkdir(path.join(extractDir, 'project'), { recursive: true });
+      await fs.writeFile(path.join(extractDir, 'project', 'instructions.md'), 'Follow the project instructions.\n');
+      await fs.writeFile(path.join(extractDir, 'project', 'user-context.md'), 'Name: <name>\n');
+      await fs.writeFile(
+        path.join(extractDir, 'project', 'opencode.jsonc'),
+        '{"model":"hth/gpt-5.6-terra","provider":{"hth":{"models":{}}}}\n'
+      );
+      const packageStore = {
+        findByAssistantId: vi.fn(async (assistantId: string) =>
+          assistantId === 'hth-demo'
+            ? {
+                cliType: 'opencode',
+                extractDir,
+                version: '1.0.0',
+                projectFiles: ['instructions.md', 'opencode.jsonc', 'user-context.md'],
+              }
+            : null
+        ),
+      } as unknown as HTHPackageStore;
+      // Core v0.2.1 hydrates this identity from conversation_assistant_snapshots;
+      // its raw extra normally contains only the workspace and runtime settings.
+      const coreFetch = vi.fn(async () =>
+        Response.json({
+          data: {
+            id: 'conversation-1',
+            ...(identity !== 'legacy' && {
+              assistant: { id: 'hth-demo', source: 'user', name: 'Demo', avatar: '', backend: 'opencode' },
+            }),
+            extra: {
+              workspace,
+              ...(identity === 'legacy' && { assistant_id: 'hth-demo' }),
+              ...(identity === 'snapshot-over-legacy' && { assistant_id: 'stale-assistant' }),
+            },
+          },
+        })
+      );
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: string | URL) =>
+          Response.json({ data: String(input).includes('/pricing') ? [] : [{ id: 'gpt-5.6-terra' }] })
+        )
+      );
+      const service = new HTHConfigSyncService(
+        new HTHAuthService(authFile),
+        packageStore,
+        undefined,
+        undefined,
+        coreFetch
+      );
+
+      await service.prepareConversationWorkspace({ conversationId: 'conversation-1', workspace });
+
+      expect(packageStore.findByAssistantId).toHaveBeenCalledWith('hth-demo');
+      await expect(
+        Promise.all(
+          ['instructions.md', 'opencode.jsonc', 'user-context.md'].map((file) =>
+            fs.readFile(path.join(workspace, file), 'utf8')
+          )
+        )
+      ).resolves.toEqual([
+        'Follow the project instructions.\n',
+        expect.stringContaining('"gpt-5.6-terra"'),
+        'Name: Alice\n',
+      ]);
+    }
+  );
+
+  it.each([
+    { assistant: null },
+    { assistant: {} },
+    { assistant: [] },
+    { assistant: 123 },
+    { assistant: 'hth-demo' },
+    { assistant: { id: 123 } },
+    { assistant: { id: ' ' } },
+    { assistant: { assistant_id: 'hth-demo' } },
+  ])(
+    'rejects malformed snapshot identity $assistant instead of falling back to a legacy assistant',
+    async ({ assistant }) => {
+      await writeStoredAuth(authFile);
+      (globalThis as typeof globalThis & { __backendPort?: number }).__backendPort = 18181;
+      const coreFetch = vi.fn(async () =>
+        Response.json({
+          data: {
+            id: 'conversation-1',
+            assistant,
+            extra: { workspace: tempDir, assistant_id: 'hth-demo' },
+          },
+        })
+      );
+      const service = new HTHConfigSyncService(
+        new HTHAuthService(authFile),
+        undefined,
+        undefined,
+        undefined,
+        coreFetch
+      );
+      const inject = vi.spyOn(service, 'injectProjectConfig').mockResolvedValue({ injected: false, files: [] });
+
+      await expect(
+        service.prepareConversationWorkspace({ conversationId: 'conversation-1', workspace: tempDir })
+      ).rejects.toThrow('conversationInvalid');
+      expect(inject).not.toHaveBeenCalled();
+    }
+  );
+
+  it('repairs missing conversation workspace files without replacing managed project customizations', async () => {
+    await writeStoredAuth(authFile, { displayName: 'Alice' });
+    (globalThis as typeof globalThis & { __backendPort?: number }).__backendPort = 18181;
+    const workspace = path.join(tempDir, 'workspace');
+    const extractDir = path.join(tempDir, 'package');
+    await fs.mkdir(workspace);
+    await fs.mkdir(path.join(extractDir, 'project'), { recursive: true });
+    await fs.writeFile(path.join(workspace, 'opencode.jsonc'), '{"custom":true}\n');
+    await fs.writeFile(path.join(extractDir, 'project', 'opencode.jsonc'), '{"template":true}\n');
+    await fs.writeFile(path.join(extractDir, 'project', 'user-context.md'), '姓名：<name>\n');
+    const packageStore = {
+      findByAssistantId: vi.fn(async () => ({
+        cliType: 'opencode',
+        extractDir,
+        version: '1.0.0',
+        projectFiles: ['opencode.jsonc', 'user-context.md'],
+      })),
+    } as unknown as HTHPackageStore;
+    const coreFetch = vi.fn(async () =>
+      Response.json({
+        data: {
+          id: 'conversation-1',
+          extra: { workspace, assistant_id: 'hth-demo' },
+        },
+      })
+    );
+    const service = new HTHConfigSyncService(
+      new HTHAuthService(authFile),
+      packageStore,
+      undefined,
+      undefined,
+      coreFetch
+    );
+
+    await service.prepareConversationWorkspace({ conversationId: 'conversation-1', workspace });
+    await expect(fs.readFile(path.join(workspace, 'user-context.md'), 'utf8')).resolves.toBe('姓名：Alice\n');
+    await fs.writeFile(path.join(workspace, 'user-context.md'), 'custom context\n');
+    await service.prepareConversationWorkspace({ conversationId: 'conversation-1', workspace });
+
+    await expect(fs.readFile(path.join(workspace, 'opencode.jsonc'), 'utf8')).resolves.toBe('{"custom":true}\n');
+    await expect(fs.readFile(path.join(workspace, 'user-context.md'), 'utf8')).resolves.toBe('custom context\n');
+  });
+
+  it('keeps blocking conversation workspace preparation after a failed model initialization', async () => {
+    await writeStoredAuth(authFile);
+    (globalThis as typeof globalThis & { __backendPort?: number }).__backendPort = 18181;
+    const workspace = path.join(tempDir, 'workspace');
+    const extractDir = path.join(tempDir, 'package');
+    await fs.mkdir(workspace);
+    await fs.mkdir(path.join(extractDir, 'project'), { recursive: true });
+    await fs.writeFile(path.join(extractDir, 'project', 'opencode.jsonc'), '{"provider":{"hth":{"models":{}}}}\n');
+    const packageStore = {
+      findByAssistantId: vi.fn(async () => ({
+        cliType: 'opencode',
+        extractDir,
+        version: '1.0.0',
+        projectFiles: ['opencode.jsonc'],
+      })),
+    } as unknown as HTHPackageStore;
+    const coreFetch = vi.fn(async () =>
+      Response.json({
+        data: {
+          id: 'conversation-1',
+          extra: { workspace, assistant_id: 'hth-demo' },
+        },
+      })
+    );
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Response.json({ data: [{ id: 'unauthorized-model' }] }))
+    );
+    const service = new HTHConfigSyncService(
+      new HTHAuthService(authFile),
+      packageStore,
+      undefined,
+      undefined,
+      coreFetch
+    );
+
+    await expect(service.prepareConversationWorkspace({ conversationId: 'conversation-1', workspace })).rejects.toThrow(
+      'defaultModelUnavailable'
+    );
+    await expect(service.prepareConversationWorkspace({ conversationId: 'conversation-1', workspace })).rejects.toThrow(
+      'defaultModelUnavailable'
+    );
+  });
+
+  it.each(['managed', 'manual', 'manual-existing'] as const)(
+    'removes incomplete %s conversation workspace files after a filesystem exception so retries prepare again',
+    async (source) => {
+      await writeStoredAuth(authFile);
+      (globalThis as typeof globalThis & { __backendPort?: number }).__backendPort = 18181;
+      const workspace = path.join(tempDir, 'workspace');
+      const extractDir = path.join(tempDir, 'package');
+      const codexHome = path.join(tempDir, 'codex-home');
+      await fs.mkdir(workspace);
+      if (source === 'manual-existing') {
+        await fs.mkdir(path.join(workspace, '.codex'));
+        await fs.writeFile(path.join(workspace, '.codex', 'config.toml'), 'model = "user-selected-model"\n');
+      }
+      await fs.mkdir(path.join(extractDir, 'project', '.codex'), { recursive: true });
+      await fs.writeFile(path.join(extractDir, 'project', '.codex', 'config.toml'), 'model = "gpt-5.6-terra"\n');
+      // A directory at the atomic-write destination deterministically rejects
+      // catalog initialization (managed) or workspace trust (manual).
+      await fs.mkdir(path.join(codexHome, source === 'managed' ? 'hth-model-catalog.json' : 'config.toml'), {
+        recursive: true,
+      });
+      const assistantId = source === 'managed' ? 'hth-demo' : 'manual-codex';
+      const packageStore = {
+        findByAssistantId: vi.fn(async () =>
+          source === 'managed'
+            ? {
+                cliType: 'codex',
+                extractDir,
+                version: '1.0.0',
+                projectFiles: ['.codex/config.toml'],
+              }
+            : null
+        ),
+      } as unknown as HTHPackageStore;
+      const coreFetch = vi.fn(async (url: string) =>
+        Response.json({
+          data: url.includes('/api/conversations/')
+            ? {
+                id: 'conversation-1',
+                extra: { workspace, assistant_id: assistantId },
+              }
+            : {
+                id: assistantId,
+                source: 'user',
+                engine: { agent: { type: 'codex', source: 'custom' } },
+              },
+        })
+      );
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => Response.json({ data: [{ id: 'gpt-5.6-terra' }] }))
+      );
+      const service = new HTHConfigSyncService(
+        new HTHAuthService(authFile),
+        packageStore,
+        () => codexHome,
+        undefined,
+        coreFetch
+      );
+
+      await expect(
+        service.prepareConversationWorkspace({ conversationId: 'conversation-1', workspace })
+      ).rejects.toThrow();
+      await expect(
+        service.prepareConversationWorkspace({ conversationId: 'conversation-1', workspace })
+      ).rejects.toThrow();
+      if (source === 'manual-existing') {
+        await expect(fs.readFile(path.join(workspace, '.codex', 'config.toml'), 'utf8')).resolves.toBe(
+          'model = "user-selected-model"\n'
+        );
+      } else {
+        await expect(fs.access(path.join(workspace, '.codex', 'config.toml'))).rejects.toThrow();
+      }
+    }
+  );
+
+  it.each([
+    'authRequired',
+    'personalApiKeyInvalid',
+    'modelListUnavailable',
+    'modelListInvalid',
+    'modelListEmpty',
+    'defaultModelUnavailable',
+    'openCodeConfigInvalid',
+    'codexConfigInvalid',
+    'workspaceMissing',
+  ] as const)('blocks conversation workspace preparation when injection reports %s', async (reason) => {
+    await writeStoredAuth(authFile);
+    (globalThis as typeof globalThis & { __backendPort?: number }).__backendPort = 18181;
+    const coreFetch = vi.fn(async () =>
+      Response.json({
+        data: {
+          id: 'conversation-1',
+          extra: { workspace: tempDir, assistant_id: 'hth-demo' },
+        },
+      })
+    );
+    const service = new HTHConfigSyncService(new HTHAuthService(authFile), undefined, undefined, undefined, coreFetch);
+    vi.spyOn(service, 'injectProjectConfig').mockResolvedValue({ injected: false, files: [], reason });
+
+    await expect(
+      service.prepareConversationWorkspace({ conversationId: 'conversation-1', workspace: tempDir })
+    ).rejects.toThrow(reason);
+  });
+
   it('updates newly imported assistants after import so metadata is persisted', async () => {
     await writeStoredAuth(authFile);
     (globalThis as typeof globalThis & { __backendPort?: number }).__backendPort = 18181;

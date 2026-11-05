@@ -7,6 +7,7 @@
 import { ipcBridge } from '@/common';
 import type { IRuntimeStatusEvent, IRuntimeStatusScope } from '@/common/adapter/ipcBridge';
 import type { IConfigStorageRefer } from '@/common/config/storage';
+import { buildWorkspacePreparationLauncher } from '@/process/services/hth/runtime/workspacePreparationLauncher';
 import { execFile } from 'child_process';
 import {
   chmodSync,
@@ -200,6 +201,7 @@ export const MANAGED_NODE_ENVIRONMENT_MARKER = '.hqbuddy-environment-ready';
 const MANAGED_NPM_REGISTRY = 'https://registry.npmmirror.com';
 const MANAGED_NODE_LAUNCHER_MARKER = 'AionUi managed Node launcher';
 const MANAGED_DIRECT_LAUNCHER_MARKER = 'AionUi managed direct launcher';
+const WORKSPACE_PREPARATION_LAUNCHER_FILE = 'aionui-workspace-preparation.cjs';
 const NODE_RUNTIME_SCOPE: IRuntimeStatusScope = {
   kind: 'custom_agent',
   id: 'managed-node-runtime',
@@ -1158,8 +1160,13 @@ function windowsBatchQuote(value: string): string {
   return `"${value.replaceAll('%', '%%')}"`;
 }
 
-function buildManagedNodeLauncher(commandPath: string, nodeExecutable: string, targetPath: string): string {
-  const encodedTarget = Buffer.from(targetPath, 'utf8').toString('base64');
+function buildManagedNodeLauncher(
+  commandPath: string,
+  nodeExecutable: string,
+  targetPath: string,
+  originalTargetPath = targetPath
+): string {
+  const encodedTarget = Buffer.from(originalTargetPath, 'utf8').toString('base64');
   if (process.platform === 'win32') {
     // Keep the batch file ASCII-safe; cmd.exe may decode UTF-8 absolute paths using the legacy code page.
     const relativeToLauncher = (filePath: string): string =>
@@ -1264,7 +1271,8 @@ async function ensureManagedToolLauncherUsesManagedNode(
   dataPath: string,
   nodeExecutable: string
 ): Promise<void> {
-  if (process.platform === 'win32' && tool.toolId !== CODEX_TOOL_ID) {
+  const preparesWorkspace = tool.toolId === CODEX_TOOL_ID || tool.toolId === OPENCODE_TOOL_ID;
+  if (process.platform === 'win32' && !preparesWorkspace) {
     return;
   }
 
@@ -1278,7 +1286,22 @@ async function ensureManagedToolLauncherUsesManagedNode(
     return;
   }
 
-  const launcher = await buildManagedToolLauncher(commandPath, nodeExecutable, targetPath);
+  let launcher: string | null;
+  if (preparesWorkspace) {
+    const preparationPath = path.join(path.dirname(commandPath), WORKSPACE_PREPARATION_LAUNCHER_FILE);
+    const preparation = buildWorkspacePreparationLauncher({
+      targetPath,
+      nodeExecutable,
+      nodeScript: await isManagedToolNodeScriptTarget(targetPath),
+    });
+    const currentPreparation = await fs.readFile(preparationPath, 'utf8').catch((): undefined => undefined);
+    if (currentPreparation !== preparation) {
+      await fs.writeFile(preparationPath, preparation, { mode: 0o600 });
+    }
+    launcher = buildManagedNodeLauncher(commandPath, nodeExecutable, preparationPath, targetPath);
+  } else {
+    launcher = await buildManagedToolLauncher(commandPath, nodeExecutable, targetPath);
+  }
   if (!launcher) {
     return;
   }
@@ -1301,7 +1324,8 @@ function ensureManagedToolLauncherUsesManagedNodeSync(
   dataPath: string,
   nodeExecutable: string
 ): void {
-  if (process.platform === 'win32' && tool.toolId !== CODEX_TOOL_ID) {
+  const preparesWorkspace = tool.toolId === CODEX_TOOL_ID || tool.toolId === OPENCODE_TOOL_ID;
+  if (process.platform === 'win32' && !preparesWorkspace) {
     return;
   }
 
@@ -1315,7 +1339,27 @@ function ensureManagedToolLauncherUsesManagedNodeSync(
     return;
   }
 
-  const launcher = buildManagedToolLauncherSync(commandPath, nodeExecutable, targetPath);
+  let launcher: string | null;
+  if (preparesWorkspace) {
+    const preparationPath = path.join(path.dirname(commandPath), WORKSPACE_PREPARATION_LAUNCHER_FILE);
+    const preparation = buildWorkspacePreparationLauncher({
+      targetPath,
+      nodeExecutable,
+      nodeScript: isManagedToolNodeScriptTargetSync(targetPath),
+    });
+    let currentPreparation: string | undefined;
+    try {
+      currentPreparation = readFileSync(preparationPath, 'utf8');
+    } catch {
+      // Missing launchers are created before the backend receives their PATH.
+    }
+    if (currentPreparation !== preparation) {
+      writeFileSync(preparationPath, preparation, { mode: 0o600 });
+    }
+    launcher = buildManagedNodeLauncher(commandPath, nodeExecutable, preparationPath, targetPath);
+  } else {
+    launcher = buildManagedToolLauncherSync(commandPath, nodeExecutable, targetPath);
+  }
   if (!launcher) {
     return;
   }

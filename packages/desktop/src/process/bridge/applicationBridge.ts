@@ -20,9 +20,28 @@ import { HTHClientLogUploadService } from '@process/services/hth/client/clientLo
 import { shouldRunClientHeartbeat } from '@process/services/hth/client/clientEnvironment';
 import { HTHCoreIdentityService } from '@process/services/hth/coreIdentityService';
 import { HTHConfigSyncService } from '@process/services/hth/configSyncService';
+import { HTHWorkspacePreparationServer } from '@process/services/hth/runtime/workspacePreparationServer';
 import { HTHQuotaService } from '@process/services/hth/quotaService';
 
 let mainWindowRef: BrowserWindow | null = null;
+let workspacePreparationServer: HTHWorkspacePreparationServer | undefined;
+let resolveWorkspacePreparationBackendReady!: () => void;
+const workspacePreparationBackendReady = new Promise<void>((resolve) => {
+  resolveWorkspacePreparationBackendReady = resolve;
+});
+
+/** Release startup cron requests once the Core port and identity bridge are available. */
+export function notifyHTHWorkspacePreparationBackendReady(): void {
+  resolveWorkspacePreparationBackendReady();
+}
+
+/** Start the preparation channel before the backend inherits its runtime environment. */
+export async function startHTHWorkspacePreparation(): Promise<void> {
+  if (!workspacePreparationServer) throw new Error('HTH workspace preparation is unavailable');
+  const connection = await workspacePreparationServer.start();
+  process.env.AIONUI_WORKSPACE_PREPARATION_PIPE = connection.pipe;
+  process.env.AIONUI_WORKSPACE_PREPARATION_TOKEN = connection.token;
+}
 
 const START_ON_BOOT_UNSUPPORTED_MESSAGE = 'Start on boot is only available in packaged macOS and Windows apps.';
 export const START_ON_BOOT_WINDOWS_ARG = '--start-on-boot';
@@ -294,6 +313,21 @@ export function initApplicationBridge(): void {
     undefined,
     coreIdentityService.fetch.bind(coreIdentityService)
   );
+  workspacePreparationServer = new HTHWorkspacePreparationServer(async (request) => {
+    // Core can recover overdue cron jobs while its router is still starting.
+    await workspacePreparationBackendReady;
+    const access = await hthAuthService.getAccess();
+    if (!access) throw new Error('HTH login is required for workspace preparation');
+    await coreIdentityService.establish(access);
+    await hthConfigSyncService.prepareConversationWorkspace(request);
+  });
+  app.once('before-quit', () => {
+    delete process.env.AIONUI_WORKSPACE_PREPARATION_PIPE;
+    delete process.env.AIONUI_WORKSPACE_PREPARATION_TOKEN;
+    void workspacePreparationServer?.close().catch(() => {
+      console.warn('[HTHWorkspacePreparation] Failed to close local preparation channel');
+    });
+  });
   repairLegacyAssistantAvatars = () => {
     void hthConfigSyncService.repairLegacyAssistantAvatars().catch((error) => {
       console.warn('[HTH] Failed to repair legacy assistant avatars:', error);

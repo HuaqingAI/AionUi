@@ -64,7 +64,8 @@ export async function copyManagedSection(
   sourceDir: string,
   section: ZipSection,
   targetDir: string,
-  version: string
+  version: string,
+  options: { overwrite?: boolean } = {}
 ): Promise<string[]> {
   const sectionDir = path.join(sourceDir, section);
   try {
@@ -77,8 +78,24 @@ export async function copyManagedSection(
   }
 
   const copied: string[] = [];
-  await copyDirectory(sectionDir, targetDir, '', copied);
-  await writeSyncManifest(targetDir, version);
+  const overwrite = options.overwrite !== false;
+  await fs.mkdir(targetDir, { recursive: true });
+  const realTargetDir = overwrite ? undefined : await fs.realpath(targetDir);
+  try {
+    await copyDirectory(sectionDir, targetDir, '', copied, overwrite, realTargetDir);
+    if (overwrite || copied.length > 0) await writeSyncManifest(targetDir, version, overwrite);
+  } catch (error) {
+    if (realTargetDir) {
+      await Promise.all(
+        copied.map(async (relativeFile) => {
+          const target = path.join(targetDir, relativeFile);
+          assertPathInside(realTargetDir, await fs.realpath(path.dirname(target)));
+          await fs.rm(target, { force: true });
+        })
+      );
+    }
+    throw error;
+  }
   return copied;
 }
 
@@ -86,7 +103,9 @@ async function copyDirectory(
   sourceDir: string,
   targetDir: string,
   relativeDir: string,
-  copied: string[]
+  copied: string[],
+  overwrite: boolean,
+  realTargetDir?: string
 ): Promise<void> {
   const entries = await fs.readdir(sourceDir, { withFileTypes: true });
   for (const entry of entries) {
@@ -95,34 +114,45 @@ async function copyDirectory(
     const targetPath = path.join(targetDir, nextRelative);
     assertPathInside(targetDir, targetPath);
     if (entry.isDirectory()) {
-      await copyDirectory(sourcePath, targetDir, nextRelative, copied);
+      await fs.mkdir(targetPath, { recursive: true });
+      if (realTargetDir) assertPathInside(realTargetDir, await fs.realpath(targetPath));
+      await copyDirectory(sourcePath, targetDir, nextRelative, copied, overwrite, realTargetDir);
       continue;
     }
     if (!entry.isFile()) {
       continue;
     }
-    await fs.mkdir(path.dirname(targetPath), { recursive: true });
-    await fs.copyFile(sourcePath, targetPath);
+    try {
+      await fs.copyFile(sourcePath, targetPath, overwrite ? 0 : fs.constants.COPYFILE_EXCL);
+    } catch (error) {
+      if (!overwrite && (error as NodeJS.ErrnoException).code === 'EEXIST') continue;
+      throw error;
+    }
     copied.push(nextRelative.replace(/\\/g, '/'));
   }
 }
 
-async function writeSyncManifest(targetDir: string, version: string): Promise<void> {
+async function writeSyncManifest(targetDir: string, version: string, overwrite: boolean): Promise<void> {
   const manifestPath = path.join(targetDir, '.aionui-hth-sync.json');
   assertPathInside(targetDir, manifestPath);
   await fs.mkdir(targetDir, { recursive: true });
-  await fs.writeFile(
-    manifestPath,
-    JSON.stringify(
-      {
-        version,
-        updatedAt: Date.now(),
-      },
-      null,
-      2
-    ),
-    'utf8'
-  );
+  await fs
+    .writeFile(
+      manifestPath,
+      JSON.stringify(
+        {
+          version,
+          updatedAt: Date.now(),
+        },
+        null,
+        2
+      ),
+      { encoding: 'utf8', flag: overwrite ? 'w' : 'wx' }
+    )
+    .catch((error: NodeJS.ErrnoException) => {
+      if (!overwrite && error.code === 'EEXIST') return;
+      throw error;
+    });
 }
 
 export async function extractZip(

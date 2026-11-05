@@ -1313,7 +1313,7 @@ describe('opencode startup bootstrap', () => {
     expect(entries.indexOf(path.dirname(fixture.nodeExecutable))).toBeLessThan(entries.indexOf(oldPath));
   });
 
-  it('rewrites an existing macOS Codex launcher to use managed Node directly', async () => {
+  it('prepares the workspace before an existing macOS Codex installation starts', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
     const fixture = await createManagedNodeFixture();
     const packageRoot = path.join(fixture.codexPrefix, 'lib', 'node_modules', '@openai', 'codex');
@@ -1346,12 +1346,17 @@ describe('opencode startup bootstrap', () => {
     expect(commandRunner).toHaveBeenCalledTimes(3);
     expect(launcher).toContain('AionUi managed Node launcher');
     expect(launcher).toContain(fixture.nodeExecutable);
-    expect(launcher).toContain(cliPath);
+    expect(launcher).toContain('aionui-workspace-preparation.cjs');
+    const preparation = await readFile(
+      path.join(path.dirname(fixture.codexCommandPath), 'aionui-workspace-preparation.cjs'),
+      'utf8'
+    );
+    expect(preparation).toContain(JSON.stringify(cliPath));
   });
 
-  it('rewrites a newly installed Windows Codex launcher to use managed Node directly', async () => {
+  it('prepares the workspace before a newly installed Windows Codex starts from a Unicode path', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
-    const fixture = await createManagedNodeFixture('华青科技');
+    const fixture = await createManagedNodeFixture('华青 科技');
     const packageRoot = path.join(fixture.codexPrefix, 'node_modules', '@openai', 'codex');
     const cliPath = path.join(packageRoot, 'bin', 'codex.js');
     const commandRunner = vi.fn(async (_file: string, args: string[]) => {
@@ -1389,10 +1394,18 @@ describe('opencode startup bootstrap', () => {
       `"%~dp0${path
         .relative(path.dirname(fixture.codexCommandPath), fixture.nodeExecutable)
         .replaceAll('/', '\\')}" "%~dp0${path
-        .relative(path.dirname(fixture.codexCommandPath), cliPath)
+        .relative(
+          path.dirname(fixture.codexCommandPath),
+          path.join(path.dirname(fixture.codexCommandPath), 'aionui-workspace-preparation.cjs')
+        )
         .replaceAll('/', '\\')}" %*`
     );
     expect(launcher).not.toContain(fixture.dataPath);
+    const preparation = await readFile(
+      path.join(path.dirname(fixture.codexCommandPath), 'aionui-workspace-preparation.cjs'),
+      'utf8'
+    );
+    expect(preparation).toContain(JSON.stringify(cliPath));
   });
 
   it('prepends managed Node before existing PATH during startup path setup', async () => {
@@ -1439,7 +1452,12 @@ describe('opencode startup bootstrap', () => {
     const launcher = await readFile(fixture.codexCommandPath, 'utf8');
     expect(launcher).toContain('AionUi managed Node launcher');
     expect(launcher).toContain(fixture.nodeExecutable);
-    expect(launcher).toContain(cliPath);
+    expect(launcher).toContain('aionui-workspace-preparation.cjs');
+    const preparation = await readFile(
+      path.join(path.dirname(fixture.codexCommandPath), 'aionui-workspace-preparation.cjs'),
+      'utf8'
+    );
+    expect(preparation).toContain(JSON.stringify(cliPath));
   });
 
   it('repairs the Windows Codex launcher before backend startup', async () => {
@@ -1471,38 +1489,53 @@ describe('opencode startup bootstrap', () => {
       `"%~dp0${path
         .relative(path.dirname(fixture.codexCommandPath), fixture.nodeExecutable)
         .replaceAll('/', '\\')}" "%~dp0${path
-        .relative(path.dirname(fixture.codexCommandPath), cliPath)
+        .relative(
+          path.dirname(fixture.codexCommandPath),
+          path.join(path.dirname(fixture.codexCommandPath), 'aionui-workspace-preparation.cjs')
+        )
         .replaceAll('/', '\\')}" %*`
     );
   });
 
-  it('repairs the macOS OpenCode launcher to execute the native binary directly', async () => {
-    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
-    const fixture = await createManagedNodeFixture();
-    const packageRoot = path.join(fixture.prefix, 'lib', 'node_modules', 'opencode-ai');
-    const nativePath = path.join(packageRoot, 'bin', 'opencode.exe');
-    await mkdir(path.dirname(fixture.commandPath), { recursive: true });
-    await mkdir(path.dirname(nativePath), { recursive: true });
-    await writeFile(
-      path.join(packageRoot, 'package.json'),
-      JSON.stringify({
-        bin: {
-          opencode: 'bin/opencode.exe',
-        },
-      })
-    );
-    await writeFile(nativePath, Buffer.from([0, 1, 2, 3]));
-    await writeFile(fixture.commandPath, '#!/bin/sh\nexec node ./opencode.exe "$@"\n');
+  it.each(['darwin', 'win32'] as const)(
+    'prepares the workspace before the native OpenCode binary starts on %s',
+    async (platform) => {
+      vi.spyOn(process, 'platform', 'get').mockReturnValue(platform);
+      const fixture = await createManagedNodeFixture();
+      const packageRoot = path.join(
+        fixture.prefix,
+        ...(platform === 'win32' ? [] : ['lib']),
+        'node_modules',
+        'opencode-ai'
+      );
+      const nativePath = path.join(packageRoot, 'bin', 'opencode.exe');
+      await mkdir(path.dirname(fixture.commandPath), { recursive: true });
+      await mkdir(path.dirname(nativePath), { recursive: true });
+      await writeFile(
+        path.join(packageRoot, 'package.json'),
+        JSON.stringify({
+          bin: {
+            opencode: 'bin/opencode.exe',
+          },
+        })
+      );
+      await writeFile(nativePath, Buffer.from([0, 1, 2, 3]));
+      await writeFile(fixture.commandPath, '#!/bin/sh\nexec node ./opencode.exe "$@"\n');
 
-    addStartupManagedAcpToolBinsToPath(fixture.dataPath, {
-      PATH: path.join(fixture.dataPath, 'system-node-bin'),
-    });
+      addStartupManagedAcpToolBinsToPath(fixture.dataPath, {
+        PATH: path.join(fixture.dataPath, 'system-node-bin'),
+      });
 
-    const launcher = await readFile(fixture.commandPath, 'utf8');
-    expect(launcher).toContain('AionUi managed direct launcher');
-    expect(launcher).toContain(nativePath);
-    expect(launcher).not.toContain(fixture.nodeExecutable);
-  });
+      const launcher = await readFile(fixture.commandPath, 'utf8');
+      expect(launcher).toContain('aionui-workspace-preparation.cjs');
+      const preparation = await readFile(
+        path.join(path.dirname(fixture.commandPath), 'aionui-workspace-preparation.cjs'),
+        'utf8'
+      );
+      expect(preparation).toContain(JSON.stringify(nativePath));
+      expect(launcher).toContain(`target_b64=${Buffer.from(nativePath, 'utf8').toString('base64')}`);
+    }
+  );
 
   it('prepends the managed OpenCode bin directory to PATH', async () => {
     const dataPath = await mkdtemp(path.join(tmpdir(), 'aionui-opencode-path-'));

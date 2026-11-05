@@ -53,7 +53,11 @@ import { registerWindowMaximizeListeners } from '@process/bridge';
 import { BackendLifecycleManager } from '@aionui/web-host';
 import { resolveBinaryPath } from '@process/backend';
 import './process/bridge/feedbackBridge';
-import { wasLaunchedAtLogin } from '@process/bridge/applicationBridge';
+import {
+  notifyHTHWorkspacePreparationBackendReady,
+  startHTHWorkspacePreparation,
+  wasLaunchedAtLogin,
+} from '@process/bridge/applicationBridge';
 import { onLanguageChanged } from './process/bridge/systemSettingsBridge';
 import { setInitialLanguage } from '@process/services/i18n';
 import { setupApplicationMenu, setupImageContextMenu } from './process/utils/appMenu';
@@ -615,6 +619,7 @@ function markBackendReady(backendPort: number, source: string): void {
   if (backendStartedOk) return;
   console.log(`[HQBuddy] ${source} ready (port=${backendPort})`);
   exposeBackendPort(backendPort);
+  notifyHTHWorkspacePreparationBackendReady();
   registerCronResumeBridge(backendPort);
   backendStartedOk = true;
   backendStartupFailed = false;
@@ -917,6 +922,7 @@ const handleAppReady = async (): Promise<void> => {
 
   try {
     await initializeProcess();
+    if (!isWebUIMode && !isResetPasswordMode) await startHTHWorkspacePreparation();
     rendererInitialLanguage = ProcessConfig.getSync('language') ?? DEFAULT_INITIAL_LANGUAGE;
     mark('initializeProcess');
   } catch (error) {
