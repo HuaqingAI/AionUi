@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 import {
   resolveLocalFileLinkPath,
   resolveLocalFileLinkReference,
+  resolveWorkspaceFileLinkPath,
   toLocalFileHref,
 } from '@/renderer/components/Markdown/markdownUtils';
 
@@ -147,5 +148,56 @@ describe('resolveLocalFileLinkPath', () => {
       'file:///C:/Users/Administrator/AppData/Roaming/AionUi/report.xlsx'
     );
     expect(toLocalFileHref('/var/folders/demo/report.xlsx')).toBe('file:///var/folders/demo/report.xlsx');
+  });
+});
+
+describe('resolveWorkspaceFileLinkPath', () => {
+  it.each([
+    ['report.docx', 'C:\\Users\\demo\\workspace', 'C:/Users/demo/workspace/report.docx'],
+    ['poster.png', '/home/demo/workspace', '/home/demo/workspace/poster.png'],
+    ['./outputs/中文%20海报.png', 'C:/workspace/', 'C:/workspace/outputs/中文 海报.png'],
+    ['outputs\\report.docx', 'C:/workspace', 'C:/workspace/outputs/report.docx'],
+    ['out/../report.docx', '/home/demo/workspace', '/home/demo/workspace/report.docx'],
+    ['README', '/home/demo/workspace', '/home/demo/workspace/README'],
+    ['poster.png', '\\\\server\\share\\workspace', '//server/share/workspace/poster.png'],
+  ])('resolves %s inside workspace %s', (href, workspace, expected) => {
+    expect(resolveWorkspaceFileLinkPath(href, workspace)).toBe(expected);
+  });
+
+  it.each([
+    '../report.docx',
+    'out/../../report.docx',
+    '%2e%2e%2freport.docx',
+    'out/%2E%2E/%2e%2e/report.docx',
+    '..%5creport.docx',
+    'output/report:stream.docx',
+    'output/report%3Astream.docx',
+    'output/report%00.docx',
+    'output/report\n.docx',
+  ])('rejects unsafe workspace file reference %j', (href) => {
+    expect(resolveWorkspaceFileLinkPath(href, 'C:/workspace')).toBeNull();
+  });
+
+  it.each([
+    'http://example.com/poster.png',
+    'https://example.com/report.docx',
+    '//cdn.example.com/poster.png',
+    '\\\\server\\share\\report.docx',
+    '/tmp/report.docx',
+    'C:/workspace/report.docx',
+    'C:report.docx',
+    'file:///C:/workspace/report.docx',
+    'sandbox:/mnt/data/report.docx',
+    'mailto:help@example.com',
+    '#section',
+    '?download=1',
+    'report.docx?download=1',
+    'report.docx#section',
+  ])('leaves non-workspace-relative link %s to its existing handler', (href) => {
+    expect(resolveWorkspaceFileLinkPath(href, '/home/demo/workspace')).toBeNull();
+  });
+
+  it.each([undefined, ''])('does not resolve relative files without a workspace (%s)', (workspace) => {
+    expect(resolveWorkspaceFileLinkPath('report.docx', workspace)).toBeNull();
   });
 });

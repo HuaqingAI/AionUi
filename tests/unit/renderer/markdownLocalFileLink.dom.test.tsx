@@ -6,13 +6,15 @@
 
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { Image } from '@arco-design/web-react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Image, Message } from '@arco-design/web-react';
 import MarkdownView from '@/renderer/components/Markdown';
 import { ConversationProvider } from '@/renderer/hooks/context/ConversationContext';
 
 const copyTextMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const getImageBase64Mock = vi.hoisted(() => vi.fn().mockResolvedValue(null));
+const openExternalUrlMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const previewContextMock = vi.hoisted(() => vi.fn<() => { openBrowserTab: (url: string) => void } | null>(() => null));
 
 vi.mock('@/common', () => ({
   ipcBridge: {
@@ -37,7 +39,11 @@ vi.mock('@/renderer/utils/chat/latexDelimiters', () => ({
 }));
 
 vi.mock('@/renderer/utils/platform', () => ({
-  openExternalUrl: vi.fn(),
+  openExternalUrl: openExternalUrlMock,
+}));
+
+vi.mock('@/renderer/pages/conversation/Preview/context/PreviewContext', () => ({
+  useOptionalPreviewContext: previewContextMock,
 }));
 
 vi.mock('@/renderer/utils/ui/clipboard', () => ({
@@ -216,6 +222,133 @@ describe('MarkdownView local file links', () => {
     const image = container.querySelector('img');
     expect(image).toHaveAttribute('src', 'https://example.com/generated.png');
     expect(image).toHaveAttribute('alt', '');
+  });
+});
+
+describe('MarkdownView workspace file downloads', () => {
+  const createObjectURL = vi.fn(() => 'blob:workspace-file');
+  const revokeObjectURL = vi.fn();
+  let downloads: HTMLAnchorElement[];
+
+  beforeEach(() => {
+    downloads = [];
+    createObjectURL.mockClear();
+    revokeObjectURL.mockClear();
+    getImageBase64Mock.mockReset().mockResolvedValue('data:application/octet-stream;base64,AQID');
+    openExternalUrlMock.mockClear();
+    previewContextMock.mockReset().mockReturnValue(null);
+    vi.mocked(Message.error).mockClear();
+    vi.stubGlobal(
+      'URL',
+      class extends URL {
+        static createObjectURL = createObjectURL;
+        static revokeObjectURL = revokeObjectURL;
+      }
+    );
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      downloads.push(this);
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    previewContextMock.mockReturnValue(null);
+  });
+
+  it.each([
+    {
+      href: 'cute_blue_robot_avatar.png',
+      workspace: 'C:\\workspace\\demo',
+      path: 'C:/workspace/demo/cute_blue_robot_avatar.png',
+      name: 'cute_blue_robot_avatar.png',
+    },
+    {
+      href: './output/%E6%96%87%E6%A1%A3%20final.docx',
+      workspace: '/workspace/demo',
+      path: '/workspace/demo/output/文档 final.docx',
+      name: '文档 final.docx',
+    },
+  ])(
+    'downloads $href from the conversation workspace with its original filename',
+    async ({ href, workspace, path, name }) => {
+      render(
+        <ConversationProvider value={{ conversation_id: 'conv-1', workspace, type: 'acp' }}>
+          <MarkdownView>{`[Download original](${href})`}</MarkdownView>
+        </ConversationProvider>
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'Download original' }));
+
+      await waitFor(() => expect(downloads).toHaveLength(1));
+      expect(getImageBase64Mock).toHaveBeenCalledWith({ path, workspace });
+      expect(downloads[0]).toMatchObject({ download: name, href: 'blob:workspace-file' });
+    }
+  );
+
+  it.each([null, new Error('File read failed')])(
+    'reports an unreadable workspace file without starting a download (%s)',
+    async (result) => {
+      if (result instanceof Error) getImageBase64Mock.mockRejectedValueOnce(result);
+      else getImageBase64Mock.mockResolvedValueOnce(result);
+      render(
+        <ConversationProvider value={{ conversation_id: 'conv-1', workspace: '/workspace/demo', type: 'acp' }}>
+          <MarkdownView>{'[Download document](./missing.docx)'}</MarkdownView>
+        </ConversationProvider>
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'Download document' }));
+
+      await waitFor(() => expect(Message.error).toHaveBeenCalledWith('messages.downloadFailed'));
+      expect(downloads).toHaveLength(0);
+    }
+  );
+
+  it.each(['http://example.com/poster.png', 'https://example.com/report.docx'])(
+    'opens %s externally without reading a workspace file',
+    async (href) => {
+      render(
+        <ConversationProvider value={{ conversation_id: 'conv-1', workspace: '/workspace/demo', type: 'acp' }}>
+          <MarkdownView>{`[Online file](${href})`}</MarkdownView>
+        </ConversationProvider>
+      );
+
+      fireEvent.click(screen.getByRole('link', { name: 'Online file' }));
+
+      await waitFor(() => expect(openExternalUrlMock).toHaveBeenCalledWith(href));
+      expect(getImageBase64Mock).not.toHaveBeenCalled();
+      expect(downloads).toHaveLength(0);
+    }
+  );
+
+  it('keeps HTTP links in the built-in browser when a preview panel is available', () => {
+    const openBrowserTab = vi.fn();
+    previewContextMock.mockReturnValue({ openBrowserTab });
+    render(
+      <ConversationProvider value={{ conversation_id: 'conv-1', workspace: '/workspace/demo', type: 'acp' }}>
+        <MarkdownView>{'[Online file](https://example.com/report.docx)'}</MarkdownView>
+      </ConversationProvider>
+    );
+
+    fireEvent.click(screen.getByRole('link', { name: 'Online file' }));
+
+    expect(openBrowserTab).toHaveBeenCalledWith('https://example.com/report.docx');
+    expect(openExternalUrlMock).not.toHaveBeenCalled();
+    expect(getImageBase64Mock).not.toHaveBeenCalled();
+  });
+
+  it('keeps absolute local file links on the existing preview handler', () => {
+    const onLocalFileLink = vi.fn();
+    render(
+      <ConversationProvider value={{ conversation_id: 'conv-1', workspace: '/workspace/demo', type: 'acp' }}>
+        <MarkdownView onLocalFileLink={onLocalFileLink}>{'[Preview](/workspace/demo/report.docx)'}</MarkdownView>
+      </ConversationProvider>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+
+    expect(onLocalFileLink).toHaveBeenCalledWith('/workspace/demo/report.docx', expect.any(Object));
+    expect(getImageBase64Mock).not.toHaveBeenCalled();
   });
 });
 

@@ -216,6 +216,36 @@ export const resolveLocalFileLinkPath = (rawHref: string, resolvedHref?: string)
   return resolveLocalFileLinkReference(rawHref, resolvedHref)?.filePath ?? null;
 };
 
+/** Resolve a relative file link within the conversation workspace. */
+export const resolveWorkspaceFileLinkPath = (rawHref: string, workspace?: string): string | null => {
+  if (!workspace) return null;
+
+  let relativePath: string;
+  try {
+    relativePath = decodeURIComponent(rawHref.trim()).replace(/\\/g, '/');
+  } catch {
+    return null;
+  }
+
+  if (!relativePath || relativePath.startsWith('/') || /[:?#\p{Cc}]/u.test(relativePath)) return null;
+
+  const segments: string[] = [];
+  for (const segment of relativePath.split('/')) {
+    if (!segment || segment === '.') continue;
+    if (segment === '..') {
+      if (!segments.length) return null;
+      segments.pop();
+      continue;
+    }
+    segments.push(segment);
+  }
+  if (!segments.length) return null;
+
+  const root = workspace.replace(/\\/g, '/');
+  if (!root.startsWith('/') && !/^[A-Za-z]:\//.test(root)) return null;
+  return `${root.replace(/\/+$/, '')}/${segments.join('/')}`;
+};
+
 export const toLocalFileHref = (filePath: string): string => {
   const normalized = filePath.replace(/\\/g, '/');
   const withScheme = /^[A-Za-z]:\//.test(normalized) ? `file:///${normalized}` : `file://${normalized}`;

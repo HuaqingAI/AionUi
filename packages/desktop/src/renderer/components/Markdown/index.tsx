@@ -15,8 +15,10 @@ import 'katex/dist/katex.min.css';
 import { openExternalUrl } from '@/renderer/utils/platform';
 import { parseHttpUrl } from '@/renderer/utils/url';
 import { useOptionalPreviewContext } from '@/renderer/pages/conversation/Preview/context/PreviewContext';
+import { useConversationContextSafe } from '@/renderer/hooks/context/ConversationContext';
+import { downloadFileFromPath } from '@/renderer/utils/file/download';
 import classNames from 'classnames';
-import { Button, Image } from '@arco-design/web-react';
+import { Button, Image, Message } from '@arco-design/web-react';
 import React, { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { convertLatexDelimiters } from '@renderer/utils/chat/latexDelimiters';
@@ -25,7 +27,7 @@ import CodeBlock from './CodeBlock';
 import LocalFileLink from './LocalFileLink';
 import ShadowView from './ShadowView';
 import { MARKDOWN_REMARK_PLUGINS, MarkdownTable, MarkdownTd } from './markdownComponents';
-import { resolveLocalFileLinkPath, resolveLocalFileLinkReference } from './markdownUtils';
+import { resolveLocalFileLinkPath, resolveLocalFileLinkReference, resolveWorkspaceFileLinkPath } from './markdownUtils';
 import type { LocalFileLinkReference } from './markdownUtils';
 
 const isLocalFilePath = (src: string): boolean => {
@@ -49,6 +51,7 @@ const MarkdownView: React.FC<MarkdownViewProps> = React.memo(
   ({ hiddenCodeCopyButton, codeStyle, className, onRef, onLocalFileLink, allowHtml, children: childrenProp }) => {
     const { t } = useTranslation();
     const preview = useOptionalPreviewContext();
+    const workspace = useConversationContextSafe()?.workspace;
     const [imagePreview, setImagePreview] = useState<{ src: string; alt: string } | null>(null);
 
     const handleImagePreview = useCallback((e: Event) => {
@@ -89,6 +92,17 @@ const MarkdownView: React.FC<MarkdownViewProps> = React.memo(
       [t, preview]
     );
 
+    const handleWorkspaceFileDownload = useCallback(
+      async (filePath: string) => {
+        try {
+          await downloadFileFromPath(filePath, filePath.split('/').pop() || filePath, workspace);
+        } catch {
+          Message.error(t('messages.downloadFailed'));
+        }
+      },
+      [t, workspace]
+    );
+
     // Memoize components so React preserves component identity across re-renders.
     // Without this, every streaming update creates new function references → React
     // unmounts/remounts all custom components → hooks & DOM state are lost.
@@ -110,6 +124,17 @@ const MarkdownView: React.FC<MarkdownViewProps> = React.memo(
         a: ({ node: _node, ...rest }: Record<string, unknown>) => {
           const anchorProps = rest as React.AnchorHTMLAttributes<HTMLAnchorElement>;
           const rawHref = typeof anchorProps.href === 'string' ? anchorProps.href : '';
+          const workspaceFilePath = resolveWorkspaceFileLinkPath(rawHref, workspace);
+          if (workspaceFilePath) {
+            return (
+              <LocalFileLink
+                reference={{ filePath: workspaceFilePath, rawReference: workspaceFilePath }}
+                onOpen={handleWorkspaceFileDownload}
+              >
+                {anchorProps.children}
+              </LocalFileLink>
+            );
+          }
           const localFileReference = resolveLocalFileLinkReference(rawHref);
           if (localFileReference) {
             return (
@@ -145,7 +170,16 @@ const MarkdownView: React.FC<MarkdownViewProps> = React.memo(
           );
         },
       }),
-      [codeStyle, hiddenCodeCopyButton, handleLinkClick, handleImagePreview, onLocalFileLink, t]
+      [
+        codeStyle,
+        hiddenCodeCopyButton,
+        handleLinkClick,
+        handleImagePreview,
+        handleWorkspaceFileDownload,
+        onLocalFileLink,
+        t,
+        workspace,
+      ]
     );
 
     const rehypePlugins = useMemo(() => (allowHtml ? [rehypeRaw, rehypeKatex] : [rehypeKatex]), [allowHtml]);
