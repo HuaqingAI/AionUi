@@ -1,4 +1,23 @@
-import type { AssistantDetail } from '@/common/types/agent/assistantTypes';
+import { assistantRuntimeKey, type Assistant, type AssistantDetail } from '@/common/types/agent/assistantTypes';
+import type { AgentRuntimeDerivedOption } from '@/renderer/utils/model/agentRuntimeCatalog';
+
+/** Resolve a new conversation's default independently of the last runtime session's current value. */
+export const resolveGuidThoughtLevelDefault = (
+  assistant: Pick<Assistant, 'agent_id' | 'agent' | 'models'> | undefined,
+  option: AgentRuntimeDerivedOption | null | undefined
+): string => {
+  if (!option) return '';
+  if (
+    assistant?.agent_id &&
+    assistant.agent?.source !== 'custom' &&
+    (assistant.models?.length ?? 0) === 0 &&
+    ['opencode', 'codex'].includes(assistantRuntimeKey(assistant)) &&
+    option.options.some(({ value }) => value === 'high')
+  ) {
+    return 'high';
+  }
+  return option.currentValue || option.options[0]?.value || '';
+};
 
 export type ResolvedGuidAssistantDefaults = {
   modelId?: string;

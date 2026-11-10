@@ -378,6 +378,11 @@ export function initApplicationBridge(): void {
   ipcBridge.hth.modelPricingDescriptions.provider((request) =>
     hthConfigSyncService.getModelPricingDescriptions(request.modelIds)
   );
+  ipcBridge.hth.initialModelCatalog.provider(async () => {
+    const access = await hthAuthService.getAccess();
+    if (access) await coreIdentityService.establish(access);
+    return hthConfigSyncService.getInitialModelCatalog();
+  });
   ipcBridge.hth.quotaSummary.provider(() => hthQuotaService.getSummary());
   ipcBridge.hth.refreshQuotaSummary.provider(() => hthQuotaService.refreshSummary());
   ipcBridge.hth.uploadClientLogs.provider((request) => clientLogUploadService.upload(request));

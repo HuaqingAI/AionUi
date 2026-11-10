@@ -116,6 +116,9 @@ export const DESKTOP_PET_FEATURE_ENABLED = false;
 
 // ===== AI Provider 相关常量 =====
 
+/** Default model shared by the managed OpenCode and Codex assistants. */
+export const HTH_DEFAULT_MODEL = 'gpt-6.1-sol';
+
 // Stable ID for the Google Auth virtual provider.
 // Shared between frontend (useModelProviderList) and backend (SystemActions).
 export const GOOGLE_AUTH_PROVIDER_ID = 'google-auth-gemini';

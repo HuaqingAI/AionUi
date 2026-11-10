@@ -8,6 +8,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import GuidModelSelector from '@/renderer/pages/guid/components/GuidModelSelector';
+import { buildAgentRuntimeThoughtLevelOption } from '@/renderer/utils/model/agentRuntimeCatalog';
 
 vi.mock('@/renderer/hooks/agent/useModelProviderList', () => ({
   useProvidersQuery: () => ({ data: [] }),
@@ -105,6 +106,29 @@ vi.mock('@arco-design/web-react', () => {
 });
 
 describe('GuidModelSelector', () => {
+  const initialCodexModelInfo = {
+    current_model_id: null,
+    current_model_label: null,
+    available_models: [
+      { id: 'gpt-5.6-terra', label: 'HTH/GPT-5.6-TERRA x18.7' },
+      { id: 'deepseek-v4-pro', label: 'HTH/DEEPSEEK-V4-PRO x8.6' },
+    ],
+  };
+  const initialCodexThoughtLevelOption = buildAgentRuntimeThoughtLevelOption({
+    config_options: [
+      {
+        id: 'reasoning_effort',
+        category: 'thought_level',
+        type: 'select',
+        current_value: 'high',
+        options: [
+          { value: 'low', name: 'low' },
+          { value: 'medium', name: 'medium' },
+          { value: 'high', name: 'high' },
+        ],
+      },
+    ],
+  });
   const thoughtLevelOption = {
     id: 'reasoning_effort',
     category: 'thought_level',
@@ -115,6 +139,64 @@ describe('GuidModelSelector', () => {
       { value: 'high', label: 'High' },
     ],
   };
+
+  it('shows model and thought menus before the first Codex model selection', () => {
+    render(
+      <GuidModelSelector
+        isGeminiMode={false}
+        modelList={[]}
+        current_model={undefined}
+        setCurrentModel={vi.fn()}
+        currentAcpCachedModelInfo={initialCodexModelInfo}
+        selectedAcpModel={null}
+        setSelectedAcpModel={vi.fn()}
+        thoughtLevelOption={initialCodexThoughtLevelOption}
+        onThoughtLevelSelect={vi.fn()}
+      />
+    );
+
+    expect(screen.getAllByTestId('submenu-title').map((title) => title.textContent)).toEqual([
+      'ModelDefault',
+      'Thinking Levelhigh',
+    ]);
+    const [modelBody, thoughtBody] = screen.getAllByTestId('submenu-body');
+    expect(
+      within(modelBody)
+        .getAllByRole('menuitem')
+        .map((item) => item.textContent)
+    ).toEqual(['HTH/GPT-5.6-TERRA x18.7', 'HTH/DEEPSEEK-V4-PRO x8.6']);
+    expect(
+      within(thoughtBody)
+        .getAllByRole('menuitem')
+        .map((item) => item.textContent)
+    ).toEqual(['low', 'medium', '\u2713high']);
+  });
+
+  it('passes the first Codex model and thought choices through unchanged', () => {
+    const setSelectedAcpModel = vi.fn();
+    const onThoughtLevelSelect = vi.fn();
+    render(
+      <GuidModelSelector
+        isGeminiMode={false}
+        modelList={[]}
+        current_model={undefined}
+        setCurrentModel={vi.fn()}
+        currentAcpCachedModelInfo={initialCodexModelInfo}
+        selectedAcpModel={null}
+        setSelectedAcpModel={setSelectedAcpModel}
+        thoughtLevelOption={initialCodexThoughtLevelOption}
+        onThoughtLevelSelect={onThoughtLevelSelect}
+      />
+    );
+
+    expect(setSelectedAcpModel).not.toHaveBeenCalled();
+    const [modelBody, thoughtBody] = screen.getAllByTestId('submenu-body');
+    fireEvent.click(within(modelBody).getByText('HTH/DEEPSEEK-V4-PRO x8.6'));
+    fireEvent.click(within(thoughtBody).getByText('low'));
+
+    expect(setSelectedAcpModel).toHaveBeenCalledExactlyOnceWith('deepseek-v4-pro');
+    expect(onThoughtLevelSelect).toHaveBeenCalledExactlyOnceWith('low');
+  });
 
   it('shows ACP model descriptions in option tooltips', () => {
     render(

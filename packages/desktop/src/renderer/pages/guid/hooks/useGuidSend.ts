@@ -18,6 +18,7 @@ import { type TFunction } from 'i18next';
 import type { NavigateFunction } from 'react-router-dom';
 import { mutate as swrMutate } from 'swr';
 import { getConversationCreateErrorMessage } from '@/renderer/pages/conversation/utils/conversationCreateError';
+import { registerAgentModelConversation } from '@/renderer/services/runtime/agentModelCatalog';
 import {
   buildGuidSessionExcludedAutoInjectSkills,
   filterGuidSessionSkillIds,
@@ -297,6 +298,8 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
         console.error('Failed to create ACP conversation - conversation object is null or missing id');
         return;
       }
+
+      registerAgentModelConversation(conversation, { backend: assistantBackend });
 
       if (isCustomWorkspace) {
         updateWorkspaceTime(finalWorkspace);

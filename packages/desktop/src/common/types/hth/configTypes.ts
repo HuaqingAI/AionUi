@@ -4,8 +4,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { AcpConfigOptionDto } from '../platform/acpTypes';
+
 export type HTHCliType = 'opencode' | 'codex';
 export type HTHAgentUrlType = 'https';
+
+/** First-use candidates; live agent catalogs take precedence after discovery. */
+export type HTHInitialModelCatalog = {
+  scope: string;
+  modelIds: string[];
+  modelLabels?: Record<string, string>;
+  codexConfigOptions?: AcpConfigOptionDto[];
+  opencodeConfigOptions?: AcpConfigOptionDto[];
+};
 
 export type HTHAgentConfigItem = {
   id?: string;

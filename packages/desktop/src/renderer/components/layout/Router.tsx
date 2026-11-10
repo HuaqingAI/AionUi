@@ -1,6 +1,13 @@
 import React, { Suspense } from 'react';
 import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { ipcBridge } from '@/common';
+import type { HTHAuthStatus } from '@/common/types/hth';
+import {
+  getAgentModelCatalogSnapshot,
+  observeAgentModelMessage,
+  seedAgentModelCatalog,
+  setAgentModelCatalogScope,
+} from '@/renderer/services/runtime/agentModelCatalog';
 import AppLoader from '@renderer/components/layout/AppLoader';
 import { useAuth } from '@renderer/hooks/context/AuthContext';
 import { checkOpenCodeAndCodexManagedAgentHealthAfterAuth } from '@renderer/hooks/agent/useManagedAgents';
@@ -50,12 +57,13 @@ const DeepLinkListener: React.FC = () => {
 const ProtectedLayout: React.FC<{ layout: React.ReactElement }> = ({ layout }) => {
   const { status } = useAuth();
   const location = useLocation();
-  const [hthLoggedIn, setHTHLoggedIn] = React.useState<boolean | null>(null);
+  const [hthAuthStatus, setHTHAuthStatus] = React.useState<HTHAuthStatus | null>(null);
+  const hthLoggedIn = hthAuthStatus?.loggedIn ?? null;
   const managedAgentHealthStartedRef = React.useRef(false);
 
   React.useEffect(() => {
     if (status !== 'authenticated') {
-      setHTHLoggedIn(null);
+      setHTHAuthStatus(null);
       return;
     }
 
@@ -64,19 +72,51 @@ const ProtectedLayout: React.FC<{ layout: React.ReactElement }> = ({ layout }) =
       .invoke()
       .then((authStatus) => {
         if (!disposed) {
-          setHTHLoggedIn(authStatus.loggedIn);
+          setHTHAuthStatus(authStatus);
         }
       })
       .catch((error) => {
         console.error('[Router] Failed to check hth auth status:', error);
         if (!disposed) {
-          setHTHLoggedIn(false);
+          setHTHAuthStatus({ loggedIn: false });
         }
       });
     return () => {
       disposed = true;
     };
   }, [location.pathname, status]);
+
+  React.useEffect(() => {
+    if (status !== 'authenticated' || !hthLoggedIn || !hthAuthStatus?.baseUrl || !hthAuthStatus.email) {
+      setAgentModelCatalogScope(null);
+      return;
+    }
+
+    setAgentModelCatalogScope(JSON.stringify([hthAuthStatus.baseUrl, hthAuthStatus.email]));
+    const unsubscribe = ipcBridge.conversation.responseStream.on(observeAgentModelMessage);
+    return () => {
+      unsubscribe();
+      setAgentModelCatalogScope(null);
+    };
+  }, [status, hthLoggedIn, hthAuthStatus?.baseUrl, hthAuthStatus?.email]);
+
+  React.useEffect(() => {
+    if (status !== 'authenticated' || !hthLoggedIn || !hthAuthStatus?.baseUrl || !hthAuthStatus.email) return;
+    if (getAgentModelCatalogSnapshot().initialModelIds.length > 0) return;
+    let disposed = false;
+    // A failed attempt remains retryable on navigation; a saved seed does not refetch the gateway.
+    void (async () => {
+      try {
+        const catalog = await ipcBridge.hth.initialModelCatalog.invoke();
+        if (!disposed && catalog) seedAgentModelCatalog(catalog);
+      } catch (error) {
+        console.warn('[Models] Failed to initialize model candidates:', error);
+      }
+    })();
+    return () => {
+      disposed = true;
+    };
+  }, [status, hthLoggedIn, hthAuthStatus?.baseUrl, hthAuthStatus?.email, location.pathname]);
 
   React.useEffect(() => {
     if (status !== 'authenticated') {

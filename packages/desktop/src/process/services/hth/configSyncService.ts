@@ -13,12 +13,14 @@ import type {
 } from '@/common/types/agent/assistantTypes';
 import { assistantRuntimeKey } from '@/common/types/agent/assistantTypes';
 import { BUILTIN_CHROME_DEVTOOLS_NAME } from '@/common/config/storage';
+import { HTH_DEFAULT_MODEL } from '@/common/config/constants';
 import type {
   HTHAgentConfigItem,
   HTHAgentConfigs,
   HTHCliType,
   HTHInjectProjectConfigRequest,
   HTHInjectProjectConfigResult,
+  HTHInitialModelCatalog,
   HTHSyncAgentConfigsRequest,
   HTHSyncPackageResult,
   HTHSyncProgressEvent,
@@ -33,7 +35,7 @@ import { getSystemDir } from '@/process/utils/initStorage';
 import fs from 'fs/promises';
 import path from 'path';
 import { createHash, randomUUID } from 'crypto';
-import { parse as parseToml } from 'smol-toml';
+import { parse as parseToml, stringify as stringifyToml } from 'smol-toml';
 import { resolveOpenCodeProviderApiBase } from './baseUrl';
 import codexModelCatalogTemplate from './codexModelCatalogTemplate.json';
 import {
@@ -137,9 +139,9 @@ const MANAGED_AGENT_MATCH: Record<HTHCliType, string> = {
 const HTH_PERSONAL_API_KEY_PLACEHOLDER = '<hth-personal-apikey>';
 const HTH_PERSONAL_API_KEY_PLACEHOLDER_JSON_ESCAPED = '\\u003chth-personal-apikey\\u003e';
 const HTH_DEFAULT_PERSONAL_API_KEY_NAME = 'hth-default-apikey';
-const HTH_DEFAULT_OPENCODE_MODEL = 'gpt-5.6-terra';
 const HTH_LOGIN_REQUIRED_MESSAGE = 'hth login required';
 const HTH_ASSISTANT_CATEGORIES_SETTING = 'hth.assistantCategories';
+const HTH_INITIAL_MODEL_CATALOG_SETTING = 'hth.initialModelCatalog';
 const MAX_AGENT_PACKAGE_BYTES = 50 * 1024 * 1024;
 const MAX_ASSISTANT_AVATAR_BYTES = 2 * 1024 * 1024;
 const ASSISTANT_AVATAR_DIR_NAME = 'hth-assistant-avatars';
@@ -157,6 +159,13 @@ function defaultCodexHomeDir(): string {
 
 function defaultOpenCodeConfigDir(): string {
   return path.join(getSystemDir().workDir, 'runtime', 'opencode-home');
+}
+
+function resolveHTHDefaultModel(modelIds: string[], configuredModel?: string): string {
+  if (modelIds.includes(HTH_DEFAULT_MODEL)) return HTH_DEFAULT_MODEL;
+  if (configuredModel && modelIds.includes(configuredModel)) return configuredModel;
+  if (modelIds.includes('gpt-5.6-terra')) return 'gpt-5.6-terra';
+  return modelIds[0];
 }
 
 function isLegacyLocalAvatarPath(avatar: string | undefined): boolean {
@@ -184,7 +193,8 @@ class HTHUnauthorizedConfigError extends Error {
 }
 
 export class HTHConfigSyncService {
-  private codexModelCatalogSyncPromise: Promise<CodexConfigFailureReason | undefined> | null = null;
+  private readonly initialModelCatalogRequests = new Map<string, Promise<HTHInitialModelCatalog | null>>();
+  private codexModelCatalogSyncPromise: Promise<CodexConfigFailureReason | string[]> | null = null;
   private modelPricingCache: { key: string; expiresAt: number; snapshot: ModelPricingSnapshot } | null = null;
   private modelPricingRequest: { key: string; promise: Promise<ModelPricingSnapshot | null> } | null = null;
   private legacyAvatarRepairPromise: Promise<void> | null = null;
@@ -358,12 +368,16 @@ export class HTHConfigSyncService {
       failed,
     });
     const deleteResult = await this.deleteRevokedAssistants(currentAssistantIds);
+    const success =
+      packageResults.every((item) => item.status !== 'failed') &&
+      importResult.failed === 0 &&
+      updateResult.failed === 0 &&
+      deleteResult.failed === 0;
+    if (success && assistants.length > 0) {
+      await this.getInitialModelCatalog();
+    }
     return {
-      success:
-        packageResults.every((item) => item.status !== 'failed') &&
-        importResult.failed === 0 &&
-        updateResult.failed === 0 &&
-        deleteResult.failed === 0,
+      success,
       email: configs.user_email || access.email,
       revision: configs.revision,
       imported: importResult.imported,
@@ -378,6 +392,99 @@ export class HTHConfigSyncService {
       packages: packageResults,
       lastSyncedAt: Date.now(),
     };
+  }
+
+  /** Seed the first picker once per account; later runtime catalogs take precedence. */
+  async getInitialModelCatalog(): Promise<HTHInitialModelCatalog | null> {
+    try {
+      const access = await this.getAccessOrLogout();
+      if (!access || access.personalApiKeyName.trim() !== HTH_DEFAULT_PERSONAL_API_KEY_NAME) return null;
+      const scope = JSON.stringify([access.baseUrl, access.email]);
+      const existing = this.initialModelCatalogRequests.get(scope);
+      const request = existing ?? this.initializeInitialModelCatalog(access, scope);
+      if (!existing) this.initialModelCatalogRequests.set(scope, request);
+      try {
+        const catalog = await request;
+        if (!catalog) return null;
+        const pricing = await this.getHTHModelPricing(access);
+        const template = codexModelCatalogTemplate.models[0];
+        const reasoningOption = {
+          name: 'Reasoning Effort',
+          category: 'thought_level',
+          type: 'select' as const,
+          current_value: template.default_reasoning_level,
+          options: template.supported_reasoning_levels.map(({ effort, description }) => ({
+            value: effort,
+            name: effort.charAt(0).toUpperCase() + effort.slice(1),
+            description,
+          })),
+        };
+        return {
+          ...catalog,
+          modelLabels: Object.fromEntries(
+            this.buildCodexModelCatalog(catalog.modelIds, pricing).models.map(({ slug, display_name }) => [
+              slug,
+              display_name,
+            ])
+          ),
+          opencodeConfigOptions: [{ ...reasoningOption, id: 'effort' }],
+          codexConfigOptions: [{ ...reasoningOption, id: 'reasoning_effort' }],
+        };
+      } finally {
+        if (this.initialModelCatalogRequests.get(scope) === request) {
+          this.initialModelCatalogRequests.delete(scope);
+        }
+      }
+    } catch {
+      console.warn('[HTH] Failed to initialize the first model catalog');
+      return null;
+    }
+  }
+
+  private async initializeInitialModelCatalog(
+    access: HTHAccess,
+    scope: string
+  ): Promise<HTHInitialModelCatalog | null> {
+    const port = this.requireBackendPort();
+    const settingsUrl = `http://127.0.0.1:${port}/api/settings/client`;
+    const response = await this.coreFetch(
+      `${settingsUrl}?keys=${encodeURIComponent(HTH_INITIAL_MODEL_CATALOG_SETTING)}`
+    );
+    if (!response.ok) return null;
+    const payload: unknown = await response.json();
+    const settings = this.isRecord(payload) && this.isRecord(payload.data) ? payload.data : payload;
+    const cached = this.isRecord(settings) ? settings[HTH_INITIAL_MODEL_CATALOG_SETTING] : undefined;
+    if (this.isRecord(cached) && cached.scope === scope && Array.isArray(cached.modelIds)) {
+      const modelIds: unknown[] = cached.modelIds;
+      if (
+        modelIds.length > 0 &&
+        modelIds.length <= MAX_HTH_MODELS &&
+        modelIds.every(
+          (id): id is string =>
+            typeof id === 'string' &&
+            id.length > 0 &&
+            id === id.trim() &&
+            id.length <= MAX_HTH_MODEL_ID_LENGTH &&
+            !this.hasAsciiControlCharacters(id)
+        ) &&
+        new Set(modelIds).size === modelIds.length &&
+        (cached.defaultModel === HTH_DEFAULT_MODEL || modelIds.includes(HTH_DEFAULT_MODEL))
+      ) {
+        return { scope, modelIds: [...modelIds] };
+      }
+    }
+
+    const modelIds = await this.fetchHTHModelIds(access);
+    if (!Array.isArray(modelIds) || modelIds.length === 0) return null;
+    const currentAccess = await this.getAccessOrLogout();
+    if (!currentAccess || JSON.stringify([currentAccess.baseUrl, currentAccess.email]) !== scope) return null;
+    const catalog: HTHInitialModelCatalog = { scope, modelIds };
+    const saved = await this.coreFetch(settingsUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [HTH_INITIAL_MODEL_CATALOG_SETTING]: { ...catalog, defaultModel: HTH_DEFAULT_MODEL } }),
+    });
+    return saved.ok ? catalog : null;
   }
 
   async repairLegacyAssistantAvatars(): Promise<void> {
@@ -582,12 +689,23 @@ export class HTHConfigSyncService {
           return { injected: false, files: copied, reason: 'authRequired' };
         }
       } else {
-        await this.replaceRuntimePlaceholdersInFiles(request.workspace, copied, access);
+        await this.replaceRuntimePlaceholdersInFiles(request.workspace, copied, access, manifest.cliType);
       }
       if (manifest.cliType === 'codex') {
-        const reason = await this.syncCodexModelCatalog(access);
-        if (reason) {
-          return { injected: false, files: copied, reason };
+        const modelIds = await this.syncCodexModelCatalog(access);
+        if (!Array.isArray(modelIds)) {
+          return { injected: false, files: copied, reason: modelIds };
+        }
+        if (copied.includes('.codex/config.toml')) {
+          const configPath = path.join(request.workspace, '.codex', CODEX_CONFIG_FILE_NAME);
+          const content = await fs.readFile(configPath, 'utf8');
+          const config = parseToml(content);
+          const configuredModel = typeof config.model === 'string' ? config.model : undefined;
+          const defaultModel = resolveHTHDefaultModel(modelIds, configuredModel);
+          if (config.model !== defaultModel) {
+            config.model = defaultModel;
+            await fs.writeFile(configPath, stringifyToml(config), 'utf8');
+          }
         }
         await this.ensureCodexTrustedWorkspace(request.workspace);
       }
@@ -717,7 +835,7 @@ export class HTHConfigSyncService {
         $schema: 'https://opencode.ai/config.json',
         instructions: ['user-context.md'],
         mcp: {},
-        model: `hth/${HTH_DEFAULT_OPENCODE_MODEL}`,
+        model: `hth/${HTH_DEFAULT_MODEL}`,
         permission: { external_directory: 'allow' },
         provider: {
           hth: {
@@ -736,7 +854,7 @@ export class HTHConfigSyncService {
         createdFiles
       );
     }
-    await this.replaceRuntimePlaceholdersInFiles(workspace, createdFiles, access);
+    await this.replaceRuntimePlaceholdersInFiles(workspace, createdFiles, access, 'opencode');
     if (createdFiles.includes('opencode.jsonc')) {
       const reason = await this.populateOpenCodeModels(workspace, access, resolveOpenCodeProviderApiBase());
       if (reason) {
@@ -767,11 +885,22 @@ export class HTHConfigSyncService {
       return { injected: false, files: [], reason: 'authRequired' };
     }
 
+    if (access.personalApiKeyName.trim() !== HTH_DEFAULT_PERSONAL_API_KEY_NAME) {
+      return { injected: false, files: [], reason: 'personalApiKeyInvalid' };
+    }
+    const modelIds = await this.fetchHTHModelIds(access);
+    if (!Array.isArray(modelIds)) {
+      return { injected: false, files: [], reason: modelIds };
+    }
+    if (modelIds.length === 0) {
+      return { injected: false, files: [], reason: 'modelListEmpty' };
+    }
+
     await this.createMissingProjectConfig(
       workspace,
       '.codex/config.toml',
       [
-        'model = "gpt-5.6-terra"',
+        `model = "${resolveHTHDefaultModel(modelIds)}"`,
         'model_reasoning_effort = "high"',
         '',
         'developer_instructions = """',
@@ -786,7 +915,7 @@ export class HTHConfigSyncService {
       ].join('\n'),
       createdFiles
     );
-    await this.replaceRuntimePlaceholdersInFiles(workspace, createdFiles, access);
+    await this.replaceRuntimePlaceholdersInFiles(workspace, createdFiles, access, 'codex');
     await this.ensureCodexTrustedWorkspace(workspace);
     return { injected: createdFiles.length > 0, files: createdFiles };
   }
@@ -837,26 +966,42 @@ export class HTHConfigSyncService {
     }
   }
 
-  private async replaceRuntimePlaceholdersInFiles(rootDir: string, files: string[], access: HTHAccess): Promise<void> {
+  private async replaceRuntimePlaceholdersInFiles(
+    rootDir: string,
+    files: string[],
+    access: HTHAccess,
+    cliType: HTHCliType
+  ): Promise<void> {
     await Promise.all(
       files.map(async (relativeFile) => {
         const filePath = path.join(rootDir, relativeFile);
         assertPathInside(rootDir, filePath);
         if (this.isTextConfigFile(filePath)) {
-          await this.replacePlaceholdersInFile(filePath, access);
+          await this.replacePlaceholdersInFile(filePath, access, cliType, relativeFile);
         }
       })
     );
   }
 
-  private async replacePlaceholdersInFile(filePath: string, access: HTHAccess): Promise<void> {
+  private async replacePlaceholdersInFile(
+    filePath: string,
+    access: HTHAccess,
+    cliType: HTHCliType,
+    relativeFile: string
+  ): Promise<void> {
     let content: string;
     try {
       content = await fs.readFile(filePath, 'utf8');
     } catch {
       return;
     }
-    const nextContent = this.replaceUserPlaceholders(content, access);
+    let nextContent = this.replaceUserPlaceholders(content, access);
+    if (cliType === 'codex' && ['config.toml', '.codex/config.toml'].includes(relativeFile.replaceAll('\\', '/'))) {
+      const config = parseToml(nextContent);
+      if (relativeFile.replaceAll('\\', '/') === CODEX_CONFIG_FILE_NAME) config.model = HTH_DEFAULT_MODEL;
+      config.model_reasoning_effort = 'high';
+      nextContent = stringifyToml(config);
+    }
     if (nextContent !== content) {
       await fs.writeFile(filePath, nextContent, 'utf8');
     }
@@ -892,13 +1037,11 @@ export class HTHConfigSyncService {
     if (modelIdsResult.length === 0) {
       return 'modelListEmpty';
     }
-    if (!modelIdsResult.includes(HTH_DEFAULT_OPENCODE_MODEL)) {
-      return 'defaultModelUnavailable';
-    }
-
     const provider = config.provider as Record<string, unknown>;
     const hthProvider = provider.hth as Record<string, unknown>;
     const pricing = await this.getHTHModelPricing(access);
+    const configuredModel = typeof config.model === 'string' ? config.model.replace(/^hth\//, '') : undefined;
+    config.model = `hth/${resolveHTHDefaultModel(modelIdsResult, configuredModel)}`;
     hthProvider.models = this.buildOpenCodeModels(modelIdsResult, pricing);
     await fs.writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
     return undefined;
@@ -949,7 +1092,7 @@ export class HTHConfigSyncService {
     return ids;
   }
 
-  private async syncCodexModelCatalog(access: HTHAccess): Promise<CodexConfigFailureReason | undefined> {
+  private async syncCodexModelCatalog(access: HTHAccess): Promise<CodexConfigFailureReason | string[]> {
     if (this.codexModelCatalogSyncPromise) {
       return this.codexModelCatalogSyncPromise;
     }
@@ -965,7 +1108,7 @@ export class HTHConfigSyncService {
     }
   }
 
-  private async doSyncCodexModelCatalog(access: HTHAccess): Promise<CodexConfigFailureReason | undefined> {
+  private async doSyncCodexModelCatalog(access: HTHAccess): Promise<CodexConfigFailureReason | string[]> {
     if (access.personalApiKeyName.trim() !== HTH_DEFAULT_PERSONAL_API_KEY_NAME) {
       return 'personalApiKeyInvalid';
     }
@@ -1010,19 +1153,25 @@ export class HTHConfigSyncService {
       ) {
         return 'codexConfigInvalid';
       }
-      if (!modelIdsResult.includes(configuredModel.trim())) {
-        return 'defaultModelUnavailable';
-      }
     }
 
-    const nextConfigContent = this.ensureCodexModelCatalogReference(configContent, config, catalogPath);
+    const defaultModel = resolveHTHDefaultModel(
+      modelIdsResult,
+      typeof configuredModel === 'string' ? configuredModel.trim() : undefined
+    );
+    let nextConfigContent = configContent;
+    if (config.model !== defaultModel) {
+      config.model = defaultModel;
+      nextConfigContent = stringifyToml(config);
+    }
+    nextConfigContent = this.ensureCodexModelCatalogReference(nextConfigContent, config, catalogPath);
     const pricing = await this.getHTHModelPricing(access);
     const catalog = this.buildCodexModelCatalog(modelIdsResult, pricing);
     await this.writeFileAtomically(catalogPath, JSON.stringify(catalog, null, 2) + '\n');
     if (nextConfigContent !== configContent) {
       await this.writeFileAtomically(configPath, nextConfigContent);
     }
-    return undefined;
+    return modelIdsResult;
   }
 
   private buildCodexModelCatalog(
@@ -1107,6 +1256,13 @@ export class HTHConfigSyncService {
         name: appendModelMultiplier(id.toUpperCase(), pricingByModel.get(id)),
         description: formatModelPricingDescription(pricingByModel.get(id)),
         reasoning: true,
+        options: { reasoningEffort: 'high' },
+        variants: Object.fromEntries(
+          codexModelCatalogTemplate.models[0].supported_reasoning_levels.map(({ effort }) => [
+            effort,
+            { reasoningEffort: effort },
+          ])
+        ),
         temperature: false,
         tool_call: true,
       };
@@ -1335,7 +1491,7 @@ export class HTHConfigSyncService {
     const globalConfigDir = this.globalConfigDirForCliType(params.cliType);
     const trustedCodexWorkspaces = params.cliType === 'codex' ? await this.readCodexTrustedWorkspaces() : [];
     const copiedGlobalFiles = await copyManagedSection(extractDir, 'global', globalConfigDir, params.agent.version);
-    await this.replaceRuntimePlaceholdersInFiles(globalConfigDir, copiedGlobalFiles, params.access);
+    await this.replaceRuntimePlaceholdersInFiles(globalConfigDir, copiedGlobalFiles, params.access, params.cliType);
     await this.ensureCodexTrustedWorkspaces(trustedCodexWorkspaces);
 
     const nextManifest: HTHPackageManifest = {

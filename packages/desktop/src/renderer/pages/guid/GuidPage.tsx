@@ -8,6 +8,7 @@ import { ipcBridge } from '@/common';
 import { buildGuidSlashCommands } from '@/common/chat/slash/guidSlashCommands';
 import type { SlashCommandItem } from '@/common/chat/slash/types';
 import type { IMcpServer, TProviderWithModel } from '@/common/config/storage';
+import { HTH_DEFAULT_MODEL } from '@/common/config/constants';
 import { resolveLocaleKey } from '@/common/utils';
 import type { AssistantDetail } from '@/common/types/agent/assistantTypes';
 
@@ -26,7 +27,7 @@ import { useGuidModelSelection } from './hooks/useGuidModelSelection';
 import { useGuidSend } from './hooks/useGuidSend';
 import { useTypewriterPlaceholder } from './hooks/useTypewriterPlaceholder';
 import { ensureBackendMcpCatalog } from '@/renderer/hooks/mcp/catalog';
-import { resolveGuidAssistantDefaults } from './utils/assistantDefaults';
+import { resolveGuidAssistantDefaults, resolveGuidThoughtLevelDefault } from './utils/assistantDefaults';
 import SpeechInputButton from '@/renderer/components/chat/SpeechInputButton';
 import { chatFileRefPath, uploadFileRef } from '@/common/types/chatFile';
 import { useOpenFileSelector } from '@/renderer/hooks/file/useOpenFileSelector';
@@ -364,6 +365,8 @@ const GuidPage: React.FC = () => {
     const signature = JSON.stringify({
       assistantId: selectedAssistantId,
       backend: agentSelection.selectedAssistantBackend,
+      engine: selectedAssistantDetail.engine,
+      assistantModels: agentSelection.selectedAssistant?.models ?? [],
       defaults: selectedAssistantDetail.defaults,
       preferences: {
         last_model_id: selectedAssistantDetail.preferences.last_model_id,
@@ -418,7 +421,15 @@ const GuidPage: React.FC = () => {
           { persistPreference: false }
         );
       } else if (shouldApplyDefaultModel) {
-        agentSelection.setSelectedAcpModel(null, { persistPreference: false });
+        const defaultModelId = effectiveBackend === 'opencode' ? `hth/${HTH_DEFAULT_MODEL}` : HTH_DEFAULT_MODEL;
+        const canUseManagedDefault =
+          selectedAssistantDetail.defaults.model.mode === 'auto' &&
+          ['opencode', 'codex'].includes(effectiveBackend) &&
+          Boolean(selectedAssistantDetail.engine?.agent_id) &&
+          selectedAssistantDetail.engine.agent?.source !== 'custom' &&
+          (agentSelection.selectedAssistant?.models?.length ?? 0) === 0 &&
+          agentSelection.currentAcpCachedModelInfo?.available_models.some((model) => model.id === defaultModelId);
+        agentSelection.setSelectedAcpModel(canUseManagedDefault ? defaultModelId : null, { persistPreference: false });
       }
 
       if (resolvedDefaults.permissionMode) {
@@ -439,10 +450,10 @@ const GuidPage: React.FC = () => {
         if (resolvedDefaults.thoughtLevel && availableThoughtLevelValues.has(resolvedDefaults.thoughtLevel)) {
           agentSelection.setSelectedThoughtLevelValue(resolvedDefaults.thoughtLevel, { persistPreference: false });
         } else {
-          const fallbackThoughtLevel =
-            agentSelection.currentThoughtLevelOption.currentValue ||
-            agentSelection.currentThoughtLevelOption.options[0]?.value ||
-            '';
+          const fallbackThoughtLevel = resolveGuidThoughtLevelDefault(
+            agentSelection.selectedAssistant,
+            agentSelection.currentThoughtLevelOption
+          );
           agentSelection.setSelectedThoughtLevelValue(fallbackThoughtLevel, { persistPreference: false });
         }
       }
@@ -457,6 +468,8 @@ const GuidPage: React.FC = () => {
     agentSelection.currentAgentModeOptions,
     agentSelection.currentThoughtLevelOption,
     agentSelection.selectedAssistantBackend,
+    agentSelection.selectedAssistant,
+    agentSelection.selectedAssistant?.models,
     agentSelection.setSelectedAcpModel,
     agentSelection.setSelectedMode,
     agentSelection.setSelectedThoughtLevelValue,

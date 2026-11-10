@@ -99,6 +99,25 @@ describe('useGuidSend', () => {
     swrMutateMock.mockResolvedValue(undefined);
   });
 
+  it.each(['codex', 'opencode'])(
+    'sends the first %s model and reasoning selection to the real conversation',
+    async (backend) => {
+      const deps = createDeps();
+      deps.selectedAssistantBackend = backend;
+      deps.selectedAcpModel = backend === 'opencode' ? 'hth/gpt-6.1-sol' : 'gpt-6.1-sol';
+      deps.selectedThoughtLevelValue = 'high';
+      getConversationOrNullMock.mockResolvedValue({ id: 'conv-1', extra: { workspace: 'C:/aioncore-temp-workspace' } });
+      const { result } = renderHook(() => useGuidSend(deps));
+      await act(async () => {
+        await result.current.handleSend();
+      });
+      expect(createConversationInvokeMock.mock.calls[0][0].assistant.conversation_overrides).toMatchObject({
+        model: deps.selectedAcpModel,
+        thought_level: 'high',
+      });
+    }
+  );
+
   it('passes selected mode into assistant conversation overrides when creating a preset ACP conversation', async () => {
     const deps = createDeps();
     deps.selectedThoughtLevelValue = 'high';

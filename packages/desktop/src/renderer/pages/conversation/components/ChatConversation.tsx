@@ -16,7 +16,7 @@ import { usePresetAssistantInfo } from '@/renderer/hooks/agent/usePresetAssistan
 import { iconColors } from '@/renderer/styles/colors';
 import { Button, Dropdown, Menu, Message, Tooltip, Typography } from '@arco-design/web-react';
 import { History } from '@icon-park/react';
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import useSWR from 'swr';
@@ -38,6 +38,11 @@ import { resolveConversationBackend } from '../utils/conversationAssistantIdenti
 import LegacyReadOnlyConversation from '../platforms/legacy/LegacyReadOnlyConversation';
 import SingleChatEmptyState from './SingleChatEmptyState';
 import { useActiveLease } from '../hooks/useActiveLease';
+import {
+  getAgentModelCatalogSnapshot,
+  registerAgentModelConversation,
+  subscribeAgentModelCatalog,
+} from '@/renderer/services/runtime/agentModelCatalog';
 // import SkillRuleGenerator from './components/SkillRuleGenerator'; // Temporarily hidden
 
 const configErrorMessageKey = (error: unknown) => {
@@ -298,6 +303,16 @@ const ChatConversation: React.FC<{
   } = usePresetAssistantInfo(acpConversation);
   const acpAssistantId = presetAssistantInfo?.assistantId;
   const resolvedConversationBackend = resolveConversationBackend(conversation, presetAssistantInfo?.backend);
+  const { scope: modelCatalogScope } = useSyncExternalStore(subscribeAgentModelCatalog, getAgentModelCatalogSnapshot);
+
+  useEffect(() => {
+    if (conversation && modelCatalogScope) {
+      registerAgentModelConversation(conversation, {
+        agentId: presetAssistant?.agent_id,
+        backend: resolvedConversationBackend,
+      });
+    }
+  }, [conversation, modelCatalogScope, presetAssistant?.agent_id, resolvedConversationBackend]);
 
   const conversationAgentName = (conversation?.extra as { agent_name?: string } | undefined)?.agent_name;
   const assistantDisplayName = presetAssistantInfo?.name || conversationAgentName;

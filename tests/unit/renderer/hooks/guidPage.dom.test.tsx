@@ -8,6 +8,8 @@ import { render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LayoutContext } from '@/renderer/hooks/context/LayoutContext';
+import type { Assistant } from '@/common/types/agent/assistantTypes';
+import type { AgentRuntimeDerivedOption } from '@/renderer/utils/model/agentRuntimeCatalog';
 
 const {
   modelSelectionMock,
@@ -40,6 +42,8 @@ const {
       description_i18n: {},
       enabled: true,
       sort_order: 10,
+      agent_id: '',
+      agent: undefined as Assistant['agent'],
       preset_agent_type: 'aionrs',
       enabled_skills: [],
       custom_skill_names: [],
@@ -81,6 +85,9 @@ const {
     selectedAcpModel: null,
     setSelectedAcpModel: vi.fn(),
     currentAcpCachedModelInfo: null,
+    currentThoughtLevelOption: null as AgentRuntimeDerivedOption | null,
+    selectedThoughtLevelValue: '',
+    setSelectedThoughtLevelValue: vi.fn(),
     defaultAssistantId: 'bare-aionrs',
     setSelectedAssistantId: vi.fn(),
   },
@@ -237,9 +244,15 @@ vi.mock('@/renderer/utils/platform', () => ({
   resolveBackendAssetUrl: vi.fn((path: string) => path),
 }));
 
-vi.mock('@/renderer/pages/guid/utils/assistantDefaults', () => ({
-  resolveGuidAssistantDefaults: (...args: unknown[]) => resolveGuidAssistantDefaultsMock(...args),
-}));
+vi.mock('@/renderer/pages/guid/utils/assistantDefaults', async () => {
+  const actual = await vi.importActual<typeof import('@/renderer/pages/guid/utils/assistantDefaults')>(
+    '@/renderer/pages/guid/utils/assistantDefaults'
+  );
+  return {
+    ...actual,
+    resolveGuidAssistantDefaults: (...args: unknown[]) => resolveGuidAssistantDefaultsMock(...args),
+  };
+});
 
 const swrMock = vi.hoisted(() => ({
   useSWRMock: vi.fn(),
@@ -257,6 +270,7 @@ const assistantDetailFixture = {
   defaults: {
     model: { mode: 'auto' },
     permission: { mode: 'auto' },
+    thought_level: { mode: 'auto' },
     skills: { mode: 'auto', value: [] },
     mcps: { mode: 'auto', value: [] },
   },
@@ -268,6 +282,24 @@ const assistantDetailFixture = {
     last_mcp_ids: [],
   },
 };
+
+const buildManagedAssistantDetail = (backend: 'codex' | 'opencode') => ({
+  ...assistantDetailFixture,
+  engine: {
+    agent_id: `agent-${backend}`,
+    agent: { type: 'acp', source: 'builtin' as const, acp_backend: backend },
+  },
+});
+
+const buildManagedThoughtLevelOption = (
+  currentValue = 'low',
+  values = ['low', 'medium', 'high']
+): AgentRuntimeDerivedOption => ({
+  id: 'reasoning_effort',
+  category: 'thought_level',
+  currentValue,
+  options: values.map((value) => ({ value, label: value })),
+});
 
 vi.mock('swr', async () => {
   const actual = await vi.importActual<typeof import('swr')>('swr');
@@ -325,6 +357,14 @@ describe('GuidPage', () => {
     modelSelectionMock.resetCurrentModel.mockReset();
     agentSelectionMock.currentAgentModeOptions = [];
     agentSelectionMock.currentAcpCachedModelInfo = null;
+    agentSelectionMock.selectedAssistantId = 'bare-aionrs';
+    agentSelectionMock.selectedAssistant.id = 'bare-aionrs';
+    agentSelectionMock.selectedAssistant.agent_id = '';
+    agentSelectionMock.selectedAssistant.agent = undefined;
+    agentSelectionMock.selectedAssistant.models = [];
+    agentSelectionMock.currentThoughtLevelOption = null;
+    agentSelectionMock.selectedThoughtLevelValue = '';
+    agentSelectionMock.setSelectedThoughtLevelValue.mockReset();
     agentSelectionMock.selectedAssistantBackend = 'aionrs';
     agentSelectionMock.setSelectedAcpModel.mockReset();
     agentSelectionMock.setSelectedMode.mockReset();
@@ -627,6 +667,276 @@ describe('GuidPage', () => {
         }),
         { persistPreference: false }
       );
+    });
+  });
+
+  it.each([
+    { backend: 'codex' as const, available: true },
+    { backend: 'opencode' as const, available: true },
+    { backend: 'codex' as const, available: false },
+    { backend: 'opencode' as const, available: false },
+  ])('uses the available managed default for $backend (available: $available)', ({ backend, available }) => {
+    const defaultModelId = backend === 'opencode' ? 'hth/gpt-6.1-sol' : 'gpt-6.1-sol';
+    swrMock.useSWRMock.mockReturnValue({ data: buildManagedAssistantDetail(backend) });
+    agentSelectionMock.selectedAssistantBackend = backend;
+    agentSelectionMock.currentAcpCachedModelInfo = {
+      current_model_id: 'last-session-model',
+      current_model_label: 'Last session model',
+      available_models: (available ? ['last-session-model', defaultModelId] : ['last-session-model']).map((id) => ({
+        id,
+        label: id,
+      })),
+    };
+
+    render(<GuidPage />);
+
+    expect(agentSelectionMock.setSelectedAcpModel).toHaveBeenLastCalledWith(available ? defaultModelId : null, {
+      persistPreference: false,
+    });
+  });
+
+  it.each([
+    { backend: 'codex' as const, mode: 'fixed' },
+    { backend: 'opencode' as const, mode: 'fixed' },
+    { backend: 'codex' as const, mode: 'auto' },
+    { backend: 'opencode' as const, mode: 'auto' },
+  ])('keeps the resolved $mode model for $backend', ({ backend, mode }) => {
+    const detail = buildManagedAssistantDetail(backend);
+    swrMock.useSWRMock.mockReturnValue({
+      data: {
+        ...detail,
+        defaults: { ...detail.defaults, model: { mode, value: mode === 'fixed' ? 'chosen-model' : undefined } },
+        preferences: { ...detail.preferences, last_model_id: mode === 'auto' ? 'chosen-model' : undefined },
+      },
+    });
+    resolveGuidAssistantDefaultsMock.mockReturnValue({
+      modelId: 'chosen-model',
+      disabledBuiltinSkillIds: [],
+      skillIds: [],
+      mcpIds: [],
+    });
+    agentSelectionMock.selectedAssistantBackend = backend;
+    agentSelectionMock.currentAcpCachedModelInfo = {
+      current_model_id: null,
+      current_model_label: null,
+      available_models: ['chosen-model', backend === 'opencode' ? 'hth/gpt-6.1-sol' : 'gpt-6.1-sol'].map((id) => ({
+        id,
+        label: id,
+      })),
+    };
+
+    render(<GuidPage />);
+
+    expect(agentSelectionMock.setSelectedAcpModel).toHaveBeenLastCalledWith('chosen-model', {
+      persistPreference: false,
+    });
+  });
+
+  it.each(['custom', 'static-models', 'none', 'unbound'])(
+    'keeps the CLI default for an excluded %s assistant',
+    (exclusion) => {
+      const detail = buildManagedAssistantDetail('codex');
+      swrMock.useSWRMock.mockReturnValue({
+        data: {
+          ...detail,
+          defaults: { ...detail.defaults, model: { mode: exclusion === 'none' ? 'none' : 'auto' } },
+          engine: {
+            ...detail.engine,
+            agent_id: exclusion === 'unbound' ? '' : detail.engine.agent_id,
+            agent: { ...detail.engine.agent, source: exclusion === 'custom' ? 'custom' : 'builtin' },
+          },
+        },
+      });
+      agentSelectionMock.selectedAssistantBackend = 'codex';
+      agentSelectionMock.selectedAssistant.models = exclusion === 'static-models' ? ['assistant-model'] : [];
+      agentSelectionMock.currentAcpCachedModelInfo = {
+        current_model_id: 'gpt-6.1-sol',
+        current_model_label: 'Sol',
+        available_models: [{ id: 'gpt-6.1-sol', label: 'Sol' }],
+      };
+
+      render(<GuidPage />);
+
+      expect(agentSelectionMock.setSelectedAcpModel).toHaveBeenLastCalledWith(null, { persistPreference: false });
+    }
+  );
+
+  it('keeps a manual model choice when the managed catalog refreshes', () => {
+    swrMock.useSWRMock.mockReturnValue({ data: buildManagedAssistantDetail('codex') });
+    agentSelectionMock.selectedAssistantBackend = 'codex';
+    agentSelectionMock.currentAcpCachedModelInfo = {
+      current_model_id: null,
+      current_model_label: null,
+      available_models: ['gpt-6.1-sol', 'chosen-model'].map((id) => ({ id, label: id })),
+    };
+    const { rerender } = render(<GuidPage />);
+    const modelSelectorNode = capturedGuidActionRowProps.at(-1)?.modelSelectorNode as React.ReactElement<{
+      setSelectedAcpModel: (model: string) => void;
+    }>;
+    modelSelectorNode.props.setSelectedAcpModel('chosen-model');
+    agentSelectionMock.setSelectedAcpModel.mockClear();
+    agentSelectionMock.currentAcpCachedModelInfo = {
+      current_model_id: 'gpt-6.1-sol',
+      current_model_label: 'Sol',
+      available_models: ['gpt-6.1-sol', 'chosen-model', 'new-model'].map((id) => ({ id, label: id })),
+    };
+
+    rerender(<GuidPage />);
+
+    expect(agentSelectionMock.setSelectedAcpModel).not.toHaveBeenCalled();
+  });
+
+  it.each(['opencode', 'codex'] as const)(
+    'defaults %s thinking to high when the real catalog reports low',
+    (backend) => {
+      const detail = buildManagedAssistantDetail(backend);
+      swrMock.useSWRMock.mockReturnValue({ data: detail });
+      agentSelectionMock.selectedAssistantBackend = backend;
+      agentSelectionMock.selectedAssistant.agent_id = detail.engine.agent_id;
+      agentSelectionMock.selectedAssistant.agent = detail.engine.agent;
+      agentSelectionMock.currentThoughtLevelOption = buildManagedThoughtLevelOption('low');
+
+      render(<GuidPage />);
+
+      expect(agentSelectionMock.setSelectedThoughtLevelValue).toHaveBeenLastCalledWith('high', {
+        persistPreference: false,
+      });
+    }
+  );
+
+  it.each(['opencode', 'codex'] as const)(
+    'applies Sol and high defaults when the %s wire payload omits empty models',
+    async (backend) => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        const detail = buildManagedAssistantDetail(backend);
+        const defaultModelId = backend === 'opencode' ? 'hth/gpt-6.1-sol' : 'gpt-6.1-sol';
+        swrMock.useSWRMock.mockReturnValue({ data: detail });
+        agentSelectionMock.selectedAssistantBackend = backend;
+        agentSelectionMock.selectedAssistant = JSON.parse(
+          JSON.stringify({
+            ...agentSelectionMock.selectedAssistant,
+            agent_id: detail.engine.agent_id,
+            agent: detail.engine.agent,
+            models: undefined,
+          })
+        ) as typeof agentSelectionMock.selectedAssistant;
+        agentSelectionMock.currentAcpCachedModelInfo = {
+          current_model_id: null,
+          current_model_label: null,
+          available_models: [{ id: defaultModelId, label: defaultModelId }],
+        };
+        agentSelectionMock.currentThoughtLevelOption = buildManagedThoughtLevelOption('low');
+
+        render(<GuidPage />);
+
+        await waitFor(() => {
+          expect(agentSelectionMock.setSelectedAcpModel).toHaveBeenLastCalledWith(defaultModelId, {
+            persistPreference: false,
+          });
+          expect(agentSelectionMock.setSelectedThoughtLevelValue).toHaveBeenLastCalledWith('high', {
+            persistPreference: false,
+          });
+        });
+        expect(consoleError).not.toHaveBeenCalled();
+      } finally {
+        consoleError.mockRestore();
+      }
+    }
+  );
+
+  it('does not carry the previous assistant low thinking selection into another assistant', () => {
+    const detail = buildManagedAssistantDetail('opencode');
+    swrMock.useSWRMock.mockReturnValue({ data: detail });
+    agentSelectionMock.selectedAssistantBackend = 'opencode';
+    agentSelectionMock.selectedAssistant.agent_id = detail.engine.agent_id;
+    agentSelectionMock.selectedAssistant.agent = detail.engine.agent;
+    agentSelectionMock.currentThoughtLevelOption = buildManagedThoughtLevelOption('low');
+    const { rerender } = render(<GuidPage />);
+    const modelSelectorNode = capturedGuidActionRowProps.at(-1)?.modelSelectorNode as React.ReactElement<{
+      onThoughtLevelSelect: (value: string) => void;
+    }>;
+    modelSelectorNode.props.onThoughtLevelSelect('low');
+    agentSelectionMock.setSelectedThoughtLevelValue.mockClear();
+    agentSelectionMock.selectedAssistantId = 'another-opencode-assistant';
+    agentSelectionMock.selectedAssistant.id = 'another-opencode-assistant';
+    agentSelectionMock.selectedThoughtLevelValue = 'low';
+    agentSelectionMock.currentThoughtLevelOption = buildManagedThoughtLevelOption('low');
+
+    rerender(<GuidPage />);
+
+    expect(agentSelectionMock.setSelectedThoughtLevelValue).toHaveBeenLastCalledWith('high', {
+      persistPreference: false,
+    });
+  });
+
+  it.each(['fixed', 'auto'])('keeps an explicit or remembered low thinking level in %s mode', (mode) => {
+    const detail = buildManagedAssistantDetail('opencode');
+    swrMock.useSWRMock.mockReturnValue({
+      data: {
+        ...detail,
+        defaults: { ...detail.defaults, thought_level: { mode, value: mode === 'fixed' ? 'low' : undefined } },
+        preferences: { ...detail.preferences, last_thought_level_value: mode === 'auto' ? 'low' : undefined },
+      },
+    });
+    resolveGuidAssistantDefaultsMock.mockReturnValue({
+      thoughtLevel: 'low',
+      disabledBuiltinSkillIds: [],
+      skillIds: [],
+      mcpIds: [],
+    });
+    agentSelectionMock.selectedAssistantBackend = 'opencode';
+    agentSelectionMock.selectedAssistant.agent_id = detail.engine.agent_id;
+    agentSelectionMock.selectedAssistant.agent = detail.engine.agent;
+    agentSelectionMock.currentThoughtLevelOption = buildManagedThoughtLevelOption('low');
+
+    render(<GuidPage />);
+
+    expect(agentSelectionMock.setSelectedThoughtLevelValue).toHaveBeenLastCalledWith('low', {
+      persistPreference: false,
+    });
+  });
+
+  it('keeps a manual medium thinking choice when the real catalog refreshes', () => {
+    const detail = buildManagedAssistantDetail('opencode');
+    swrMock.useSWRMock.mockReturnValue({ data: detail });
+    agentSelectionMock.selectedAssistantBackend = 'opencode';
+    agentSelectionMock.selectedAssistant.agent_id = detail.engine.agent_id;
+    agentSelectionMock.selectedAssistant.agent = detail.engine.agent;
+    agentSelectionMock.currentThoughtLevelOption = buildManagedThoughtLevelOption('low');
+    const { rerender } = render(<GuidPage />);
+    const modelSelectorNode = capturedGuidActionRowProps.at(-1)?.modelSelectorNode as React.ReactElement<{
+      onThoughtLevelSelect: (value: string) => void;
+    }>;
+    modelSelectorNode.props.onThoughtLevelSelect('medium');
+    expect(agentSelectionMock.setSelectedThoughtLevelValue).toHaveBeenLastCalledWith('medium', {
+      persistPreference: false,
+    });
+    agentSelectionMock.setSelectedThoughtLevelValue.mockClear();
+    agentSelectionMock.currentThoughtLevelOption = buildManagedThoughtLevelOption('low', [
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+    ]);
+
+    rerender(<GuidPage />);
+
+    expect(agentSelectionMock.setSelectedThoughtLevelValue).not.toHaveBeenCalled();
+  });
+
+  it.each(['opencode', 'codex'] as const)('uses the real %s thinking level when high is unsupported', (backend) => {
+    const detail = buildManagedAssistantDetail(backend);
+    swrMock.useSWRMock.mockReturnValue({ data: detail });
+    agentSelectionMock.selectedAssistantBackend = backend;
+    agentSelectionMock.selectedAssistant.agent_id = detail.engine.agent_id;
+    agentSelectionMock.selectedAssistant.agent = detail.engine.agent;
+    agentSelectionMock.currentThoughtLevelOption = buildManagedThoughtLevelOption('medium', ['low', 'medium']);
+
+    render(<GuidPage />);
+
+    expect(agentSelectionMock.setSelectedThoughtLevelValue).toHaveBeenLastCalledWith('medium', {
+      persistPreference: false,
     });
   });
 
