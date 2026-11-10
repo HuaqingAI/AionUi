@@ -163,13 +163,13 @@ describe('AssistantSettings', () => {
     expect(screen.queryByTestId('assistant-list-panel')).not.toBeInTheDocument();
   });
 
-  it('renders enabled assistants in one preferred cross-source list', () => {
+  it('renders only enabled user assistants in the preferred order', () => {
     const assistants = [
       {
         id: 'cli',
         name: 'Codex',
         sort_order: 1,
-        source: 'generated',
+        source: 'user',
         enabled: true,
         agent: { type: 'acp', source: 'builtin', acp_backend: 'codex' },
       },
@@ -179,7 +179,7 @@ describe('AssistantSettings', () => {
         sort_order: 2,
         source: 'user',
         enabled: true,
-        agent: { type: 'acp', source: 'builtin', acp_backend: 'gemini' },
+        agent: { type: 'acp', source: 'builtin', acp_backend: 'opencode' },
       },
       {
         id: 'official',
@@ -193,9 +193,10 @@ describe('AssistantSettings', () => {
         id: 'disabled',
         name: 'Disabled',
         sort_order: 4,
-        source: 'builtin',
+        source: 'user',
         enabled: false,
       },
+      { id: 'generated', name: 'Generated', sort_order: 5, source: 'generated', enabled: true },
     ] as AssistantListItem[];
 
     render(
@@ -215,28 +216,27 @@ describe('AssistantSettings', () => {
 
     const rows = screen.getAllByTestId(/^enabled-assistant-row-/);
     expect(rows.map((row) => row.getAttribute('data-testid'))).toEqual([
-      'enabled-assistant-row-official',
       'enabled-assistant-row-custom',
       'enabled-assistant-row-cli',
     ]);
     expect(screen.queryByTestId('enabled-assistant-row-disabled')).not.toBeInTheDocument();
-    expect(screen.getByText('Official')).toBeInTheDocument();
-    expect(screen.getByText('Custom')).toBeInTheDocument();
-    expect(screen.getByText('CLI')).toBeInTheDocument();
+    expect(screen.queryByTestId('enabled-assistant-row-official')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('enabled-assistant-row-generated')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Custom')).toHaveLength(2);
     // Runtime engine is shown with a label + logo (same "Agent: {logo}" style as
     // the My Assistants cards, i18n key `assistantRuntimeLabel`), not a bare
     // backend name. The label renders once per enabled row.
-    expect(screen.getAllByTestId(/^assistant-runtime-/).length).toBe(3);
+    expect(screen.getAllByTestId(/^assistant-runtime-/).length).toBe(2);
     expect(screen.queryByText('claude')).not.toBeInTheDocument();
     // Each enabled row exposes an enable switch so users can disable in place.
-    expect(screen.getByTestId('switch-enabled-official')).toBeInTheDocument();
+    expect(screen.getByTestId('switch-enabled-custom')).toBeInTheDocument();
     expect(screen.getByTestId('switch-enabled-cli')).toBeInTheDocument();
   });
 
   it('disables enabled-assistant dragging while search is active', () => {
     const assistants = [
-      { id: 'cli', name: 'Codex', sort_order: 1, source: 'generated', enabled: true },
-      { id: 'official', name: 'Cowork', sort_order: 2, source: 'builtin', enabled: true },
+      { id: 'cli', name: 'Codex', sort_order: 1, source: 'user', enabled: true },
+      { id: 'custom', name: 'My Writer', sort_order: 2, source: 'user', enabled: true },
     ] as AssistantListItem[];
 
     render(
@@ -256,7 +256,7 @@ describe('AssistantSettings', () => {
 
     expect(screen.getByTestId('enabled-reorder-search-hint')).toHaveTextContent('Clear search to reorder.');
     expect(screen.getByTestId('enabled-assistant-reorder-handle-cli')).toBeDisabled();
-    expect(screen.getByTestId('enabled-assistant-reorder-handle-official')).toBeDisabled();
+    expect(screen.getByTestId('enabled-assistant-reorder-handle-custom')).toBeDisabled();
   });
 
   it('exposes a quick-chat button on each enabled row and fires onStartChat', () => {
@@ -267,7 +267,7 @@ describe('AssistantSettings', () => {
         id: 'cli',
         name: 'Codex',
         sort_order: 1,
-        source: 'generated',
+        source: 'user',
         enabled: true,
         agent: { type: 'acp', source: 'builtin', acp_backend: 'codex' },
       },
@@ -309,7 +309,7 @@ describe('AssistantSettings', () => {
         name: 'Claude',
         avatar: 'https://example.com/claude.svg',
         sort_order: 1,
-        source: 'generated',
+        source: 'user',
         enabled: true,
         agent: { type: 'acp', source: 'builtin', acp_backend: 'claude' },
       },

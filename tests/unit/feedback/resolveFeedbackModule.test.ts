@@ -2,10 +2,6 @@
  * @license
  * Copyright 2025 AionUi (aionui.com)
  * SPDX-License-Identifier: Apache-2.0
- *
- * Route → feedback-module mapping used by the titlebar report button. Every
- * navigable page should preselect the module owning it, so reports funnel to
- * the right owners without the user having to guess the taxonomy.
  */
 
 import fs from 'fs';
@@ -49,24 +45,6 @@ describe('resolveFeedbackModule', () => {
     // e.g. a hypothetical /scheduledFoo page must not inherit scheduled-task.
     expect(resolveFeedbackModule('/scheduledFoo')).toBeUndefined();
     expect(resolveFeedbackModule('/assistants-v2')).toBeUndefined();
-  });
-
-  it('every navigable router page resolves to a module or is a known module-less page', () => {
-    const routerSrc = fs.readFileSync(
-      path.resolve(__dirname, '../../../packages/desktop/src/renderer/components/layout/Router.tsx'),
-      'utf-8'
-    );
-    // Pages where preselecting a module makes no sense (multi-purpose or
-    // pre-auth surfaces where the user picks the module themselves).
-    const moduleLess = new Set(['/guid', '/login', '/test/components']);
-    const paths = [...routerSrc.matchAll(/path='([^*'][^']*)'/g)].map((m) => m[1]);
-    expect(paths.length).toBeGreaterThan(10);
-    for (const routePath of paths) {
-      // Substitute params with plausible values so prefix matching applies.
-      const concrete = routePath.replace(/:[^/]+/g, 'sample-id');
-      if (moduleLess.has(concrete)) continue;
-      expect(resolveFeedbackModule(concrete), `route ${routePath} has no feedback module`).toBeDefined();
-    }
   });
 
   it('every mapped tag exists in FEEDBACK_MODULES', () => {

@@ -6,12 +6,11 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { autoCheck, manualCheck } = vi.hoisted(() => ({ autoCheck: vi.fn(), manualCheck: vi.fn() }));
+const { autoCheck } = vi.hoisted(() => ({ autoCheck: vi.fn() }));
 
 vi.mock('@/common', () => ({
   ipcBridge: {
     autoUpdate: { check: { invoke: autoCheck } },
-    update: { check: { invoke: manualCheck } },
   },
 }));
 
@@ -19,51 +18,50 @@ import { runUpdateCheck } from '@/renderer/components/settings/checkForUpdatesSh
 
 const opts = { includePrerelease: false, fallbackVersion: '0.0.0', checkFailedLabel: 'failed' };
 
-describe('runUpdateCheck downgrade guard', () => {
+describe('runUpdateCheck', () => {
   beforeEach(() => {
     autoCheck.mockReset();
-    manualCheck.mockReset();
   });
 
-  it('does not offer an older auto-update version as available', async () => {
-    // Installed 2.1.54, auto-updater reports an older 2.1.53 feed version.
-    autoCheck.mockResolvedValue({ success: true, data: { updateInfo: { version: '2.1.53' } } });
-    manualCheck.mockResolvedValue({
-      success: true,
-      data: { currentVersion: '2.1.54', updateAvailable: false, latest: { version: '2.1.53', htmlUrl: '' } },
-    });
+  it('reports up to date when the main process returns no available update', async () => {
+    // The main process omits updateInfo for unchanged or older feed versions.
+    autoCheck.mockResolvedValue({ success: true });
 
     const outcome = await runUpdateCheck(opts);
 
-    expect(outcome.kind).toBe('upToDate');
+    expect(outcome).toMatchObject({ kind: 'upToDate', currentVersion: opts.fallbackVersion, updateInfo: null });
+    expect(autoCheck).toHaveBeenCalledWith({ includePrerelease: false });
   });
 
-  it('does not offer an older manual version even when updateAvailable is true', async () => {
-    // Defense-in-depth: backend flag says available but version is a downgrade.
-    autoCheck.mockResolvedValue({ success: true, data: {} });
-    manualCheck.mockResolvedValue({
-      success: true,
-      data: { currentVersion: '2.1.54', updateAvailable: true, latest: { version: '2.1.53', htmlUrl: '' } },
-    });
+  it('returns the available version and notes through autoUpdateInfo', async () => {
+    const updateInfo = { version: '2.1.55', releaseNotes: 'Release notes' };
+    autoCheck.mockResolvedValue({ success: true, data: { updateInfo } });
 
     const outcome = await runUpdateCheck(opts);
 
-    expect(outcome.kind).toBe('upToDate');
+    expect(outcome).toMatchObject({
+      kind: 'available',
+      autoUpdateAvailable: true,
+      autoUpdateInfo: updateInfo,
+      updateInfo: null,
+    });
   });
 
-  it('offers a strictly newer version as available', async () => {
-    autoCheck.mockResolvedValue({ success: true, data: { updateInfo: { version: '2.1.55' } } });
-    manualCheck.mockResolvedValue({
-      success: true,
-      data: { currentVersion: '2.1.54', updateAvailable: true, latest: { version: '2.1.55', htmlUrl: 'https://x' } },
-    });
+  it('returns an unsuccessful check message', async () => {
+    autoCheck.mockResolvedValue({ success: false, msg: 'Feed unavailable' });
 
-    const outcome = await runUpdateCheck(opts);
+    expect(await runUpdateCheck(opts)).toEqual({ kind: 'error', message: 'Feed unavailable' });
+  });
 
-    expect(outcome.kind).toBe('available');
-    if (outcome.kind === 'available') {
-      expect(outcome.autoUpdateAvailable).toBe(true);
-      expect(outcome.updateInfo?.version).toBe('2.1.55');
-    }
+  it('returns a rejected check error', async () => {
+    autoCheck.mockRejectedValue(new Error('Connection failed'));
+
+    expect(await runUpdateCheck(opts)).toEqual({ kind: 'error', message: 'Connection failed' });
+  });
+
+  it('uses the fallback error label when the response is absent', async () => {
+    autoCheck.mockResolvedValue(undefined);
+
+    expect(await runUpdateCheck(opts)).toEqual({ kind: 'error', message: opts.checkFailedLabel });
   });
 });

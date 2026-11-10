@@ -271,14 +271,25 @@ describe('SystemModalContent directory settings', () => {
     expect(await screen.findByText('settings.changeLogDir')).toBeInTheDocument();
   });
 
-  it('enables close to tray by default when no local setting exists', async () => {
+  it('uses the disabled fallback while close-to-tray settings are loading', async () => {
     getCloseToTrayMock.mockImplementation(() => new Promise<boolean>(() => {}));
     renderContent();
 
     const label = await screen.findByText('settings.closeToTray');
     const preferenceRow = label.parentElement?.parentElement;
     expect(preferenceRow).not.toBeNull();
-    expect(within(preferenceRow as HTMLElement).getByRole('switch')).toHaveAttribute('aria-checked', 'true');
+    expect(within(preferenceRow as HTMLElement).getByRole('switch')).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('displays the close-to-tray value returned by the main process', async () => {
+    renderContent();
+
+    const label = await screen.findByText('settings.closeToTray');
+    const preferenceRow = label.parentElement?.parentElement;
+    expect(preferenceRow).not.toBeNull();
+    await waitFor(() => {
+      expect(within(preferenceRow as HTMLElement).getByRole('switch')).toHaveAttribute('aria-checked', 'true');
+    });
   });
 
   it('does not render speech-to-text settings', async () => {

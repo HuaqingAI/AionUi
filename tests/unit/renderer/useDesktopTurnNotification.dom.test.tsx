@@ -10,7 +10,6 @@ const streamHandlers: Array<(e: unknown) => void> = [];
 const showInvoke = vi.fn();
 let isDesktop = true;
 let settingEnabled = true;
-let snapshotName: string | undefined;
 
 vi.mock('@/common', () => ({
   ipcBridge: {
@@ -29,12 +28,8 @@ vi.mock('@/common', () => ({
 }));
 vi.mock('@/renderer/utils/platform', () => ({ isElectronDesktop: () => isDesktop }));
 vi.mock('@/common/config/configService', () => ({ configService: { get: () => settingEnabled } }));
-vi.mock('@/renderer/pages/conversation/GroupedHistory/hooks/useConversationListSync', () => ({
-  getSnapshotConversationName: () => snapshotName,
-}));
-// Interpolate the name so tests can assert both the key chosen and the value passed.
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (k: string, params?: { name?: string }) => (params?.name ? `${k}::${params.name}` : k) }),
+  useTranslation: () => ({ t: (key: string) => key }),
 }));
 
 import { useDesktopTurnNotification } from '@/renderer/hooks/system/notification/useDesktopTurnNotification';
@@ -46,11 +41,10 @@ beforeEach(() => {
   showInvoke.mockClear();
   isDesktop = true;
   settingEnabled = true;
-  snapshotName = undefined;
 });
 
 describe('useDesktopTurnNotification', () => {
-  it('invokes the native notification on a finish stream message when unfocused', () => {
+  it('invokes the native notification on a finish stream message', () => {
     renderHook(() => useDesktopTurnNotification());
     emitStream({ type: 'finish', conversation_id: 's1', turn_id: 't1' });
     expect(showInvoke).toHaveBeenCalledTimes(1);
@@ -61,35 +55,17 @@ describe('useDesktopTurnNotification', () => {
     });
   });
 
-  it('notifies on a confirmation (acp_permission) message when unfocused', () => {
+  it.each(['acp_permission', 'permission', 'ask'])('does not notify for a %s message', (type) => {
     renderHook(() => useDesktopTurnNotification());
-    emitStream({ type: 'acp_permission', conversation_id: 's1', msg_id: 'm1' });
-    expect(showInvoke).toHaveBeenCalledWith({
-      title: 'AionUi',
-      body: 'settings.browserNotification.bodyConfirmation',
-      conversation_id: 's1',
-    });
+    emitStream({ type, conversation_id: 's1', msg_id: 'm1' });
+    expect(showInvoke).not.toHaveBeenCalled();
   });
 
-  it('notifies on an ask (agent question) message when unfocused', () => {
+  it('does not repeat a notification for the same finished turn', () => {
     renderHook(() => useDesktopTurnNotification());
-    emitStream({ type: 'ask', conversation_id: 's1', msg_id: 'm2' });
-    expect(showInvoke).toHaveBeenCalledWith({
-      title: 'AionUi',
-      body: 'settings.browserNotification.bodyConfirmation',
-      conversation_id: 's1',
-    });
-  });
-
-  it('names the conversation in a confirmation notification when the name is known', () => {
-    snapshotName = 'My Chat';
-    renderHook(() => useDesktopTurnNotification());
-    emitStream({ type: 'acp_permission', conversation_id: 's1', msg_id: 'm3' });
-    expect(showInvoke).toHaveBeenCalledWith({
-      title: 'AionUi',
-      body: 'settings.browserNotification.bodyConfirmationNamed::My Chat',
-      conversation_id: 's1',
-    });
+    emitStream({ type: 'finish', conversation_id: 's1', turn_id: 't1' });
+    emitStream({ type: 'finish', conversation_id: 's1', turn_id: 't1' });
+    expect(showInvoke).toHaveBeenCalledTimes(1);
   });
 
   it('does not notify when the notification setting is disabled', () => {

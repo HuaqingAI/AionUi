@@ -5,7 +5,6 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 
 const projectRoot = resolve(__dirname, '../..');
-const itWithBash = spawnSync('bash', ['--version'], { encoding: 'utf8' }).status === 0 ? it : it.skip;
 const APP_DISPLAY_NAME = '华青智能助手';
 
 function readProjectFile(path: string): string {
@@ -47,10 +46,8 @@ describe('release packaging configuration', () => {
 
   it('uses Chinese naming for the macOS app bundle while keeping other packaged names stable', () => {
     const config = readProjectFile('packages/desktop/electron-builder.yml');
-    const packageJson = JSON.parse(readProjectFile('package.json')) as { version?: string };
     const macBlock = yamlBlock(config, 'mac');
 
-    expect(packageJson.version).toBe('1.0.1');
     expect(config).toContain(`productName: ${APP_DISPLAY_NAME}`);
     expect(config).toContain('executableName: HQBuddy');
     expect(macBlock).toContain(`  executableName: ${APP_DISPLAY_NAME}`);
@@ -100,27 +97,49 @@ describe('release packaging configuration', () => {
     expect(script).toContain('Stable designated requirement was not embedded');
   });
 
-  itWithBash('fails release asset preparation when a mac zip is missing', () => {
+  it('fails release asset preparation when a mac zip is missing', ({ skip }) => {
+    const bashCheck = spawnSync(
+      'bash',
+      [
+        '-c',
+        'node --version >/dev/null && test -r "$1/package.json"',
+        'aionui-release-test',
+        projectRoot.replaceAll('\\', '/'),
+      ],
+      { cwd: projectRoot, encoding: 'utf8', timeout: 5000 }
+    );
+    if (bashCheck.status !== 0) {
+      skip('Requires Bash with Node.js and access to the project filesystem');
+    }
+
     const tempDir = mkdtempSync(resolve(tmpdir(), 'aionui-release-assets-'));
     const artifactsDir = resolve(tempDir, 'build-artifacts');
     const outputDir = resolve(tempDir, 'release-assets');
 
     try {
       const env = { ...process.env, MOCK_VERSION: '1.0.0' };
-      const createResult = spawnSync('bash', ['scripts/create-mock-release-artifacts.sh', artifactsDir], {
-        cwd: projectRoot,
-        env,
-        encoding: 'utf8',
-      });
+      const createResult = spawnSync(
+        'bash',
+        ['scripts/create-mock-release-artifacts.sh', artifactsDir.replaceAll('\\', '/')],
+        {
+          cwd: projectRoot,
+          env,
+          encoding: 'utf8',
+        }
+      );
       expect(createResult.status).toBe(0);
 
       rmSync(resolve(artifactsDir, 'macos-build-arm64', 'HQBuddy-1.0.0-mac-arm64.zip'), { force: true });
 
-      const prepareResult = spawnSync('bash', ['scripts/prepare-release-assets.sh', artifactsDir, outputDir], {
-        cwd: projectRoot,
-        env,
-        encoding: 'utf8',
-      });
+      const prepareResult = spawnSync(
+        'bash',
+        ['scripts/prepare-release-assets.sh', artifactsDir.replaceAll('\\', '/'), outputDir.replaceAll('\\', '/')],
+        {
+          cwd: projectRoot,
+          env,
+          encoding: 'utf8',
+        }
+      );
 
       expect(prepareResult.status).not.toBe(0);
       expect(`${prepareResult.stdout}\n${prepareResult.stderr}`).toContain('Missing macOS zip artifact');

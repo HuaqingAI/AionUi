@@ -14,6 +14,7 @@ import {
   groupMyAssistants,
   resolveAssistantSourceTag,
   buildAssistantEditorBackends,
+  filterCreateAssistantBackends,
   filterAssistantEditorBackends,
 } from '@/renderer/pages/settings/AssistantSettings/assistantUtils';
 import type { ManagedAgent } from '@/renderer/utils/model/agentTypes';
@@ -276,27 +277,19 @@ describe('buildAssistantEditorBackends', () => {
       ...over,
     }) as ManagedAgent;
 
-  /**
-   * Antigravity is a first-class agent type (agy is a direct-CLI integration,
-   * one process per turn), not an `acp` backend. It was absent from the editor's
-   * type whitelist, which produced two bugs at once: no Antigravity row in the
-   * Agent dropdown, and the editor showing the raw agent id (`a9f3c21e`) where
-   * the name belongs — `Select` renders the bare value when no Option matches.
-   */
-  it('offers every agent type the editor can drive, antigravity included', () => {
+  it('offers only Codex and OpenCode in the assistant editor', () => {
     const backends = buildAssistantEditorBackends(
       [
-        agent({ id: 'acp-1', agent_type: 'acp', name: 'Claude Code' }),
+        agent({ id: 'codex-1', backend: 'codex', name: 'Codex' }),
+        agent({ id: 'opencode-1', backend: 'opencode', name: 'OpenCode' }),
+        agent({ id: 'claude-1', backend: 'claude', name: 'Claude Code' }),
         agent({ id: 'a9f3c21e', agent_type: 'antigravity', backend: 'antigravity', name: 'Antigravity' }),
         agent({ id: 'aionrs-1', agent_type: 'aionrs', backend: 'aionrs', name: 'Aion CLI' }),
       ],
       'zh-CN'
     );
 
-    expect(backends.map((b) => b.id)).toEqual(['acp-1', 'a9f3c21e', 'aionrs-1']);
-    const antigravity = backends.find((b) => b.id === 'a9f3c21e');
-    expect(antigravity?.name).toBe('Antigravity');
-    expect(antigravity?.runtimeKey).toBe('antigravity');
+    expect(filterCreateAssistantBackends(backends).map((backend) => backend.id)).toEqual(['codex-1', 'opencode-1']);
   });
 
   /**
@@ -305,12 +298,12 @@ describe('buildAssistantEditorBackends', () => {
    */
   it('lets the editor resolve a name for the selected agent', () => {
     const backends = buildAssistantEditorBackends(
-      [agent({ id: 'a9f3c21e', agent_type: 'antigravity', backend: 'antigravity', name: 'Antigravity' })],
+      [agent({ id: 'codex-1', backend: 'codex', name: 'Codex', enabled: false, status: 'offline' })],
       'zh-CN',
-      'a9f3c21e'
+      'codex-1'
     );
 
-    expect(backends.find((b) => b.id === 'a9f3c21e')).toBeDefined();
+    expect(filterCreateAssistantBackends(backends).find((backend) => backend.id === 'codex-1')?.name).toBe('Codex');
   });
 
   /** Legacy read-only types stay out — they exist so old rows render, not to be driven. */

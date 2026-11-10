@@ -520,7 +520,10 @@ function runHarness({ autoDecline, compileOnly, makensis, scenario }) {
         if (status.status !== 'skipped' || status.reason !== 'empty-dsn') {
           throw new Error(`unexpected report status for ${code}: ${JSON.stringify(status)}`);
         }
-        if (typeof status.copyText !== 'string' || !status.copyText.includes(`华青智能助手 installer failure ${code}`)) {
+        if (
+          typeof status.copyText !== 'string' ||
+          !status.copyText.includes(`华青智能助手 installer failure ${code}`)
+        ) {
           throw new Error(`report copyText missing support payload for ${code}`);
         }
       }

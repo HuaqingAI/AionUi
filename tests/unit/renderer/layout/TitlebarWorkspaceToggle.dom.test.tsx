@@ -26,12 +26,6 @@ vi.mock('@/renderer/hooks/context/LayoutContext', () => ({
 vi.mock('@/renderer/hooks/context/NavigationHistoryContext', () => ({
   useNavigationHistory: () => null,
 }));
-vi.mock('@/renderer/hooks/context/FeedbackContext', () => ({
-  useFeedback: () => ({ openFeedback: vi.fn() }),
-}));
-vi.mock('@/renderer/services/feedback/resolveFeedbackModule', () => ({
-  resolveFeedbackModule: () => 'conversation-session',
-}));
 vi.mock('@/renderer/utils/platform', () => ({
   isElectronDesktop: () => platform.desktop,
   isMacOS: () => platform.mac,
@@ -46,32 +40,27 @@ describe('Titlebar workspace toggle', () => {
     platform.mac = false;
   });
 
-  it('places the Windows workspace toggle directly after Bug Report', () => {
+  it('shows window controls without a titlebar workspace toggle on Windows', () => {
     render(<Titlebar workspaceAvailable />);
 
-    const report = screen.getByRole('button', { name: 'conversation.welcome.quickActionFeedback' });
-    const workspace = screen.getByRole('button', { name: 'common.expandMore' });
-
-    expect(report.nextElementSibling).toBe(workspace);
-    expect(workspace.nextElementSibling).toBe(screen.getByTestId('window-controls'));
+    expect(screen.queryByRole('button', { name: 'common.expandMore' })).not.toBeInTheDocument();
+    expect(screen.getByTestId('window-controls')).toBeInTheDocument();
   });
 
   it.each([
     { runtime: 'macOS desktop', desktop: true, mac: true },
     { runtime: 'WebUI', desktop: false, mac: false },
-  ])('keeps the workspace toggle after Bug Report on $runtime', ({ desktop, mac }) => {
+  ])('shows the workspace toggle without window controls on $runtime', ({ desktop, mac }) => {
     platform.desktop = desktop;
     platform.mac = mac;
     render(<Titlebar workspaceAvailable />);
 
-    const report = screen.getByRole('button', { name: 'conversation.welcome.quickActionFeedback' });
-    const workspace = screen.getByRole('button', { name: 'common.expandMore' });
-
-    expect(report.nextElementSibling).toBe(workspace);
+    expect(screen.getByRole('button', { name: 'common.expandMore' })).toBeInTheDocument();
     expect(screen.queryByTestId('window-controls')).not.toBeInTheDocument();
   });
 
   it('updates the workspace action when the panel becomes expanded', () => {
+    platform.mac = true;
     render(<Titlebar workspaceAvailable />);
 
     act(() => {
@@ -82,6 +71,7 @@ describe('Titlebar workspace toggle', () => {
   });
 
   it('omits the workspace toggle when no workspace is available', () => {
+    platform.mac = true;
     render(<Titlebar workspaceAvailable={false} />);
 
     expect(screen.queryByRole('button', { name: 'common.expandMore' })).not.toBeInTheDocument();

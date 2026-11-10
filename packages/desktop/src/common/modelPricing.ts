@@ -89,10 +89,7 @@ function extractDynamicPrice(body: string, variable: 'p' | 'c'): number {
   }
 
   if (matched) return value;
-  if (
-    new RegExp(`\\b${variable}\\b\\s*\\*`).test(body) ||
-    new RegExp(`\\*\\s*\\b${variable}\\b`).test(body)
-  ) {
+  if (new RegExp(`\\b${variable}\\b\\s*\\*`).test(body) || new RegExp(`\\*\\s*\\b${variable}\\b`).test(body)) {
     return Number.NaN;
   }
   return new RegExp(`\\b${variable}\\b`).test(body) ? 1 : 0;

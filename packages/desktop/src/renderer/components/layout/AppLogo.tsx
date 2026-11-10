@@ -13,14 +13,7 @@ type AppLogoProps = {
 };
 
 const AppLogo: React.FC<AppLogoProps> = ({ className, title }) => {
-  return (
-    <img
-      className={className}
-      src={HuaqingLogo}
-      alt={title ?? ''}
-      aria-hidden={title ? undefined : true}
-    />
-  );
+  return <img className={className} src={HuaqingLogo} alt={title ?? ''} aria-hidden={title ? undefined : true} />;
 };
 
 export default AppLogo;

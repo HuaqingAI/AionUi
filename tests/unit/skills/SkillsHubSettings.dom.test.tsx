@@ -420,7 +420,7 @@ describe('SkillsHubSettings', () => {
     const nativeHint = Array.from(autoSection.querySelectorAll('[title]')).some(
       (el) =>
         el.getAttribute('title') ===
-        'Loaded automatically into every conversation — no need to enable them; the agent decides when to use them.'
+        'Loaded automatically into every conversation - no need to enable them; the agent decides when to use them.'
     );
 
     expect(nativeHint).toBe(true);

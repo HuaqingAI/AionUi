@@ -12,6 +12,9 @@ describe('prepare-aioncore local bundle input', () => {
     const localBundle = join(tmp, 'bundle');
     mkdirSync(join(localBundle, 'managed-resources'), { recursive: true });
     writeFileSync(join(localBundle, 'aioncore.exe'), '');
+    const uvArtifacts = join(projectRoot, 'resources', 'uv-artifacts');
+    mkdirSync(uvArtifacts, { recursive: true });
+    writeFileSync(join(uvArtifacts, 'uv-x86_64-pc-windows-msvc.zip'), '');
 
     const previous = process.env.AIONUI_BACKEND_LOCAL_BUNDLE_DIR;
     process.env.AIONUI_BACKEND_LOCAL_BUNDLE_DIR = localBundle;
