@@ -1467,7 +1467,7 @@
   "browserData": {
     "title": "Uygulama içi tarayıcı",
     "agentControlLabel": "Aracının uygulama içi tarayıcıyı kullanmasına izin ver",
-    "agentControlDesc": "Açık olduğunda aracı, uygulama içi tarayıcıda sizin adınıza sayfa açabilir, tıklayabilir ve form doldurabilir; örneğin bir şey araştırmak veya bir sitedeki işlemi tamamlamak için. Yalnızca bu tek tarayıcı görünümünü kullanabilir: AionUi arayüzünün kendisine erişemez ve hiçbir zaman ayrı bir Chrome penceresi açmaz. Kapattığınızda tarayıcıyı kendiniz kullanmaya devam edebilirsiniz; erişimi yalnızca aracı kaybeder.",
+    "agentControlDesc": "Açık olduğunda aracı, uygulama içi tarayıcıda sizin adınıza sayfa açabilir, tıklayabilir ve form doldurabilir; örneğin bir şey araştırmak veya bir sitedeki işlemi tamamlamak için.",
     "agentControlSaved": "Ayar kaydedildi",
     "agentControlFailed": "Ayar kaydedilemedi",
     "agentControlRestartRequired": "Bu ayar, uygulamayı yeniden başlattıktan sonra geçerli olur.",

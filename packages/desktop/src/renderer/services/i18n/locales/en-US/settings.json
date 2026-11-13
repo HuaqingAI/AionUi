@@ -1467,7 +1467,7 @@
   "browserData": {
     "title": "In-app browser",
     "agentControlLabel": "Let the agent use the in-app browser",
-    "agentControlDesc": "When on, the agent can open pages, click and fill in forms in the in-app browser for you — for example to look something up or complete a flow on a website. It can only drive that one browser view: it cannot reach the AionUi interface itself, and it never opens a separate Chrome window. When off, the browser still works for you; only the agent loses access.",
+    "agentControlDesc": "When on, the agent can open pages, click and fill in forms in the in-app browser for you — for example to look something up or complete a flow on a website.",
     "agentControlSaved": "Setting saved",
     "agentControlFailed": "Failed to save setting",
     "agentControlRestartRequired": "This setting takes effect after you restart the app.",

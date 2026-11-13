@@ -1468,7 +1468,7 @@
   "browserData": {
     "title": "应用内浏览器",
     "agentControlLabel": "允许 Agent 操作 APP 内的浏览器",
-    "agentControlDesc": "开启后，Agent 可以在应用内浏览器里帮你打开网页、点击和填表，例如查资料或走完一个网站流程。它只能操作应用内浏览器这一个页面，碰不到 AionUi 界面本身，也不会打开单独的 Chrome 窗口。关闭后浏览器仍可自己使用，只是 Agent 无法操作。",
+    "agentControlDesc": "开启后，Agent 可以在应用内浏览器里帮你打开网页、点击和填表，例如查资料或走完一个网站流程。",
     "agentControlSaved": "设置已保存",
     "agentControlFailed": "设置保存失败",
     "agentControlRestartRequired": "该设置需要重启应用后生效。",

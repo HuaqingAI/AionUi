@@ -1467,7 +1467,7 @@
   "browserData": {
     "title": "Integrierter Browser",
     "agentControlLabel": "Agent darf den integrierten Browser bedienen",
-    "agentControlDesc": "Wenn aktiviert, kann der Agent im integrierten Browser Seiten öffnen, klicken und Formulare für Sie ausfüllen – etwa um etwas zu recherchieren oder einen Ablauf auf einer Website abzuschließen. Er kann ausschließlich diese eine Browseransicht steuern: die AionUi-Oberfläche selbst bleibt unerreichbar, und es wird nie ein separates Chrome-Fenster geöffnet. Ist die Option aus, können Sie den Browser weiterhin selbst nutzen; nur der Agent verliert den Zugriff.",
+    "agentControlDesc": "Wenn aktiviert, kann der Agent im integrierten Browser Seiten öffnen, klicken und Formulare für Sie ausfüllen – etwa um etwas zu recherchieren oder einen Ablauf auf einer Website abzuschließen.",
     "agentControlSaved": "Einstellung gespeichert",
     "agentControlFailed": "Einstellung konnte nicht gespeichert werden",
     "agentControlRestartRequired": "Diese Einstellung wird nach einem Neustart der App wirksam.",

@@ -1470,7 +1470,7 @@
   "browserData": {
     "title": "Navegador interno",
     "agentControlLabel": "Permitir que o agente use o navegador integrado",
-    "agentControlDesc": "Quando ativado, o agente pode abrir páginas, clicar e preencher formulários para você no navegador integrado — por exemplo, para pesquisar algo ou concluir um processo em um site. Ele só controla essa única visualização do navegador: não alcança a interface do AionUi e nunca abre uma janela do Chrome separada. Se desativado, o navegador continua disponível para você; apenas o agente perde o acesso.",
+    "agentControlDesc": "Quando ativado, o agente pode abrir páginas, clicar e preencher formulários para você no navegador integrado — por exemplo, para pesquisar algo ou concluir um processo em um site.",
     "agentControlSaved": "Configuração salva",
     "agentControlFailed": "Falha ao salvar a configuração",
     "agentControlRestartRequired": "Esta configuração passa a valer após reiniciar o aplicativo.",
