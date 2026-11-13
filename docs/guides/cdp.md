@@ -10,7 +10,7 @@ Ask the agent, for example:
 
 > Open https://www.baidu.com in the in-app browser.
 
-The built-in `aionui-browser` MCP opens the preview panel and waits for its page to be ready before using browser tools. It provides page navigation, snapshots, clicks, forms, scripts, and screenshots through Chrome DevTools MCP. `browser_open` explicitly opens or navigates the in-app browser. You can also open it manually from the workspace dropdown.
+The built-in `hq-browser` MCP opens the preview panel and waits for its page to be ready before using browser tools. It provides page navigation, snapshots, clicks, forms, scripts, and screenshots through Chrome DevTools MCP. `browser_open` explicitly opens or navigates the in-app browser. You can also open it manually from the workspace dropdown.
 
 This connection exposes only the in-app browser webview. It does not expose the AionUi interface or launch a separate Chrome window. The CDP port is assigned dynamically; no fixed `9230` port or manually configured external MCP is required. WebUI does not provide an Electron webview and therefore does not expose these tools.
 
@@ -51,7 +51,7 @@ Cookies, including HttpOnly cookies, are written to the application's persistent
 
 ## Troubleshooting
 
-- If the agent has no `aionui-browser` tools, verify that control was enabled when the app started and create a new conversation.
+- If the agent has no `hq-browser` tools, verify that control was enabled when the app started and create a new conversation.
 - Keep the desktop window available while the agent uses the browser. A missing or closed preview is reopened when an action requires it.
 - The first Chrome DevTools MCP launch requires Node.js/npm and may download the pinned MCP package. A failed dependency launch is reported as a tool error.
 - Disable Agent browser control in system settings and restart to remove access. Manual browsing remains available.
@@ -68,7 +68,7 @@ bunx cross-env AIONUI_BROWSER_ELECTRON_SMOKE=1 vitest run tests/unit/preview/bro
 
 在桌面版的 **设置 → 系统 → 应用内浏览器** 中开启“允许 Agent 操作 APP 内的浏览器”，按提示重启。升级到支持浏览器控制的版本后，请**新建会话**使用：AionCore 不允许在已有会话中修改 MCP 配置。
 
-对 Agent 说“使用应用内浏览器打开百度”即可自动展开预览面板。内置 `aionui-browser` 工具会等待页面连接完成，再执行打开网址、读取页面、点击、填表或截图。它仅控制应用内浏览器，不控制 AionUi 界面，也不会另外启动 Chrome。控制端口由系统分配，无需手动配置 `9230` 或外部 MCP。WebUI 不支持这一 Electron 专属能力。
+对 Agent 说“使用应用内浏览器打开百度”即可自动展开预览面板。内置 `hq-browser` 工具会等待页面连接完成，再执行打开网址、读取页面、点击、填表或截图。它仅控制应用内浏览器，不控制 AionUi 界面，也不会另外启动 Chrome。控制端口由系统分配，无需手动配置 `9230` 或外部 MCP。WebUI 不支持这一 Electron 专属能力。
 
 需要导入登录状态时，可以直接说：
 

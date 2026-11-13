@@ -116,8 +116,8 @@ describe('in-app browser control service', () => {
     expect(process.env.AIONUI_CDP_ACTIVE_PORT).toBe('45678');
     expect(process.env.AIONUI_BROWSER_CONTROL_TOKEN).toMatch(/^[a-f0-9]{64}$/);
     expect(service.getSessionMcpServer()).toEqual({
-      id: 'aionui-browser',
-      name: 'aionui-browser',
+      id: 'hq-browser',
+      name: 'hq-browser',
       transport: { type: 'stdio', command: 'node', args: ['/bundle/builtin-mcp-browser.js'] },
     });
   });

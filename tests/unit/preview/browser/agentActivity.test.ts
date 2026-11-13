@@ -47,10 +47,22 @@ describe('isBrowserMcpActivity', () => {
     expect(isBrowserMcpActivity('tool_group', [mcpEntry('Executing', 'chrome-devtools')])).toBe(false);
   });
 
-  it('falls back to the tool-name prefix when confirmationDetails is absent', () => {
-    expect(
-      isBrowserMcpActivity('tool_group', [{ name: `${BUILTIN_BROWSER_MCP_NAME}__navigate_page`, status: 'Executing' }])
-    ).toBe(true);
+  it.each(['hq-browser_take_snapshot', 'hq-browser_click', 'hq-browser__take_snapshot', 'hq-browser__click'])(
+    'recognizes %s without confirmation details',
+    (name) => {
+      expect(isBrowserMcpActivity('tool_group', [{ name, status: 'Executing' }])).toBe(true);
+    }
+  );
+
+  it.each(['aionui-browser_click', 'aionui-browser__click', 'hq-browserish_click'])(
+    'ignores unrelated tool prefix %s',
+    (name) => {
+      expect(isBrowserMcpActivity('tool_group', [{ name, status: 'Executing' }])).toBe(false);
+    }
+  );
+
+  it('recognizes the renamed server in confirmation details', () => {
+    expect(isBrowserMcpActivity('tool_group', [mcpEntry('Executing', 'hq-browser')])).toBe(true);
   });
 
   it('detects activity when the browser call is mixed with unrelated tools', () => {
@@ -64,6 +76,10 @@ describe('isBrowserMcpSettled', () => {
   it('reports settled once every browser call in the message has finished', () => {
     expect(isBrowserMcpSettled('tool_group', [mcpEntry('Success')])).toBe(true);
     expect(isBrowserMcpSettled('tool_group', [mcpEntry('Error')])).toBe(true);
+  });
+
+  it.each(['hq-browser_take_snapshot', 'hq-browser__click'])('recognizes completion of %s', (name) => {
+    expect(isBrowserMcpSettled('tool_group', [{ name, status: 'Success' }])).toBe(true);
   });
 
   it('does not report settled while any browser call is still in flight', () => {

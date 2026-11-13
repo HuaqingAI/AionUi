@@ -145,8 +145,8 @@ describe('ipcBridge conversation adapter', () => {
 
 describe('desktop browser tools in new conversations', () => {
   const browser: ISessionMcpServer = {
-    id: 'aionui-browser',
-    name: 'aionui-browser',
+    id: 'hq-browser',
+    name: 'hq-browser',
     transport: { type: 'stdio', command: 'desktop-browser', args: ['--token', 'ephemeral'] },
   };
   const params: ICreateConversationParams = {

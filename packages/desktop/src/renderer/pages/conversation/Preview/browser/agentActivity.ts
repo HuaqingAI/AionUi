@@ -51,16 +51,12 @@ const isBrowserMcpEntry = (entry: ToolGroupEntry): boolean => {
   if (details?.type === 'mcp' && details.server_name === BUILTIN_BROWSER_MCP_NAME) return true;
 
   /**
-   * 兜底按工具名前缀匹配：不同引擎对 MCP 工具的命名方式不一致，有的会带
-   * `<server>__<tool>` 前缀而不填 confirmationDetails。少认一次比误认一次好，
-   * 但这两条覆盖了目前所有已知形态。
-   *
-   * Fall back to the tool-name prefix: engines differ in how they name MCP tools,
-   * and some emit `<server>__<tool>` without confirmationDetails. Under-detecting
-   * beats over-detecting, but these two checks cover every known shape today.
+   * Fall back to the registered server name plus an underscore. This covers
+   * both `<server>_<tool>` and `<server>__<tool>` emitted by different engines
+   * when confirmationDetails is absent.
    */
   const name = entry.name;
-  if (typeof name === 'string' && name.startsWith(`${BUILTIN_BROWSER_MCP_NAME}__`)) return true;
+  if (typeof name === 'string' && name.startsWith(`${BUILTIN_BROWSER_MCP_NAME}_`)) return true;
 
   return false;
 };

@@ -162,6 +162,7 @@ describe('in-app browser MCP tools', () => {
     try {
       await server.connect(serverTransport);
       await client.connect(clientTransport);
+      expect(client.getServerVersion()?.name).toBe('hq-browser');
       expect((await client.listTools()).tools.map((entry) => entry.name)).toContain('browser_import_storage_state');
       expect(await client.callTool({ name: 'take_snapshot', arguments: {} })).toMatchObject(result);
     } finally {
