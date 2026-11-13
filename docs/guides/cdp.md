@@ -1,121 +1,79 @@
-# CDP (Chrome DevTools Protocol) for MCP Development
+# In-app browser and Agent control
 
-AionUi supports CDP for external debugging tools integration. In development mode (`just dev`), CDP is enabled by default on port 9230.
+The desktop app provides a persistent browser in the conversation preview panel. Enable **Settings → System → In-app browser → Let the agent use the in-app browser**, then restart the app if prompted.
 
-## Enable CDP in Production
+Create a **new conversation** after upgrading to a build with browser control. AionCore keeps each conversation's MCP selection fixed at creation, so an older conversation does not gain browser tools when the app is updated.
 
-1. Open AionUi Settings → System → Developer Debug
-2. Enable "Enable Remote Debugging (CDP)"
-3. Restart the app
+## Open and use websites
 
-## Configure MCP chrome-devtools
+Ask the agent, for example:
 
-Add this to your IDE's MCP configuration. The configuration file location depends on your IDE:
+> Open https://www.baidu.com in the in-app browser.
 
-| IDE                | Config Path                                                                                                                          |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
-| **Cursor**         | `~/.cursor/mcp.json`                                                                                                                 |
-| **VS Code**        | `~/.vscode/mcp.json`                                                                                                                 |
-| **Claude Desktop** | `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows) |
-| **Codebuddy**      | `~/.codebuddy/mcp.json`                                                                                                              |
+The built-in `aionui-browser` MCP opens the preview panel and waits for its page to be ready before using browser tools. It provides page navigation, snapshots, clicks, forms, scripts, and screenshots through Chrome DevTools MCP. `browser_open` explicitly opens or navigates the in-app browser. You can also open it manually from the workspace dropdown.
+
+This connection exposes only the in-app browser webview. It does not expose the AionUi interface or launch a separate Chrome window. The CDP port is assigned dynamically; no fixed `9230` port or manually configured external MCP is required. WebUI does not provide an Electron webview and therefore does not expose these tools.
+
+## Import Cookie and Local Storage state
+
+Ask the agent to call `browser_import_storage_state` with a local `file_path`, for example:
+
+> Import E:\login-state\state.json into the in-app browser, then open the website.
+
+The importer accepts Playwright's Cookie and Local Storage state format:
 
 ```json
 {
-  "mcpServers": {
-    "chrome-devtools": {
-      "command": "npx",
-      "args": ["-y", "chrome-devtools-mcp@0.16.0", "--browser-url=http://127.0.0.1:9230"]
+  "cookies": [
+    {
+      "name": "session",
+      "value": "example-value",
+      "domain": "example.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax"
     }
-  }
+  ],
+  "origins": [
+    {
+      "origin": "https://example.com",
+      "localStorage": [{ "name": "preference", "value": "example-value" }]
+    }
+  ]
 }
 ```
 
-## Other AI-Friendly Development Tools
+Cookie files containing a Cookie array are also supported. For a standalone Local Storage map such as `{"theme":"dark"}`, supply the website's exact `origin` (scheme, host, and port) along with `file_path`. Imports add or replace the supplied entries in the existing session. Import results report counts and failures without returning Cookie or Local Storage values.
 
-AionUi can integrate with other MCP tools for enhanced development experience:
+Cookies, including HttpOnly cookies, are written to the application's persistent browser session. Local Storage is restored per origin. Browser tabs and projects share this session. Persistent site data remains after restarting the app; session cookies retain their session-cookie semantics. Expired, revoked, or device-bound credentials can still require signing in again. IndexedDB and sessionStorage are outside this import format.
 
-| Tool               | Purpose                                             | Config                                    |
-| ------------------ | --------------------------------------------------- | ----------------------------------------- |
-| **Playwright MCP** | Browser automation (alternative to chrome-devtools) | `"@playwright/mcp@latest"`                |
-| **Puppeteer MCP**  | Browser automation                                  | `"@puppeteer/mcp@latest"`                 |
-| **Filesystem MCP** | File operations                                     | `@modelcontextprotocol/server-filesystem` |
-| **Git MCP**        | Git repository operations                           | `@modelcontextprotocol/server-git`        |
+## Troubleshooting
 
-See [MCP Servers](https://github.com/modelcontextprotocol/servers) for more tools.
+- If the agent has no `aionui-browser` tools, verify that control was enabled when the app started and create a new conversation.
+- Keep the desktop window available while the agent uses the browser. A missing or closed preview is reopened when an action requires it.
+- The first Chrome DevTools MCP launch requires Node.js/npm and may download the pinned MCP package. A failed dependency launch is reported as a tool error.
+- Disable Agent browser control in system settings and restart to remove access. Manual browsing remains available.
 
-## Usage with MCP
+For development, the real Electron integration test uses isolated temporary browser data and local test websites:
 
-Once configured, you can use MCP tools to interact with AionUi:
-
-- `list_pages` — List all open pages in AionUi
-- `take_snapshot` — Get accessibility tree snapshot of current page
-- `click`, `fill`, `hover` — Interact with UI elements
-- `navigate_page` — Navigate to URLs
-
-## Inspect with Chrome DevTools
-
-1. Open `http://127.0.0.1:9230/json` in Chrome
-2. Click on a page to inspect it with DevTools
-3. Or use Chrome's `chrome://inspect` → Configure → add `127.0.0.1:9230`
+```bash
+bunx cross-env AIONUI_BROWSER_ELECTRON_SMOKE=1 vitest run tests/unit/preview/browser/control/browserElectron.test.ts
+```
 
 ---
 
-# CDP (Chrome DevTools Protocol) MCP 开发
+# 应用内浏览器与 Agent 控制
 
-AionUi 支持 CDP 用于外部调试工具集成。在开发模式 (`just dev`) 下，CDP 默认在端口 9230 启用。
+在桌面版的 **设置 → 系统 → 应用内浏览器** 中开启“允许 Agent 操作 APP 内的浏览器”，按提示重启。升级到支持浏览器控制的版本后，请**新建会话**使用：AionCore 不允许在已有会话中修改 MCP 配置。
 
-## 在生产环境启用 CDP
+对 Agent 说“使用应用内浏览器打开百度”即可自动展开预览面板。内置 `aionui-browser` 工具会等待页面连接完成，再执行打开网址、读取页面、点击、填表或截图。它仅控制应用内浏览器，不控制 AionUi 界面，也不会另外启动 Chrome。控制端口由系统分配，无需手动配置 `9230` 或外部 MCP。WebUI 不支持这一 Electron 专属能力。
 
-1. 打开 AionUi 设置 → 系统 → 开发者调试
-2. 启用"启用远程调试 (CDP)"
-3. 重启应用
+需要导入登录状态时，可以直接说：
 
-## 配置 MCP chrome-devtools
+> 将 E:\login-state\state.json 中的 Cookie 和 Local Storage 导入应用内浏览器，然后打开网站。
 
-将以下配置添加到你的 IDE 的 MCP 配置文件中。配置文件位置取决于你使用的 IDE：
+Agent 使用 `browser_import_storage_state` 读取本地文件。支持上面的 Playwright `cookies` / `origins[].localStorage` 格式，也支持单独的 Cookie 数组；单独的 Local Storage 键值文件（例如 `{"theme":"dark"}`）需同时指定准确的网站 `origin`。导入会在现有浏览器存储中添加或覆盖对应条目。HttpOnly Cookie 也可导入，结果仅返回导入数量与失败情况。
 
-| IDE                | 配置路径                                                                                                                             |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
-| **Cursor**         | `~/.cursor/mcp.json`                                                                                                                 |
-| **VS Code**        | `~/.vscode/mcp.json`                                                                                                                 |
-| **Claude Desktop** | `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) 或 `%APPDATA%\Claude\claude_desktop_config.json` (Windows) |
-| **Codebuddy**      | `~/.codebuddy/mcp.json`                                                                                                              |
-
-```json
-{
-  "mcpServers": {
-    "chrome-devtools": {
-      "command": "npx",
-      "args": ["-y", "chrome-devtools-mcp@0.16.0", "--browser-url=http://127.0.0.1:9230"]
-    }
-  }
-}
-```
-
-## 其他 AI 友好的开发工具
-
-AionUi 可以集成其他 MCP 工具来增强开发体验：
-
-| 工具               | 用途                                     | 配置                                      |
-| ------------------ | ---------------------------------------- | ----------------------------------------- |
-| **Playwright MCP** | 浏览器自动化（chrome-devtools 替代方案） | `"@playwright/mcp@latest"`                |
-| **Puppeteer MCP**  | 浏览器自动化                             | `"@puppeteer/mcp@latest"`                 |
-| **Filesystem MCP** | 文件操作                                 | `@modelcontextprotocol/server-filesystem` |
-| **Git MCP**        | Git 仓库操作                             | `@modelcontextprotocol/server-git`        |
-
-更多工具请查看 [MCP Servers](https://github.com/modelcontextprotocol/servers)。
-
-## MCP 使用方式
-
-配置完成后，可以使用 MCP 工具与 AionUi 交互：
-
-- `list_pages` — 列出 AionUi 中所有打开的页面
-- `take_snapshot` — 获取当前页面的可访问性树快照
-- `click`, `fill`, `hover` — 与 UI 元素交互
-- `navigate_page` — 导航到 URL
-
-## 使用 Chrome DevTools 检查
-
-1. 在 Chrome 中打开 `http://127.0.0.1:9230/json`
-2. 点击页面链接使用 DevTools 检查
-3. 或使用 Chrome 的 `chrome://inspect` → 配置 → 添加 `127.0.0.1:9230`
+所有应用内浏览器标签页、项目共用同一份站点存储。持久化数据可在重启后保留，会话 Cookie 仍遵循其原有生命周期。过期、已注销或绑定设备的登录状态可能需要重新登录。此功能不导入 IndexedDB 或 sessionStorage。

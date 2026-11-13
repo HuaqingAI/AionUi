@@ -162,6 +162,9 @@ export const normalizeConversationRuntimeWorkspaceErrorCode = (
 };
 
 export const getConversationCreateErrorMessage = (error: unknown, t: TFunction): string => {
+  if (error instanceof Error && error.name === 'BrowserToolUnavailableError') {
+    return t('conversation.createFailed');
+  }
   const normalizedCode = normalizeConversationCreateErrorCode(error);
   const payload = getWorkspacePathErrorPayload(error);
   const workspacePath = getWorkspacePathFromErrorDetails(error);

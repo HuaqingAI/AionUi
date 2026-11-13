@@ -22,6 +22,8 @@ import { HTHCoreIdentityService } from '@process/services/hth/coreIdentityServic
 import { HTHConfigSyncService } from '@process/services/hth/configSyncService';
 import { HTHWorkspacePreparationServer } from '@process/services/hth/runtime/workspacePreparationServer';
 import { HTHQuotaService } from '@process/services/hth/quotaService';
+import { BROWSER_SESSION_PARTITION } from '@/common/config/constants';
+import { browserControlService } from '@process/resources/builtinMcp/browser/BrowserControlService';
 
 let mainWindowRef: BrowserWindow | null = null;
 let workspacePreparationServer: HTHWorkspacePreparationServer | undefined;
@@ -228,6 +230,32 @@ export function initApplicationBridge(): void {
       return { success: true, data: updatedConfig };
     } catch (e) {
       return { success: false, msg: e.message || e.toString() };
+    }
+  });
+
+  ipcBridge.application.getBrowserMcpServer.provider(() => ({
+    success: true,
+    data: browserControlService.getSessionMcpServer(),
+  }));
+
+  ipcBridge.application.reportBrowserWebContentsId.provider(({ webContentsId, requestId }) =>
+    browserControlService.reportView(webContentsId, requestId)
+  );
+
+  ipcBridge.application.browserOpenResult.provider(({ requestId, error }) => {
+    browserControlService.failView(requestId, error);
+    return { success: true };
+  });
+
+  ipcBridge.application.clearBrowserData.provider(async () => {
+    try {
+      const browserSession = session.fromPartition(BROWSER_SESSION_PARTITION);
+      await browserSession.clearStorageData();
+      await browserSession.clearCache();
+      await browserSession.cookies.flushStore();
+      return { success: true };
+    } catch {
+      return { success: false };
     }
   });
 

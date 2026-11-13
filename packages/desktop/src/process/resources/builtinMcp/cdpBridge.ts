@@ -208,7 +208,6 @@ const handleSocketMessage = async (ws: WebSocket, raw: string, announcedSessions
   }
 
   if (decision.kind === 'reply' || decision.kind === 'reply-and-emit') {
-    ws.send(JSON.stringify({ id, result: decision.payload, sessionId }));
     if (decision.kind === 'reply-and-emit') {
       for (const evt of decision.emit) {
         /**
@@ -255,25 +254,19 @@ const handleSocketMessage = async (ws: WebSocket, raw: string, announcedSessions
         ws.send(JSON.stringify({ method: evt.method, params: evt.params }));
       }
     }
+    // Puppeteer snapshots available pages as soon as auto-attach is acknowledged.
+    // Publish the existing target first so that first snapshot already contains it.
+    ws.send(JSON.stringify({ id, result: decision.payload, sessionId }));
     return;
   }
 
   // forward
   if (!attached || attached.contents.isDestroyed()) {
-    /**
-     * 说清楚「怎么办」，因为 Agent 侧无法自己修复：attach 只由渲染进程在 webview
-     * dom-ready 时上报触发（WebviewHost.tsx），Target.createTarget 又是明确拒绝的。
-     * 所以这条消息必须告诉用户去开浏览器面板，否则 Agent 只能反复撞同一面墙。
-     *
-     * Say what to do about it: the agent cannot fix this itself. Attachment is only
-     * triggered by the renderer reporting its webContents id on dom-ready
-     * (WebviewHost.tsx), and Target.createTarget is explicitly refused — so this message
-     * has to point at opening the browser panel, or the agent just retries into the same wall.
-     */
+    // The MCP wrapper can recreate and attach the visible view through browser_open.
     sendError(
       ws,
       id,
-      'The in-app browser is not currently attached. Open the browser panel in AionUi so a page is available to control.',
+      'The in-app browser is not currently attached. Call browser_open and retry the page operation.',
       sessionId
     );
     return;
@@ -393,7 +386,8 @@ export const startCdpBridge = async (): Promise<CdpBridgeHandle> => {
     detach: detachInternal,
     close: async () => {
       detachInternal();
-      for (const ws of sockets) ws.close();
+      // Shutdown must not wait for an unresponsive or orphaned MCP peer's close handshake.
+      for (const ws of sockets) ws.terminate();
       sockets = new Set();
       await new Promise<void>((resolve) => {
         wss.close(() => httpServer.close(() => resolve()));

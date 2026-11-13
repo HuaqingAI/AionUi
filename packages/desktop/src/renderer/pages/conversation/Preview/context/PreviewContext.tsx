@@ -7,13 +7,19 @@
 import { ipcBridge } from '@/common';
 import type { PreviewContentType } from '@/common/types/office/preview';
 import type { ChatFileRef, ContentEncoding } from '@/common/types/chatFile';
+import type { BrowserOpenRequest } from '@/common/types/platform/browser';
 import { chatFileRefKey, isChatFileRef } from '@/common/types/chatFile';
 import { emitter } from '@/renderer/utils/emitter';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { BROWSER_BLANK_URL, BROWSER_TAB_FALLBACK_TITLE, MAX_BROWSER_TABS } from '../browser/constants';
 import { isBrowserMcpActivity, isBrowserMcpSettled } from '../browser/agentActivity';
 import { maybeNotifyFirstAgentBrowserUse } from '../browser/firstUseNotice';
-import { listPersistedPreviewScopeKeys, previewScopeStorageKey, type PreviewScopeKey } from './previewScope';
+import {
+  listPersistedPreviewScopeKeys,
+  previewScopeKey,
+  previewScopeStorageKey,
+  type PreviewScopeKey,
+} from './previewScope';
 import { peKey } from '@/renderer/pages/conversation/explorer/explorerModel';
 import { reflessTabKey } from './reflessTabKey';
 import { onPreviewWatchChange, reconcilePreviewWatch, resetPreviewWatch } from './previewWatchStore';
@@ -63,6 +69,8 @@ export interface PreviewMetadata {
   missingFile?: boolean; // 文件不存在或无法读取 / Whether the referenced file is missing or unreadable
   favicon?: string; // 浏览器 tab 的站点图标 URL / Site icon URL for browser tabs
   agentActive?: boolean; // Agent 正在操作该浏览器 tab / Agent is currently driving this browser tab
+  /** Pending browser request; never persisted across app restarts. */
+  browserRequestId?: string;
 }
 
 export interface PreviewTab {
@@ -299,10 +307,15 @@ const PERSISTABLE_CONTENT_TYPES = new Set<PreviewContentType>([
  * to be written, which is the data loss this whole area has been about.
  */
 const tabForPersistence = (tab: PreviewTab): PreviewTab | null => {
+  const metadata = tab.metadata ? { ...tab.metadata } : undefined;
+  if (metadata) {
+    metadata.agentActive = false;
+    delete metadata.browserRequestId;
+  }
   const shared = {
     ...tab,
     // Agent activity is a live, per-session signal — never restore it as active.
-    metadata: tab.metadata?.agentActive ? { ...tab.metadata, agentActive: false } : tab.metadata,
+    metadata,
   };
 
   if (REFETCHABLE_CONTENT_TYPES.has(tab.content_type)) {
@@ -546,6 +559,9 @@ export const PreviewProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // twice), so decisions with observable side effects are made up front.
   const tabsRef = useRef<PreviewTab[]>([]);
   tabsRef.current = tabs;
+  const previewStateRef = useRef({ isOpen, tabs, activeTabId });
+  previewStateRef.current = { isOpen, tabs, activeTabId };
+  const browserRequestRef = useRef<string | null>(null);
   // Set when a browser-tab open was folded into an existing tab because the cap
   // was reached, so the UI can tell the user instead of silently reusing a tab.
   const [browserTabLimitHitAt, setBrowserTabLimitHitAt] = useState<number | null>(null);
@@ -929,36 +945,108 @@ export const PreviewProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // tabs + active tab + visibility — this is what makes preview per-project.
   // Same scope is a no-op. `currentScopeRef` lives in the app-root context so it
   // survives conversation-page remounts.
-  const closePreviewIfScopeChanged = useCallback(
-    (scopeKey: PreviewScopeKey) => {
-      const prev = currentScopeRef.current;
-      if (prev === scopeKey) return;
-      if (prev != null) persistScopeState(prev, { isOpen, tabs, activeTabId });
-      // Release the leaving scope's directory subscriptions.
-      //
-      // Placed before the state updates as a matter of habit, not because the position
-      // currently matters: this callback is synchronous, so React flushes the tabs
-      // effect only after the whole body returns, and the release therefore happens
-      // first wherever it is written. Measured both orders — the resulting subscription
-      // set is identical.
-      //
-      // Kept here because that stops being true the moment anything in this function
-      // awaits: the effect could then run mid-body, and a release placed afterwards
-      // would drop the subscriptions the restore had just created.
-      resetPreviewWatch();
-      currentScopeRef.current = scopeKey;
-      const loaded = scopeKey != null ? loadScopeState(scopeKey) : EMPTY_SCOPE_STATE;
-      // Subscriptions for these tabs come from the tabs effect, which this setTabs
-      // triggers — restored tabs are subscribed exactly like freshly opened ones.
-      setTabs(loaded.tabs);
-      setActiveTabId(loaded.activeTabId);
-      activeTabIdRef.current = loaded.activeTabId;
-      setIsOpen(loaded.isOpen);
-      setIsMaximized(false);
-      setDomSnippets([]);
-    },
-    [isOpen, tabs, activeTabId]
-  );
+  const closePreviewIfScopeChanged = useCallback((scopeKey: PreviewScopeKey) => {
+    const prev = currentScopeRef.current;
+    if (prev === scopeKey) return;
+    if (prev != null) persistScopeState(prev, previewStateRef.current);
+    // Release the leaving scope's directory subscriptions.
+    //
+    // Placed before the state updates as a matter of habit, not because the position
+    // currently matters: this callback is synchronous, so React flushes the tabs
+    // effect only after the whole body returns, and the release therefore happens
+    // first wherever it is written. Measured both orders — the resulting subscription
+    // set is identical.
+    //
+    // Kept here because that stops being true the moment anything in this function
+    // awaits: the effect could then run mid-body, and a release placed afterwards
+    // would drop the subscriptions the restore had just created.
+    resetPreviewWatch();
+    currentScopeRef.current = scopeKey;
+    const loaded = scopeKey != null ? loadScopeState(scopeKey) : EMPTY_SCOPE_STATE;
+    tabsRef.current = loaded.tabs;
+    // Subscriptions for these tabs come from the tabs effect, which this setTabs
+    // triggers — restored tabs are subscribed exactly like freshly opened ones.
+    setTabs(loaded.tabs);
+    setActiveTabId(loaded.activeTabId);
+    activeTabIdRef.current = loaded.activeTabId;
+    setIsOpen(loaded.isOpen);
+    setIsMaximized(false);
+    setDomSnippets([]);
+  }, []);
+
+  useEffect(() => {
+    const requests = ipcBridge.application?.browserOpenRequested;
+    if (!requests?.on) return;
+
+    const reportFailure = (requestId: string, error: string): void => {
+      void ipcBridge.application.browserOpenResult.invoke({ requestId, error }).catch(() => {
+        console.warn('[browser] Could not acknowledge a failed browser request');
+      });
+    };
+
+    let disposed = false;
+    const unsubscribe = requests.on((request: BrowserOpenRequest) => {
+      browserRequestRef.current = request.requestId;
+      void (async () => {
+        try {
+          const conversation = request.conversationId
+            ? await ipcBridge.conversation.get.invoke({ id: request.conversationId })
+            : null;
+          if (disposed) return;
+          if (browserRequestRef.current !== request.requestId) {
+            reportFailure(request.requestId, 'The browser request was superseded.');
+            return;
+          }
+          if (request.conversationId && (!conversation || conversation.id !== request.conversationId)) {
+            throw new Error('The browser conversation is unavailable.');
+          }
+
+          const scope = previewScopeKey(conversation?.project_id, conversation?.extra?.workspace || request.workspace);
+          closePreviewIfScopeChanged(scope);
+          if (request.conversationId) {
+            const route = `/conversation/${encodeURIComponent(request.conversationId)}`;
+            if (window.location.hash.split('?')[0] !== `#${route}`) window.location.hash = route;
+          }
+
+          const currentTabs = tabsRef.current;
+          const existing =
+            currentTabs.find((tab) => tab.id === activeTabIdRef.current && tab.content_type === 'browser') ||
+            currentTabs.find((tab) => tab.content_type === 'browser');
+          const tabId = existing?.id || `browser-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+          const content = request.url || existing?.content || BROWSER_BLANK_URL;
+          const nextTab: PreviewTab = existing
+            ? {
+                ...existing,
+                content,
+                metadata: { ...existing.metadata, browserRequestId: request.requestId },
+              }
+            : {
+                id: tabId,
+                content,
+                originalContent: content,
+                content_type: 'browser',
+                title: BROWSER_TAB_FALLBACK_TITLE,
+                metadata: { browserRequestId: request.requestId },
+              };
+          const nextTabs = existing
+            ? currentTabs.map((tab) => (tab.id === tabId ? nextTab : tab))
+            : [...currentTabs, nextTab];
+          tabsRef.current = nextTabs;
+          activeTabIdRef.current = tabId;
+          setTabs(nextTabs);
+          setActiveTabId(tabId);
+          setIsOpen(true);
+          maybeNotifyFirstAgentBrowserUse();
+        } catch (error) {
+          reportFailure(request.requestId, error instanceof Error ? error.message : 'Could not open the browser view.');
+        }
+      })();
+    });
+    return () => {
+      disposed = true;
+      unsubscribe();
+    };
+  }, [closePreviewIfScopeChanged]);
 
   const closeTab = useCallback(
     (tabId: string) => {

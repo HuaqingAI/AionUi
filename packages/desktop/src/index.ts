@@ -7,6 +7,7 @@
 // configureChromium sets app name (dev isolation) and Chromium flags — must run before
 // ANY module that calls app.getPath('userData'), because Electron caches the path on first call.
 import { getDevelopmentDesktopIconPath } from './process/utils/configureChromium';
+import { browserControlService } from './process/resources/builtinMcp/browser/BrowserControlService';
 import { installGpuCrashHandler } from './process/utils/gpuRecovery';
 import { captureBackendStartupFailure, initSentry, scheduleStartupLogReport, setSentryDeviceId } from './sentry';
 
@@ -923,6 +924,13 @@ const handleAppReady = async (): Promise<void> => {
   try {
     await initializeProcess();
     if (!isWebUIMode && !isResetPasswordMode) await startHTHWorkspacePreparation();
+    if (!isWebUIMode && !isResetPasswordMode) {
+      try {
+        await browserControlService.start();
+      } catch {
+        console.warn('[BrowserControl] In-app browser agent control could not be started.');
+      }
+    }
     rendererInitialLanguage = ProcessConfig.getSync('language') ?? DEFAULT_INITIAL_LANGUAGE;
     mark('initializeProcess');
   } catch (error) {
@@ -1276,7 +1284,13 @@ installQuitCleanup({
   },
   // Stop aioncore subprocess — backend shutdown kills all agent children
   // transitively (no separate frontend workerTaskManager remains).
-  stopBackend: () => backendManager.stop(),
+  stopBackend: async () => {
+    try {
+      await backendManager.stop();
+    } finally {
+      await browserControlService.close();
+    }
+  },
   destroyPetWindow: async () => {
     const { destroyPetWindow } = await import('./process/pet/petManager');
     destroyPetWindow();

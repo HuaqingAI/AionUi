@@ -14,6 +14,8 @@
 
 import type { IConfirmation } from '@/common/chat/chatLib';
 import type { AcpSlashCommandApiItem } from '@/common/chat/slash/types';
+import { BUILTIN_BROWSER_MCP_NAME } from '@/common/config/constants';
+import type { BrowserOpenFailure, BrowserOpenRequest, BrowserWebContentsReport } from '../types/platform/browser';
 import { bridge } from '@/common/platform/bridge';
 import { buildListTasksPath } from './teamTaskPath';
 import type { OpenDialogOptions } from 'electron';
@@ -285,11 +287,56 @@ export const auth = {
 // Conversation — REST + WS
 // ---------------------------------------------------------------------------
 
+/** Include the desktop browser as a session MCP without changing the user's MCP selection. */
+async function createConversationWithBrowser(params: ICreateConversationParams): Promise<TChatConversation> {
+  let body = params;
+  if (typeof window !== 'undefined' && window.electronAPI) {
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const response = await Promise.race([
+        application.getBrowserMcpServer.invoke(),
+        new Promise<undefined>((resolve) => {
+          timeout = setTimeout(() => resolve(undefined), 5_000);
+        }),
+      ]);
+      if (!response || !response.success) {
+        throw new Error(response?.msg || 'The desktop browser tool is unavailable.');
+      }
+      const browser = response?.success ? response.data : null;
+      if (browser) {
+        body = {
+          ...params,
+          extra: {
+            ...params.extra,
+            selected_session_mcp_servers: [
+              ...(params.extra.selected_session_mcp_servers ?? []).filter(
+                (server) => server.name !== BUILTIN_BROWSER_MCP_NAME && server.id !== browser.id
+              ),
+              browser,
+            ],
+          },
+        };
+      }
+    } catch (error) {
+      console.warn('[browser] Could not load the desktop browser MCP:', error);
+      const unavailable = new Error('The desktop browser tool is unavailable.', { cause: error });
+      unavailable.name = 'BrowserToolUnavailableError';
+      throw unavailable;
+    } finally {
+      if (timeout !== undefined) clearTimeout(timeout);
+    }
+  }
+
+  return fromApiConversation(
+    await httpRequest<TChatConversation>('POST', '/api/conversations', buildCreateConversationBody(body))
+  );
+}
+
 export const conversation = {
-  create: withResponseMap(
-    httpPost<TChatConversation, ICreateConversationParams>('/api/conversations', (p) => buildCreateConversationBody(p)),
-    fromApiConversation
-  ),
+  create: {
+    provider: (_handler: (params: ICreateConversationParams) => Promise<TChatConversation>): void => {},
+    invoke: createConversationWithBrowser,
+  },
   createWithConversation: withResponseMap(
     httpPost<TChatConversation, { conversation: TChatConversation }>('/api/conversations/clone', (p) => {
       const isAionrs = p.conversation.type === 'aionrs';
@@ -759,6 +806,11 @@ export const application = {
   setZoomFactor: bridge.buildProvider<number, { factor: number }>('app.set-zoom-factor'),
   getCdpStatus: bridge.buildProvider<IBridgeResponse<ICdpStatus>, void>('app.get-cdp-status'),
   updateCdpConfig: bridge.buildProvider<IBridgeResponse<ICdpConfig>, Partial<ICdpConfig>>('app.update-cdp-config'),
+  getBrowserMcpServer: bridge.buildProvider<IBridgeResponse<ISessionMcpServer | null>, void>(
+    'app.get-browser-mcp-server'
+  ),
+  browserOpenRequested: bridge.buildEmitter<BrowserOpenRequest>('app.browser-open-requested'),
+  browserOpenResult: bridge.buildProvider<IBridgeResponse<void>, BrowserOpenFailure>('app.browser-open-result'),
   /**
    * 清空应用内浏览器的登录态与缓存（cookie / localStorage / 缓存）。
    * 登录态是全局共享的，所以这是唯一的"退出所有网站登录"入口。
@@ -782,7 +834,7 @@ export const application = {
    * in-app browser. Main validates getType() === 'webview', so even a misused call cannot
    * attach to the main window.
    */
-  reportBrowserWebContentsId: bridge.buildProvider<IBridgeResponse<void>, { webContentsId: number }>(
+  reportBrowserWebContentsId: bridge.buildProvider<IBridgeResponse<void>, BrowserWebContentsReport>(
     'app.report-browser-webcontents-id'
   ),
   getStartOnBootStatus: bridge.buildProvider<IBridgeResponse<IStartOnBootStatus>, void>('app.get-start-on-boot-status'),

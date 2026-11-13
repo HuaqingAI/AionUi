@@ -8,6 +8,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Left, Right, Refresh, Loading } from '@icon-park/react';
 import { ipcBridge } from '@/common';
+import { BROWSER_SESSION_PARTITION } from '@/common/config/constants';
 import { InternalNavTracker, shouldResetHistoryForUrlProp } from './webviewHistory';
 
 export interface WebviewHostProps {
@@ -19,6 +20,10 @@ export interface WebviewHostProps {
   showNavBar?: boolean;
   /** Webview partition for cache/session isolation, e.g. "persist:ext-settings-feishu" */
   partition?: string;
+  /** Only the active in-app browser may be exposed to agent control. */
+  browserControlActive?: boolean;
+  /** Identifies the pending operation that selected this browser view. */
+  browserRequestId?: string;
   /** Extra class names for root container */
   className?: string;
   /** Extra styles for root container */
@@ -62,6 +67,8 @@ const WebviewHost: React.FC<WebviewHostProps> = ({
   id: _id,
   showNavBar = false,
   partition,
+  browserControlActive = false,
+  browserRequestId,
   className,
   style,
   onDidFinishLoad,
@@ -92,6 +99,32 @@ const WebviewHost: React.FC<WebviewHostProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [zoomFactor, setZoomFactor] = useState(1);
   const [webviewReady, setWebviewReady] = useState(false);
+  const acknowledgedBrowserRequestRef = useRef<string | undefined>(undefined);
+
+  // A ready view must acknowledge new requests as well as its first dom-ready.
+  // This also reattaches the selected browser when switching between mounted tabs.
+  useEffect(() => {
+    if (!webviewReady || !browserControlActive || partition !== BROWSER_SESSION_PARTITION) return;
+    const webview = webviewRef.current;
+    if (!webview) return;
+    try {
+      const webContentsId = webview.getWebContentsId();
+      if (typeof webContentsId !== 'number') return;
+      const requestId = browserRequestId !== acknowledgedBrowserRequestRef.current ? browserRequestId : undefined;
+      // Electron routes complete keyboard input only after the embedder's DOM
+      // webview is focused; focusing the guest webContents alone is insufficient.
+      if (requestId) webview.focus();
+      void ipcBridge.application.reportBrowserWebContentsId
+        .invoke({ webContentsId, requestId })
+        .then((result) => {
+          if (result.success && requestId) acknowledgedBrowserRequestRef.current = requestId;
+          if (!result.success && result.msg) console.warn('[browser] agent control unavailable:', result.msg);
+        })
+        .catch(() => console.warn('[browser] could not report webContents id'));
+    } catch {
+      console.warn('[browser] webContents is not ready to attach');
+    }
+  }, [webviewReady, browserControlActive, browserRequestId, partition]);
 
   // 最近由本组件内部触发的导航地址集合。
   //
@@ -300,30 +333,6 @@ const WebviewHost: React.FC<WebviewHostProps> = ({
       setWebviewReady(true);
       syncNavState();
       injectClickInterceptor();
-
-      /**
-       * 把这个 webview 的 webContents id 报给主进程，让单目标 CDP 通道附加到它。
-       *
-       * 放在 dom-ready 里：此时 getWebContentsId() 才可用，而且每次导航/切 tab 后都会
-       * 再触发一次，正好让通道跟着用户当前看的页面走。失败只记日志不打扰用户 ——
-       * Agent 操作浏览器本就是可选能力，不该因为它挡住正常浏览。
-       *
-       * Report this webview's webContents id so the single-target CDP bridge can attach.
-       * Done on dom-ready because getWebContentsId() is only valid by then, and because it
-       * fires again after navigation or a tab switch, which keeps the bridge pointed at the
-       * page the user is actually viewing. Failures are logged only: agent browser control
-       * is optional and must not block ordinary browsing.
-       */
-      try {
-        const webContentsId = webviewEl.getWebContentsId?.();
-        if (typeof webContentsId === 'number') {
-          void ipcBridge.application.reportBrowserWebContentsId.invoke({ webContentsId }).then((res) => {
-            if (!res.success && res.msg) console.warn('[browser] agent control unavailable:', res.msg);
-          });
-        }
-      } catch (error) {
-        console.warn('[browser] could not report webContents id:', error);
-      }
 
       // Inject viewport meta for responsive pages
       webviewEl

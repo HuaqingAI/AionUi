@@ -2,7 +2,9 @@
  * @vitest-environment node
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ICreateConversationParams } from '@/common/adapter/ipcBridge';
+import type { ISessionMcpServer } from '@/common/config/storage';
 
 type HttpCall = {
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -138,5 +140,125 @@ describe('ipcBridge conversation adapter', () => {
     expect(call?.path).toContain('current_conversation_id=conv-here');
     expect(call?.path).toContain('q=auth');
     expect(call?.path).toContain('limit=20');
+  });
+});
+
+describe('desktop browser tools in new conversations', () => {
+  const browser: ISessionMcpServer = {
+    id: 'aionui-browser',
+    name: 'aionui-browser',
+    transport: { type: 'stdio', command: 'desktop-browser', args: ['--token', 'ephemeral'] },
+  };
+  const params: ICreateConversationParams = {
+    type: 'acp',
+    assistant: { id: 'assistant-1', conversation_overrides: { mcp_ids: [] } },
+    extra: { workspace: 'E:/work', selected_mcp_server_ids: ['registered-user-mcp'] },
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal('window', { electronAPI: {} });
+    httpBridgeMocks.httpRequest.mockResolvedValue({ id: 'new-conversation', type: 'acp', extra: {} });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+    httpBridgeMocks.httpRequest.mockReset();
+  });
+
+  it('includes browser tools alongside selected tools even for restricted assistant presets', async () => {
+    const { application, conversation } = await import('@/common/adapter/ipcBridge');
+    vi.spyOn(application.getBrowserMcpServer, 'invoke').mockResolvedValue({ success: true, data: browser });
+    const userMcp: ISessionMcpServer = { id: 'user', name: 'user', transport: { type: 'stdio', command: 'user-mcp' } };
+    await conversation.create.invoke({
+      ...params,
+      extra: { ...params.extra, selected_session_mcp_servers: [userMcp] },
+    });
+
+    expect(httpBridgeMocks.httpRequest).toHaveBeenCalledWith(
+      'POST',
+      '/api/conversations',
+      expect.objectContaining({
+        assistant: params.assistant,
+        extra: {
+          ...params.extra,
+          selected_session_mcp_servers: [userMcp, browser],
+        },
+      })
+    );
+    expect(params.extra).not.toHaveProperty('selected_session_mcp_servers');
+  });
+
+  it('replaces an outdated browser descriptor instead of duplicating its credentials', async () => {
+    const { application, conversation } = await import('@/common/adapter/ipcBridge');
+    vi.spyOn(application.getBrowserMcpServer, 'invoke').mockResolvedValue({ success: true, data: browser });
+    await conversation.create.invoke({
+      ...params,
+      extra: {
+        selected_session_mcp_servers: [
+          { ...browser, id: 'old-browser' },
+          { ...browser, name: 'old-name' },
+        ],
+      },
+    });
+
+    expect(httpBridgeMocks.httpRequest).toHaveBeenCalledWith(
+      'POST',
+      '/api/conversations',
+      expect.objectContaining({
+        extra: { selected_session_mcp_servers: [browser] },
+      })
+    );
+  });
+
+  it('preserves the payload when the desktop browser is disabled', async () => {
+    const { application, conversation } = await import('@/common/adapter/ipcBridge');
+    vi.spyOn(application.getBrowserMcpServer, 'invoke').mockResolvedValue({ success: true, data: null });
+    await conversation.create.invoke(params);
+
+    expect(httpBridgeMocks.httpRequest).toHaveBeenCalledWith(
+      'POST',
+      '/api/conversations',
+      expect.objectContaining({ extra: params.extra })
+    );
+  });
+
+  it('creates WebUI conversations without waiting for desktop IPC', async () => {
+    const { application, conversation } = await import('@/common/adapter/ipcBridge');
+    vi.stubGlobal('window', {});
+    const getBrowser = vi.spyOn(application.getBrowserMcpServer, 'invoke');
+    await conversation.create.invoke(params);
+
+    expect(getBrowser).not.toHaveBeenCalled();
+    expect(httpBridgeMocks.httpRequest).toHaveBeenCalledOnce();
+  });
+
+  it('fails visibly when enabled browser tools cannot be prepared', async () => {
+    const { application, conversation } = await import('@/common/adapter/ipcBridge');
+    vi.spyOn(application.getBrowserMcpServer, 'invoke').mockResolvedValue({
+      success: false,
+      msg: 'Browser startup failed',
+    });
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await expect(conversation.create.invoke(params)).rejects.toMatchObject({
+      name: 'BrowserToolUnavailableError',
+      cause: expect.any(Error),
+    });
+    expect(httpBridgeMocks.httpRequest).not.toHaveBeenCalled();
+  });
+
+  it('rejects unresponsive desktop IPC instead of hanging conversation creation', async () => {
+    const { application, conversation } = await import('@/common/adapter/ipcBridge');
+    vi.useFakeTimers();
+    vi.spyOn(application.getBrowserMcpServer, 'invoke').mockReturnValue(new Promise(() => {}));
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const result = expect(conversation.create.invoke(params)).rejects.toThrow('desktop browser tool is unavailable');
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    await result;
+    expect(httpBridgeMocks.httpRequest).not.toHaveBeenCalled();
   });
 });

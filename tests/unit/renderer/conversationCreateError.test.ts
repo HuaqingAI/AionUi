@@ -5,6 +5,8 @@ import { getConversationCreateErrorMessage } from '@/renderer/pages/conversation
 
 const t = ((key: string, options?: Record<string, unknown>) => {
   switch (key) {
+    case 'conversation.createFailed':
+      return 'Failed to create conversation';
     case 'conversation.createError.codes.TEAM_ASSISTANT_ID_REQUIRED':
       return 'Please select an assistant before creating the team.';
     case 'conversation.createError.codes.TEAM_ASSISTANT_NOT_FOUND':
@@ -17,6 +19,13 @@ const t = ((key: string, options?: Record<string, unknown>) => {
 }) as unknown as TFunction;
 
 describe('getConversationCreateErrorMessage', () => {
+  it('localizes desktop browser startup failures while keeping diagnostics out of the message', () => {
+    const error = new Error('The desktop browser tool is unavailable.', { cause: new Error('Internal IPC failure') });
+    error.name = 'BrowserToolUnavailableError';
+
+    expect(getConversationCreateErrorMessage(error, t)).toBe('Failed to create conversation');
+  });
+
   it('localizes missing assistant identity errors from backend codes', () => {
     const error = new BackendHttpError({
       method: 'POST',

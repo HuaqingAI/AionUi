@@ -18,6 +18,10 @@ export interface BrowserViewerProps {
   url: string;
   /** 所属 preview tab 的 id / Id of the owning preview tab */
   tabId: string;
+  /** Whether this browser is the visible target for agent control. */
+  isActive?: boolean;
+  /** A pending browser operation awaiting this view's webContents. */
+  browserRequestId?: string;
   /** 地址变化时回写 tab（用于持久化）/ Persist the new address back onto the tab */
   onUrlChange: (tabId: string, url: string) => void;
   /** 页面标题变化时回写 tab / Persist the page title back onto the tab */
@@ -39,7 +43,15 @@ export interface BrowserViewerProps {
  * the address bar, and writing address/title/favicon back onto the owning tab so
  * the browser can be restored after a restart.
  */
-const BrowserViewer: React.FC<BrowserViewerProps> = ({ url, tabId, onUrlChange, onTitleChange, onFaviconChange }) => {
+const BrowserViewer: React.FC<BrowserViewerProps> = ({
+  url,
+  tabId,
+  isActive = true,
+  browserRequestId,
+  onUrlChange,
+  onTitleChange,
+  onFaviconChange,
+}) => {
   const handleUrlChange = useCallback((next: string) => onUrlChange(tabId, next), [tabId, onUrlChange]);
 
   const handleTitleChange = useCallback(
@@ -69,6 +81,8 @@ const BrowserViewer: React.FC<BrowserViewerProps> = ({ url, tabId, onUrlChange, 
     <WebviewHost
       url={url || BROWSER_BLANK_URL}
       partition={BROWSER_SESSION_PARTITION}
+      browserControlActive={isActive}
+      browserRequestId={browserRequestId}
       showNavBar
       className='bg-bg-1'
       resolveUrlInput={resolveAddressBarInput}
