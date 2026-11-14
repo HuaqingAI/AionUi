@@ -246,11 +246,14 @@ function downloadFile(url, outputPath) {
   }
 }
 
+/** Extract a release or Actions archive into a fresh output directory. */
 function extractArchive(archivePath, outputDir, platform) {
   ensureDirectory(outputDir);
   if (platform === 'win32' || archivePath.endsWith('.zip')) {
     if (platform === 'win32') {
-      const ps = `Expand-Archive -LiteralPath '${archivePath.replace(/'/g, "''")}' -DestinationPath '${outputDir.replace(/'/g, "''")}' -Force`;
+      // Use the .NET Framework-compatible overload directly: inherited PSModulePath
+      // can make Windows PowerShell load an incompatible PowerShell 7 Archive module.
+      const ps = `$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::ExtractToDirectory('${archivePath.replace(/'/g, "''")}', '${outputDir.replace(/'/g, "''")}')`;
       execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', ps]);
     } else {
       execFileSync('unzip', ['-o', archivePath, '-d', outputDir]);
@@ -606,6 +609,7 @@ function prepareAioncore(options) {
 }
 
 module.exports = {
+  extractArchive,
   getActionsArtifactMissingMessage,
   getActionsArtifactName,
   prepareAioncore,
