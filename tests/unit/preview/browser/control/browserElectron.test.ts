@@ -69,6 +69,12 @@ async function main() {
     void (async () => {
       const request = JSON.parse(line);
       if (request.method === 'views') return respond({ result: guest && !guest.isDestroyed() ? 1 : 0 });
+      if (request.method === 'seedHttpOnly') {
+        await guest.session.cookies.set({ url: 'http://127.0.0.1/', name: 'replace-session', value: 'prior-http-only-secret', path: '/', httpOnly: true, sameSite: 'lax' });
+        await guest.session.cookies.set({ url: 'http://127.0.0.1/', name: 'unrelated-session', value: 'keep-existing-secret', path: '/', httpOnly: true, sameSite: 'lax' });
+        return respond({ result: await guest.session.cookies.get({ domain: '127.0.0.1' }) });
+      }
+      if (request.method === 'cookies') return respond({ result: await guest.session.cookies.get({ domain: '127.0.0.1' }) });
       if (request.method === 'replace') {
         const old = guest;
         const destroyed = new Promise((resolve) => old.once('destroyed', resolve));
@@ -321,7 +327,15 @@ describe.skipIf(!enabled)('real Electron in-app browser', () => {
         function:
           '() => { if (document.querySelector("#result").textContent !== "agent filled") throw new Error("form was not submitted"); return true; }',
       });
+      expect(await harness!.request('seedHttpOnly')).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: 'replace-session', value: 'prior-http-only-secret', httpOnly: true }),
+          expect.objectContaining({ name: 'unrelated-session', value: 'keep-existing-secret', httpOnly: true }),
+        ])
+      );
       const cookieSecret = 'http-only-smoke-secret';
+      const replacementSecret = 'replacement-session-secret';
+      const expirationDate = Math.floor(Date.now() / 1000) + 3600;
       const values = ['origin-one-smoke-secret', 'origin-two-smoke-secret'];
       const statePath = path.join(directory, 'storage_state.json');
       await fs.writeFile(
@@ -333,8 +347,18 @@ describe.skipIf(!enabled)('real Electron in-app browser', () => {
               value: cookieSecret,
               domain: '127.0.0.1',
               path: '/',
-              expires: Math.floor(Date.now() / 1000) + 3600,
+              expires: expirationDate,
               httpOnly: true,
+              secure: false,
+              sameSite: 'Lax',
+            },
+            {
+              name: 'replace-session',
+              value: replacementSecret,
+              domain: '127.0.0.1',
+              path: '/',
+              expires: expirationDate,
+              httpOnly: false,
               secure: false,
               sameSite: 'Lax',
             },
@@ -345,20 +369,40 @@ describe.skipIf(!enabled)('real Electron in-app browser', () => {
           })),
         })
       );
-      const imported = JSON.stringify(await tool('browser_import_storage_state', { file_path: statePath }));
-      expect({
-        counts: JSON.parse(JSON.parse(imported).content[0].text),
-        redacted: ![cookieSecret, ...values].some((value) => imported.includes(value)),
-      }).toEqual({
-        counts: {
-          cookiesImported: 1,
-          localStorageImported: 2,
-          originsImported: 2,
-          skippedExpiredCookies: 0,
-          failures: [],
-        },
-        redacted: true,
-      });
+      const importState = async () => {
+        const imported = JSON.stringify(await tool('browser_import_storage_state', { file_path: statePath }));
+        return {
+          counts: JSON.parse(JSON.parse(imported).content[0].text),
+          redacted: ![cookieSecret, replacementSecret, ...values].some((value) => imported.includes(value)),
+          cookies: await harness!.request('cookies'),
+        };
+      };
+      const imports = [await importState(), await importState()];
+      expect(imports).toEqual(
+        Array.from({ length: 2 }, () => ({
+          counts: {
+            cookiesImported: 2,
+            localStorageImported: 2,
+            originsImported: 2,
+            skippedExpiredCookies: 0,
+            failures: [],
+          },
+          redacted: true,
+          cookies: expect.arrayContaining([
+            expect.objectContaining({
+              name: 'replace-session',
+              value: replacementSecret,
+              domain: '127.0.0.1',
+              path: '/',
+              httpOnly: false,
+              secure: false,
+              sameSite: 'lax',
+              expirationDate,
+            }),
+            expect.objectContaining({ name: 'unrelated-session', value: 'keep-existing-secret', httpOnly: true }),
+          ]),
+        }))
+      );
       const verifyState = async (index: number): Promise<unknown> => {
         const result = await tool('evaluate_script', {
           function:
@@ -366,8 +410,13 @@ describe.skipIf(!enabled)('real Electron in-app browser', () => {
             JSON.stringify(values[index]) +
             ', sentHttpOnlyCookie: window.stateAtHead.serverCookie.includes(' +
             JSON.stringify('session=' + cookieSecret) +
-            '), hiddenFromScript: !document.cookie.includes("session="), localStorage: localStorage.getItem("auth") === ' +
+            '), hiddenFromScript: !document.cookie.split("; ").some(cookie => cookie.startsWith("session=")), localStorage: localStorage.getItem("auth") === ' +
             JSON.stringify(values[index]) +
+            ', sentReplacementCookie: window.stateAtHead.serverCookie.includes(' +
+            JSON.stringify('replace-session=' + replacementSecret) +
+            '), readableReplacementCookie: document.cookie.includes(' +
+            JSON.stringify('replace-session=' + replacementSecret) +
+            ')' +
             ' })',
         });
         const text = result.content
@@ -396,6 +445,8 @@ describe.skipIf(!enabled)('real Electron in-app browser', () => {
           sentHttpOnlyCookie: true,
           hiddenFromScript: true,
           localStorage: true,
+          sentReplacementCookie: true,
+          readableReplacementCookie: true,
         }))
       );
       await harness!.request('replace');

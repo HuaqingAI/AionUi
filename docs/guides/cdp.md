@@ -47,6 +47,8 @@ The importer accepts Playwright's Cookie and Local Storage state format:
 
 Cookie files containing a Cookie array are also supported. For a standalone Local Storage map such as `{"theme":"dark"}`, supply the website's exact `origin` (scheme, host, and port) along with `file_path`. Imports add or replace the supplied entries in the existing session. Import results report counts and failures without returning Cookie or Local Storage values.
 
+Replacing a matching Cookie also applies the imported attributes, including `httpOnly`, without first deleting the existing Cookie. If any entry fails, the tool returns `isError: true` together with the counts and credential-free failure codes. Successful entries are retained, so check `failures` before treating the import as complete; an already signed-in page alone does not verify the import.
+
 Cookies, including HttpOnly cookies, are written to the application's persistent browser session. Local Storage is restored per origin. Browser tabs and projects share this session. Persistent site data remains after restarting the app; session cookies retain their session-cookie semantics. Expired, revoked, or device-bound credentials can still require signing in again. IndexedDB and sessionStorage are outside this import format.
 
 ## Troubleshooting
@@ -75,5 +77,7 @@ bunx cross-env AIONUI_BROWSER_ELECTRON_SMOKE=1 vitest run tests/unit/preview/bro
 > 将 E:\login-state\state.json 中的 Cookie 和 Local Storage 导入应用内浏览器，然后打开网站。
 
 Agent 使用 `browser_import_storage_state` 读取本地文件。支持上面的 Playwright `cookies` / `origins[].localStorage` 格式，也支持单独的 Cookie 数组；单独的 Local Storage 键值文件（例如 `{"theme":"dark"}`）需同时指定准确的网站 `origin`。导入会在现有浏览器存储中添加或覆盖对应条目。HttpOnly Cookie 也可导入，结果仅返回导入数量与失败情况。
+
+覆盖同名、同域、同路径的 Cookie 时，会按导入文件应用 `httpOnly` 等属性，无需先删除已有 Cookie。任一条目失败时，工具会返回 `isError: true`，并保留成功数量和不含凭据的失败代码；已经成功写入的条目不会回滚。应检查 `failures` 确认导入完成，页面原本已登录不能单独证明本次导入成功。
 
 所有应用内浏览器标签页、项目共用同一份站点存储。持久化数据可在重启后保留，会话 Cookie 仍遵循其原有生命周期。过期、已注销或绑定设备的登录状态可能需要重新登录。此功能不导入 IndexedDB 或 sessionStorage。

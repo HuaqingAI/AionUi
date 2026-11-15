@@ -293,9 +293,22 @@ export class BrowserMcpProxy {
       }
       if (name === 'browser_import_storage_state') {
         const { file_path, origin } = importArguments.parse(args);
-        return toolResult(
-          await this.request({ method: 'importState', filePath: path.resolve(this.cwd, file_path), origin })
-        );
+        const result = await this.request({
+          method: 'importState',
+          filePath: path.resolve(this.cwd, file_path),
+          origin,
+        });
+        const response = toolResult(result);
+        if (
+          result !== null &&
+          typeof result === 'object' &&
+          'failures' in result &&
+          Array.isArray(result.failures) &&
+          result.failures.length > 0
+        ) {
+          response.isError = true;
+        }
+        return response;
       }
       if (!this.upstreamTools) await this.listTools();
       if (!this.upstreamTools?.some((tool) => tool.name === name)) {

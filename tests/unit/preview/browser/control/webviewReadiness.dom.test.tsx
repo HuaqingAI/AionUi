@@ -5,7 +5,7 @@
  */
 
 import React from 'react';
-import { act, cleanup, render } from '@testing-library/react';
+import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BROWSER_SESSION_PARTITION } from '@/common/config/constants';
 
@@ -28,6 +28,29 @@ const makeReady = async (container: HTMLElement): Promise<void> => {
     setZoomFactor: () => {},
   });
   await act(async () => webview.dispatchEvent(new Event('dom-ready')));
+};
+
+const observeNavigation = (container: HTMLElement) => {
+  const webview = container.querySelector('webview');
+  if (!webview) throw new Error('No webview rendered');
+  const setAttribute = webview.setAttribute.bind(webview);
+  const writes = vi.spyOn(webview, 'setAttribute');
+  const setSource = vi.fn((value: string) => webview.setAttribute('src', value));
+  Object.defineProperty(webview, 'src', {
+    configurable: true,
+    get: () => webview.getAttribute('src') ?? '',
+    set: setSource,
+  });
+  return {
+    webview,
+    setSource,
+    sourceWrites: () => writes.mock.calls.filter(([name]) => name === 'src').map(([, value]) => value),
+    commit: async (url: string, event = 'did-navigate') => {
+      // Electron updates the DOM attribute without initiating another navigation.
+      setAttribute('src', url);
+      await act(async () => webview.dispatchEvent(Object.assign(new Event(event), { url })));
+    },
+  };
 };
 
 beforeEach(() => {
@@ -168,5 +191,53 @@ describe('browser control readiness', () => {
     await makeReady(container);
 
     expect(warn).toHaveBeenCalledWith('[browser] could not report webContents id');
+  });
+
+  it('updates the address after main-process navigation without starting another navigation', async () => {
+    const changed = vi.fn();
+    const { container, rerender } = render(
+      <WebviewHost url='about:blank' showNavBar onUrlChange={changed} browserControlActive />
+    );
+    const navigation = observeNavigation(container);
+    const temporaryUrl = 'https://example.com/__aionui_storage_import__test';
+
+    await navigation.commit(temporaryUrl);
+    rerender(<WebviewHost url={temporaryUrl} showNavBar onUrlChange={changed} browserControlActive />);
+    await navigation.commit('about:blank');
+    rerender(<WebviewHost url='about:blank' showNavBar onUrlChange={changed} browserControlActive />);
+
+    expect(navigation.sourceWrites()).toEqual([]);
+    expect(changed.mock.calls.map(([url]) => url)).toEqual(['about:blank', temporaryUrl, 'about:blank']);
+    expect(container.querySelector('input')?.value).toBe('about:blank');
+  });
+
+  it('navigates once when an external URL changes and keeps the mounted webview', async () => {
+    const { container, rerender } = render(<WebviewHost url='about:blank' />);
+    const navigation = observeNavigation(container);
+
+    rerender(<WebviewHost url='https://example.com/new' />);
+    await navigation.commit('https://example.com/new');
+
+    expect(navigation.setSource).toHaveBeenCalledExactlyOnceWith('https://example.com/new');
+    expect(navigation.sourceWrites()).toEqual(['https://example.com/new']);
+    expect(container.querySelector('webview')).toBe(navigation.webview);
+  });
+
+  it('submits the address bar once and preserves guest history navigation', async () => {
+    const { container } = render(<WebviewHost url='about:blank' showNavBar />);
+    const navigation = observeNavigation(container);
+    const input = container.querySelector('input');
+    const form = container.querySelector('form');
+    if (!input || !form) throw new Error('No address bar rendered');
+
+    fireEvent.change(input, { target: { value: 'example.com' } });
+    fireEvent.submit(form);
+    await navigation.commit('https://example.com');
+    await navigation.commit('https://example.com/route', 'did-navigate-in-page');
+    await navigation.commit('about:blank');
+
+    expect(navigation.setSource).toHaveBeenCalledExactlyOnceWith('https://example.com');
+    expect(navigation.sourceWrites()).toEqual(['https://example.com']);
+    expect(input.value).toBe('about:blank');
   });
 });

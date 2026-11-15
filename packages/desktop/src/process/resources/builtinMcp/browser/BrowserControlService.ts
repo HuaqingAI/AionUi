@@ -26,7 +26,7 @@ import {
   type BrowserControlResponse,
   type BrowserOpenRequest,
 } from './controlProtocol';
-import { importBrowserStorageState } from './storageImport';
+import { importBrowserStorageState, setBrowserCookie } from './storageImport';
 
 type PendingView = {
   resolve: (id: number) => void;
@@ -227,7 +227,7 @@ export class BrowserControlService {
     const browserSession = session.fromPartition(BROWSER_SESSION_PARTITION);
     return importBrowserStorageState(request.filePath, request.origin, {
       target: contents,
-      setCookie: (cookie) => browserSession.cookies.set(cookie),
+      setCookie: (cookie) => setBrowserCookie(contents, cookie),
       flush: async () => {
         browserSession.flushStorageData();
         await browserSession.cookies.flushStore();

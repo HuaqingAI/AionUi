@@ -82,6 +82,9 @@ const WebviewHost: React.FC<WebviewHostProps> = ({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const webviewRef = useRef<Electron.WebviewTag | null>(null);
+  // Keep JSX's src stable: rewriting it after a guest/main-process navigation
+  // starts another Electron navigation even when the DOM already has that URL.
+  const initialUrlRef = useRef(url);
   const autoFitPendingRef = useRef(false);
 
   // Callbacks are mirrored into refs so the listener effect does not re-subscribe
@@ -186,6 +189,8 @@ const WebviewHost: React.FC<WebviewHostProps> = ({
     setZoomFactor(1);
     setWebviewReady(false);
     autoFitPendingRef.current = isStarOfficeUrl(url);
+    const webview = webviewRef.current;
+    if (webview && webview.src !== url) webview.src = url;
   }, [url]);
 
   useEffect(() => {
@@ -793,7 +798,7 @@ const WebviewHost: React.FC<WebviewHostProps> = ({
       >
         <webview
           ref={webviewRef as any}
-          src={currentUrl}
+          src={initialUrlRef.current}
           className='border-0 absolute start-0 top-0'
           style={{
             opacity: !showNavBar && isLoading ? 0 : 1,

@@ -78,6 +78,50 @@ describe('in-app browser MCP tools', () => {
     });
   });
 
+  it.each([0, 1])(
+    'marks an import with failures as a tool error while preserving %i successful cookies',
+    async (cookiesImported) => {
+      const { proxy, control } = setup();
+      const imported = {
+        cookiesImported,
+        localStorageImported: 0,
+        originsImported: 0,
+        skippedExpiredCookies: 0,
+        failures: [
+          {
+            kind: 'origin',
+            index: 0,
+            code: 'STORAGE_NAVIGATION_ABORTED',
+            message: 'Local Storage could not be restored for this origin.',
+          },
+        ],
+      };
+      control.mockResolvedValue(imported);
+
+      const response = await proxy.callTool('browser_import_storage_state', { file_path: 'state.json' });
+
+      expect(response.isError).toBe(true);
+      expect(response.content).toEqual([{ type: 'text', text: JSON.stringify(imported) }]);
+    }
+  );
+
+  it('returns a completed import without marking it as a tool error', async () => {
+    const { proxy, control } = setup();
+    const imported = {
+      cookiesImported: 1,
+      localStorageImported: 1,
+      originsImported: 1,
+      skippedExpiredCookies: 0,
+      failures: [],
+    };
+    control.mockResolvedValue(imported);
+
+    const response = await proxy.callTool('browser_import_storage_state', { file_path: 'state.json' });
+
+    expect(response.isError).not.toBe(true);
+    expect(response.content).toEqual([{ type: 'text', text: JSON.stringify(imported) }]);
+  });
+
   it('waits for a visible attached page before forwarding a real browser action', async () => {
     const { proxy, control, upstream } = setup();
     let attach: (() => void) | undefined;
