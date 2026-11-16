@@ -107,6 +107,8 @@ interface IMessage<T extends TMessageType, Content extends Record<string, any>> 
    * Hidden from UI display but persisted to DB and sent to agent.
    */
   hidden?: boolean;
+  /** Host turn identifier shared by streamed messages, when supplied by the backend. */
+  turn_id?: string;
   /**
    * Backend turn anchor (codex `Turn.id`) stamped on rows persisted while that
    * turn streamed. Presence means a mid-history fork can anchor at (or after)
@@ -1122,6 +1124,9 @@ export const handleImageGenerationWithWorkspace = (message: TMessage, workspace:
 
 export const transformMessage = (message: IResponseMessage): TMessage | undefined => {
   const transformed = transformMessageInner(message);
+  if (transformed && message.turn_id) {
+    transformed.turn_id = message.turn_id;
+  }
   // Stamp the backend turn anchor so live-streamed messages gate the fork
   // entry exactly like history-loaded rows (see isForkEnabled).
   if (transformed && message.backend_turn_id) {

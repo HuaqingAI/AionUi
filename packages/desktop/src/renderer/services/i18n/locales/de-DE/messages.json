@@ -1,4 +1,13 @@
 {
+  "turnProcess": {
+    "title": "Ausführungsverlauf",
+    "running": "In Arbeit…",
+    "loadFailed": "Frühere Schritte konnten nicht geladen werden",
+    "hourUnit": "Std.",
+    "minuteUnit": "Min.",
+    "secondUnit": "Sek.",
+    "estimatedDuration": "Anhand der Nachrichtenzeitpunkte geschätzt"
+  },
   "fileChanges": "Dateiänderungen",
   "fileChangesCount": "{{count}} Dateiänderungen",
   "fileChangesCount_one": "{{count}} Dateiänderung",

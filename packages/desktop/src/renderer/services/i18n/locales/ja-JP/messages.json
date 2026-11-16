@@ -1,4 +1,13 @@
 {
+  "turnProcess": {
+    "title": "実行過程",
+    "running": "実行中…",
+    "loadFailed": "以前の手順を読み込めませんでした",
+    "hourUnit": "時間",
+    "minuteUnit": "分",
+    "secondUnit": "秒",
+    "estimatedDuration": "メッセージの時刻から推定"
+  },
   "fileChanges": "ファイル変更",
   "fileChangesCount": "{{count}} 件のファイル変更",
   "fileChangesCount_one": "{{count}} 件のファイル変更",

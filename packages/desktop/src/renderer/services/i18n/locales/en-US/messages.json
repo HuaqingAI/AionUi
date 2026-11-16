@@ -1,4 +1,13 @@
 {
+  "turnProcess": {
+    "title": "Execution process",
+    "running": "Working…",
+    "loadFailed": "Could not load earlier steps",
+    "hourUnit": "h",
+    "minuteUnit": "min",
+    "secondUnit": "s",
+    "estimatedDuration": "Estimated from message timestamps"
+  },
   "fileChanges": "File Changes",
   "fileChangesCount": "{{count}} File Changes",
   "fileChangesCount_one": "{{count}} File Change",

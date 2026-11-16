@@ -1,4 +1,13 @@
 {
+  "turnProcess": {
+    "title": "Déroulement de l’exécution",
+    "running": "En cours…",
+    "loadFailed": "Impossible de charger les étapes précédentes",
+    "hourUnit": "h",
+    "minuteUnit": "min",
+    "secondUnit": "s",
+    "estimatedDuration": "Estimation à partir des horodatages des messages"
+  },
   "fileChanges": "Modifications de fichiers",
   "fileChangesCount": "{{count}} modification(s) de fichiers",
   "fileChangesCount_one": "{{count}} modification de fichiers",

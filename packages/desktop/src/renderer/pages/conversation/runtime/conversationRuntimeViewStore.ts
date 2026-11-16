@@ -5,6 +5,7 @@
  */
 
 import type { TConversationRuntimeStateKind, TConversationRuntimeSummary } from '@/common/config/storage';
+import { recordConversationTurnAccepted } from '@/renderer/services/runtime/conversationTurnIndex';
 
 export type ConversationRuntimeView = {
   conversation_id: string;
@@ -573,6 +574,7 @@ export const localSendAccepted = (
   runtime: TConversationRuntimeSummary,
   msg_id?: string
 ): ConversationRuntimeViewLogEntry[] => {
+  recordConversationTurnAccepted(conversation_id, turn_id, msg_id);
   const metadata = getRuntimeMetadata(conversation_id);
   const staleAfterCompleted = isStaleCompletedRuntimeSummary(runtime, metadata);
   if (!staleAfterCompleted) {

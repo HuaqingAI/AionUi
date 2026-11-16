@@ -1,4 +1,13 @@
 {
+  "turnProcess": {
+    "title": "执行过程",
+    "running": "执行中…",
+    "loadFailed": "无法加载更早的执行过程",
+    "hourUnit": "小时",
+    "minuteUnit": "分钟",
+    "secondUnit": "秒",
+    "estimatedDuration": "根据消息时间估算"
+  },
   "fileChanges": "文件变更",
   "fileChangesCount": "{{count}} 个文件变更",
   "fileChangesCount_one": "{{count}} 个文件变更",

@@ -1,4 +1,13 @@
 {
+  "turnProcess": {
+    "title": "İşlem süreci",
+    "running": "Çalışıyor…",
+    "loadFailed": "Önceki adımlar yüklenemedi",
+    "hourUnit": "sa",
+    "minuteUnit": "dk",
+    "secondUnit": "sn",
+    "estimatedDuration": "Mesaj zaman damgalarından tahmin edilmiştir"
+  },
   "fileChanges": "Dosya Değişiklikleri",
   "fileChangesCount": "{{count}} Dosya Değişikliği",
   "fileChangesCount_one": "{{count}} Dosya Değişikliği",

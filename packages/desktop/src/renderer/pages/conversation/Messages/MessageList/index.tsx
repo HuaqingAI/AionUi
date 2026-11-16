@@ -11,44 +11,50 @@ import { useConversationRuntimeView } from '@/renderer/pages/conversation/runtim
 import { getChatSurfaceWidthClass } from '@/renderer/pages/conversation/utils/chatSurfaceWidth';
 import { iconColors } from '@/renderer/styles/colors';
 import { CHAT_MESSAGE_JUMP_EVENT, type ChatMessageJumpDetail } from '@/renderer/utils/chat/chatMinimapEvents';
-import { collectAiCopyRows, type TurnCopyItem } from '@/renderer/utils/chat/turnCopy';
+import {
+  resolveConversationMessageTurnId,
+  useConversationTurnIndex,
+} from '@/renderer/services/runtime/conversationTurnIndex';
 import { Image } from '@arco-design/web-react';
 import { Down } from '@icon-park/react';
 import MessageAcpPermission from '@renderer/pages/conversation/Messages/acp/MessageAcpPermission';
-import MessageQuestion from './MessageQuestion';
-import MessagePermission from './components/MessagePermission';
+import MessageQuestion from '../MessageQuestion';
+import MessagePermission from '../components/MessagePermission';
 import MessageAcpTerminalOutput from '@renderer/pages/conversation/Messages/acp/MessageAcpTerminalOutput';
 import MessageAcpToolCall from '@renderer/pages/conversation/Messages/acp/MessageAcpToolCall';
 import classNames from 'classnames';
-import React, { createContext, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { createContext, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation } from 'react-router-dom';
 import { uuid } from '@renderer/utils/common';
-import './messages.css';
+import '../messages.css';
 import HOC from '@renderer/utils/ui/HOC';
-import type { FileChangeInfo } from './MessageFileChanges';
-import MessageFileChanges, { parseDiff } from './MessageFileChanges';
-import { useConversationArtifacts } from './artifacts';
-import { MessageAnchorRail } from './anchorRail';
+import type { FileChangeInfo } from '../MessageFileChanges';
+import MessageFileChanges, { parseDiff } from '../MessageFileChanges';
+import { useConversationArtifacts } from '../artifacts';
+import { MessageAnchorRail } from '../anchorRail';
 import {
   useLoadAnchorMessageWindow,
   useLoadPreviousMessagePage,
   useMessageList,
   useMessageListLoading,
   useMessagePaginationState,
-} from './hooks';
-import MessageAgentStatus from './components/MessageAgentStatus';
-import MessageTips from './components/MessageTips';
-import MessageToolCall from './components/MessageToolCall';
-import MessageToolGroup from './components/MessageToolGroup';
-import MessageToolGroupSummary from './components/MessageToolGroupSummary';
-import MessageCronTrigger from './components/MessageCronTrigger';
-import MessageSkillSuggest from './components/MessageSkillSuggest';
-import MessageText from './components/MessageText';
-import MessageThinking from './components/MessageThinking';
-import type { WriteFileResult } from './types';
-import { useAutoScroll } from './useAutoScroll';
-import SelectionReplyButton from './components/SelectionReplyButton';
+} from '../hooks';
+import MessageAgentStatus from '../components/MessageAgentStatus';
+import MessageTips from '../components/MessageTips';
+import MessageToolCall from '../components/MessageToolCall';
+import MessageToolGroup from '../components/MessageToolGroup';
+import MessageToolGroupSummary from '../components/MessageToolGroupSummary';
+import MessageCronTrigger from '../components/MessageCronTrigger';
+import MessageSkillSuggest from '../components/MessageSkillSuggest';
+import MessageText from '../components/MessageText';
+import MessageThinking from '../components/MessageThinking';
+import type { WriteFileResult } from '../types';
+import { useAutoScroll } from '../useAutoScroll';
+import SelectionReplyButton from '../components/SelectionReplyButton';
+import TurnProcess from './TurnProcess';
+import { groupMessageTurns, type MessageTurn } from './turns';
+import { useTurnHistory } from './useTurnHistory';
 
 type IMessageVO =
   | TMessage
@@ -141,6 +147,9 @@ const getProcessedItemCreatedAt = (item: IProcessedItem): number => {
   }
   return item.created_at ?? 0;
 };
+
+const getTurnIdentityKeys = (turn: MessageTurn<IProcessedItem>): string[] =>
+  turn.turnId ? [`host-turn:${turn.turnId}`, ...turn.sourceMessageIds] : turn.sourceMessageIds;
 
 const highlightStyle: React.CSSProperties = {
   backgroundColor: 'var(--color-aou-1)',
@@ -347,7 +356,8 @@ const MessageList: React.FC<{
   // While the agent is still streaming, the in-progress turn's last text keeps
   // moving down, so we defer its copy/timestamp row until the turn finishes to
   // avoid the row flashing in and the layout reflowing mid-stream.
-  const { isProcessing } = useConversationRuntimeView(conversationContext?.conversation_id ?? '');
+  const { isProcessing, activeTurnId } = useConversationRuntimeView(conversationContext?.conversation_id ?? '');
+  const turnIndex = useConversationTurnIndex(conversationContext?.conversation_id ?? '');
   const { t } = useTranslation();
   const location = useLocation();
   const locationState = (location.state || {}) as ConversationLocationState;
@@ -357,6 +367,10 @@ const MessageList: React.FC<{
   const loadingTargetKeyRef = useRef<string>('');
   const scrollerElementRef = useRef<HTMLDivElement | null>(null);
   const contentElementRef = useRef<HTMLDivElement | null>(null);
+  const [processExpansion, setProcessExpansion] = useState<Map<string, boolean>>(() => new Map());
+  const previousRunningRef = useRef(new Set<string>());
+  const previousConversationRef = useRef(conversationContext?.conversation_id);
+  const pendingRevealRef = useRef<string | undefined>(undefined);
 
   // Pre-process message list to group tool outputs into summary cards
   const processedList = useMemo(() => {
@@ -406,6 +420,7 @@ const MessageList: React.FC<{
       result.push(message);
     };
 
+    let previousTurnId: string | undefined;
     for (let i = 0, len = list.length; i < len; i++) {
       const message = list[i];
       // Skip hidden and available_commands messages
@@ -414,6 +429,14 @@ const MessageList: React.FC<{
       // A plan renders in ConversationPlanBar, never in the stream. Filtered
       // here rather than rendered as null: a null row still occupies a slot.
       if (message.type === 'plan') continue;
+      const turnId = resolveConversationMessageTurnId(message, turnIndex);
+      if (turnId !== previousTurnId) {
+        toolList = [];
+        toolSourceMessageIds = [];
+        diffsChanges = [];
+        diffsSourceMessageIds = [];
+      }
+      previousTurnId = turnId;
       if (message.type === 'tool_group') {
         const writeFileResults = message.content.flatMap((item) =>
           item.name === 'WriteFile' && isWriteFileResult(item.result_display) ? [item.result_display] : []
@@ -461,21 +484,51 @@ const MessageList: React.FC<{
     return [...result, ...visibleArtifacts].toSorted(
       (a, b) => getProcessedItemCreatedAt(a) - getProcessedItemCreatedAt(b)
     );
-  }, [artifacts, list]);
+  }, [artifacts, list, turnIndex]);
+  const processedListRef = useRef(processedList);
+  processedListRef.current = processedList;
 
-  // An AI reply can be split into several messages (thinking / multiple text /
-  // tool blocks). The hover copy + timestamp row should appear once per turn,
-  // after the turn's last text — not under every intermediate text block.
-  // Collect the id of the last AI text in each turn; a turn runs until the next
-  // user (right) message. Tool/file/artifact items don't end a turn and, per the
-  // fallback strategy, the row stays on the turn's last text even when followed
-  // by tool blocks. While the conversation is still streaming, the final turn's
-  // row is withheld (it would otherwise appear then shift down as more text
-  // streams in); earlier, already-finished turns always keep their row.
-  const { copyRowIds: aiCopyRowTextIds, turnTextsById: aiTurnTextsById } = useMemo(
-    () => collectAiCopyRows(processedList as TurnCopyItem[], isProcessing),
-    [processedList, isProcessing]
-  );
+  const turns = useMemo(() => {
+    const sourceTurns = new Map(
+      list.map((message) => [message.id, resolveConversationMessageTurnId(message, turnIndex)])
+    );
+    return groupMessageTurns(processedList, {
+      isProcessing,
+      activeTurnId,
+      hasMoreAfter: pagination.hasMoreAfter,
+      resolveTurnId: (item) => {
+        if (item.type === 'artifact') return undefined;
+        if (item.type === 'tool_summary' || item.type === 'file_summary') {
+          return item.sourceMessageIds.map((id) => sourceTurns.get(id)).find(Boolean);
+        }
+        return resolveConversationMessageTurnId(item, turnIndex);
+      },
+      getTurnState: (id) => {
+        const state = turnIndex.records.get(id)?.state;
+        // Cached running records are observations, not current backend state.
+        return state === 'running' && (!isProcessing || (activeTurnId && id !== activeTurnId)) ? undefined : state;
+      },
+    });
+  }, [activeTurnId, isProcessing, list, pagination.hasMoreAfter, processedList, turnIndex]);
+
+  // The answer's copy action copies only the visible answer, including all of
+  // its trailing text blocks, rather than the progress text inside the process.
+  const { aiCopyRowTextIds, aiTurnTextsById } = useMemo(() => {
+    const ids = new Set<string>();
+    const texts = new Map<string, string[]>();
+    for (const turn of turns) {
+      if (turn.isRunning) continue;
+      const answers = turn.finalItems.filter((item) => item.type === 'text' && item.position === 'left');
+      const last = answers.at(-1);
+      if (!last) continue;
+      ids.add(last.id);
+      texts.set(
+        last.id,
+        answers.flatMap((item) => (item.type === 'text' ? [item.content.content] : []))
+      );
+    }
+    return { aiCopyRowTextIds: ids, aiTurnTextsById: texts };
+  }, [turns]);
 
   // The last REAL message in the visible timeline (pseudo entries like
   // file/tool summaries don't count). HEAD-fork backends (claude/ACP) only
@@ -526,10 +579,170 @@ const MessageList: React.FC<{
     scrollToBottom,
     scrollElementIntoView,
     hideScrollButton,
+    preserveScrollAnchor,
   } = useAutoScroll({
     messages: list,
     itemCount: processedList.length,
   });
+
+  const preserveReadingPosition = useCallback(() => {
+    const scroller = scrollerElementRef.current;
+    if (!scroller) return;
+    const top = scroller.getBoundingClientRect().top;
+    const anchor = Array.from(scroller.querySelectorAll<HTMLElement>('[id^="message-"]')).find(
+      (element) => element.getBoundingClientRect().bottom > top
+    );
+    preserveScrollAnchor?.(anchor ?? null);
+  }, [preserveScrollAnchor]);
+  const turnHistory = useTurnHistory(conversationContext?.conversation_id, preserveReadingPosition);
+
+  const setTurnExpanded = useCallback((turn: MessageTurn<IProcessedItem>, expanded: boolean) => {
+    setProcessExpansion((current) => {
+      const next = new Map(current);
+      for (const id of getTurnIdentityKeys(turn)) next.set(id, expanded);
+      return next;
+    });
+  }, []);
+
+  const getTurnHistoryDirections = useCallback(
+    (turn: MessageTurn<IProcessedItem>) => {
+      const position = turns.indexOf(turn);
+      const isBoundary = (message: TMessage) =>
+        !message.hidden &&
+        message.position === 'right' &&
+        (!turn.turnId || resolveConversationMessageTurnId(message, turnIndex) !== turn.turnId);
+      const hasBoundary = (entry: MessageTurn<IProcessedItem>) =>
+        entry.items.some(
+          (item) =>
+            item.type !== 'tool_summary' && item.type !== 'file_summary' && item.type !== 'artifact' && isBoundary(item)
+        );
+      const before = pagination.hasMoreBefore && !turns.slice(0, position).some(hasBoundary);
+      const after = pagination.hasMoreAfter && !turns.slice(position + 1).some(hasBoundary);
+      return { before, after, isBoundary };
+    },
+    [pagination.hasMoreAfter, pagination.hasMoreBefore, turnIndex, turns]
+  );
+
+  const loadTurnHistory = useCallback(
+    (turn: MessageTurn<IProcessedItem>) => {
+      const { before, after, isBoundary } = getTurnHistoryDirections(turn);
+      void turnHistory.load({
+        messageId: turn.sourceMessageIds[0],
+        before,
+        after,
+        isBoundary,
+      });
+    },
+    [getTurnHistoryDirections, turnHistory.load]
+  );
+
+  // Older history has no recorded turn clock. Estimate only when the loaded
+  // messages include the user boundary and the final answer of the whole turn.
+  const estimatedTurnDurations = useMemo(() => {
+    const timings = new Map<string, { startedAt?: number; completedAt?: number; partial?: boolean }>();
+    let precedingUser: TMessage | undefined;
+    for (const turn of turns) {
+      if (turn.kind === 'standalone') {
+        const message = turn.items[0];
+        if ('position' in message && message.position === 'right') precedingUser = message as TMessage;
+        continue;
+      }
+      const key = turn.turnId ?? turn.id;
+      const timing = timings.get(key) ?? {};
+      const directions = getTurnHistoryDirections(turn);
+      timing.partial ||= directions.before || directions.after || turn.isRunning || turn.state === 'incomplete';
+      const userTurnId = precedingUser && resolveConversationMessageTurnId(precedingUser, turnIndex);
+      const startedAt = precedingUser?.created_at;
+      if (
+        startedAt !== undefined &&
+        Number.isFinite(startedAt) &&
+        startedAt > 0 &&
+        (!turn.turnId || !userTurnId || turn.turnId === userTurnId)
+      ) {
+        timing.startedAt = Math.min(timing.startedAt ?? startedAt, startedAt);
+      }
+      if (!turn.isRunning && turn.state !== 'incomplete' && !turn.hasLaterSegment) {
+        for (const item of turn.finalItems) {
+          if (item.type !== 'text' || item.position === 'right') continue;
+          const completedAt = item.created_at;
+          if (completedAt !== undefined && Number.isFinite(completedAt) && completedAt > 0) {
+            timing.completedAt = Math.max(timing.completedAt ?? completedAt, completedAt);
+          }
+        }
+      }
+      timings.set(key, timing);
+    }
+    const durations = new Map<string, number>();
+    for (const [key, timing] of timings) {
+      if (
+        timing.startedAt !== undefined &&
+        timing.completedAt !== undefined &&
+        !timing.partial &&
+        timing.completedAt >= timing.startedAt
+      ) {
+        durations.set(key, timing.completedAt - timing.startedAt);
+      }
+    }
+    return durations;
+  }, [getTurnHistoryDirections, turnIndex, turns]);
+
+  useEffect(() => {
+    if (previousConversationRef.current === conversationContext?.conversation_id) return;
+    previousConversationRef.current = conversationContext?.conversation_id;
+    setProcessExpansion(new Map());
+    previousRunningRef.current = new Set();
+  }, [conversationContext?.conversation_id]);
+
+  useLayoutEffect(() => {
+    const previous = previousRunningRef.current;
+    for (const turn of turns) {
+      if (turn.isRunning) for (const id of getTurnIdentityKeys(turn)) previous.add(id);
+    }
+    // Final text can be flushed after the completion frame. Keep its pending
+    // collapse until the answer arrives, rather than losing the transition.
+    const completed = turns.filter(
+      (turn) =>
+        !turn.isRunning &&
+        (turn.finalItems.length > 0 || turn.hasLaterSegment) &&
+        getTurnIdentityKeys(turn).some((id) => previous.has(id))
+    );
+    for (const turn of completed) for (const id of getTurnIdentityKeys(turn)) previous.delete(id);
+    if (completed.length) {
+      const scroller = scrollerElementRef.current;
+      if (scroller && scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight > 100)
+        preserveReadingPosition();
+    }
+    setProcessExpansion((current) => {
+      let next = current;
+      for (const turn of turns) {
+        if (!turn.isRunning && !completed.includes(turn)) continue;
+        for (const id of getTurnIdentityKeys(turn)) {
+          const expanded = turn.isRunning ? (current.get(id) ?? true) : false;
+          if (next.get(id) === expanded) continue;
+          if (next === current) next = new Map(current);
+          next.set(id, expanded);
+        }
+      }
+      return next;
+    });
+  }, [preserveReadingPosition, turns]);
+
+  const revealMessage = useCallback(
+    (messageId: string) => {
+      const turn = turns.find((entry) => entry.sourceMessageIds.includes(messageId));
+      if (!turn || turn.kind !== 'turn') return;
+      setTurnExpanded(turn, true);
+      loadTurnHistory(turn);
+    },
+    [loadTurnHistory, setTurnExpanded, turns]
+  );
+
+  useEffect(() => {
+    const id = pendingRevealRef.current;
+    if (!id || !turns.some((turn) => turn.sourceMessageIds.includes(id))) return;
+    pendingRevealRef.current = undefined;
+    revealMessage(id);
+  }, [revealMessage, turns]);
 
   const setScrollerRef = useCallback(
     (element: HTMLDivElement | null) => {
@@ -593,6 +806,7 @@ const MessageList: React.FC<{
     handledTargetKeyRef.current = targetKey;
     loadingTargetKeyRef.current = '';
     setHighlightedMessageId(targetMessageId);
+    revealMessage(targetMessageId);
     hideScrollButton();
 
     requestAnimationFrame(() => {
@@ -608,7 +822,15 @@ const MessageList: React.FC<{
     }, 2400);
 
     return () => window.clearTimeout(timer);
-  }, [hideScrollButton, loadAnchorMessageWindow, location.key, processedList, scrollElementIntoView, targetMessageId]);
+  }, [
+    hideScrollButton,
+    loadAnchorMessageWindow,
+    location.key,
+    processedList,
+    revealMessage,
+    scrollElementIntoView,
+    targetMessageId,
+  ]);
 
   useEffect(() => {
     const handleMessageJump = (event: Event) => {
@@ -618,6 +840,7 @@ const MessageList: React.FC<{
         return;
 
       const targetIndex = processedList.findIndex((item) => {
+        if (detail.messageId && matchesTargetMessage(item, detail.messageId)) return true;
         if (
           (item as { type?: string }).type === 'file_summary' ||
           (item as { type?: string }).type === 'tool_summary' ||
@@ -633,12 +856,16 @@ const MessageList: React.FC<{
       if (targetIndex < 0) {
         const anchorMessageId = detail.messageId;
         if (!anchorMessageId) return;
+        pendingRevealRef.current = anchorMessageId;
         void loadAnchorMessageWindow(anchorMessageId).then((loaded) => {
           if (!loaded) return;
           setHighlightedMessageId(anchorMessageId);
           requestAnimationFrame(() => {
             requestAnimationFrame(() => {
-              const targetElement = document.getElementById(`message-${anchorMessageId}`);
+              const target = processedListRef.current.find((item) => matchesTargetMessage(item, anchorMessageId));
+              const targetElement = document.getElementById(
+                `message-${target ? getProcessedItemAnchorId(target) : anchorMessageId}`
+              );
               scrollElementIntoView(targetElement, {
                 block: detail.align || 'start',
                 behavior: detail.behavior || 'smooth',
@@ -650,6 +877,7 @@ const MessageList: React.FC<{
       }
 
       hideScrollButton();
+      revealMessage(detail.messageId ?? getProcessedItemAnchorId(processedList[targetIndex]));
       requestAnimationFrame(() => {
         const targetElement = document.getElementById(
           `message-${getProcessedItemAnchorId(processedList[targetIndex])}`
@@ -670,6 +898,7 @@ const MessageList: React.FC<{
     hideScrollButton,
     loadAnchorMessageWindow,
     processedList,
+    revealMessage,
     scrollElementIntoView,
   ]);
 
@@ -679,8 +908,9 @@ const MessageList: React.FC<{
     scrollToBottom('smooth');
   };
 
-  const renderItem = (_index: number, item: (typeof processedList)[0]) => {
+  const renderItem = (_index: number, item: (typeof processedList)[0], inProcess = false) => {
     const highlighted = matchesTargetMessage(item, highlightedMessageId);
+    const itemWidthClass = inProcess ? 'w-full' : rowWidthClass;
     if ('type' in item && item.type === 'artifact') {
       return (
         <div
@@ -688,7 +918,7 @@ const MessageList: React.FC<{
           id={`message-${getProcessedItemAnchorId(item)}`}
           data-conversation-artifact-kind={item.artifact.kind}
           data-testid={`conversation-artifact-${item.artifact.kind}`}
-          className={`${rowWidthClass} min-w-0 message-item px-8px m-t-10px`}
+          className={`${itemWidthClass} min-w-0 message-item px-8px m-t-10px`}
           style={highlighted ? highlightStyle : undefined}
         >
           {item.artifact.kind === 'cron_trigger' ? (
@@ -704,7 +934,7 @@ const MessageList: React.FC<{
         <div
           key={item.id}
           id={`message-${getProcessedItemAnchorId(item)}`}
-          className={`${rowWidthClass} min-w-0 message-item px-8px m-t-10px ${item.type}`}
+          className={`${itemWidthClass} min-w-0 message-item px-8px m-t-10px ${item.type}`}
           style={highlighted ? highlightStyle : undefined}
         >
           {item.type === 'file_summary' && <MessageFileChanges diffsChanges={item.diffs} />}
@@ -720,7 +950,7 @@ const MessageList: React.FC<{
         message={message}
         key={message.id}
         highlighted={highlighted}
-        rowWidthClass={rowWidthClass}
+        rowWidthClass={itemWidthClass}
         showCopyRow={showCopyRow}
         isLastMessage={message.id === lastMessageId}
         hasForkAnchor={forkAnchoredIds.has(message.id)}
@@ -764,9 +994,49 @@ const MessageList: React.FC<{
             >
               <div className='h-10px' />
               {topSlot ? <div className={`${rowWidthClass} mx-auto pb-12px`}>{topSlot}</div> : null}
-              {processedList.map((item, index) => (
-                <React.Fragment key={getProcessedItemAnchorId(item) || index}>{renderItem(index, item)}</React.Fragment>
-              ))}
+              {turns.map((turn) => {
+                const directions = getTurnHistoryDirections(turn);
+                const hasPartialHistory = turn.kind === 'turn' && (directions.before || directions.after);
+                const overrideId = getTurnIdentityKeys(turn).find((id) => processExpansion.has(id));
+                const expanded = overrideId
+                  ? processExpansion.get(overrideId) === true
+                  : turn.isRunning ||
+                    turn.state === 'incomplete' ||
+                    (turn.finalItems.length === 0 && !turn.hasLaterSegment);
+                const record = turn.turnId ? turnIndex.records.get(turn.turnId) : undefined;
+                const durationMs =
+                  record?.startedAt !== undefined && record.completedAt !== undefined
+                    ? Math.max(0, record.completedAt - record.startedAt)
+                    : estimatedTurnDurations.get(turn.turnId ?? turn.id);
+                const estimatedDuration = record?.startedAt === undefined || record.completedAt === undefined;
+                const isHistoryTarget =
+                  !!turnHistory.status.messageId && turn.sourceMessageIds.includes(turnHistory.status.messageId);
+                return (
+                  <div key={turn.id} id={`turn-${turn.id}`} data-turn-container>
+                    {(turn.processItems.length > 0 || hasPartialHistory) && (
+                      <TurnProcess
+                        id={turn.id}
+                        className={rowWidthClass}
+                        expanded={expanded}
+                        isRunning={turn.isRunning}
+                        durationMs={durationMs}
+                        estimatedDuration={estimatedDuration}
+                        loading={isHistoryTarget && turnHistory.status.loading}
+                        loadError={isHistoryTarget && turnHistory.status.error}
+                        onRetry={() => loadTurnHistory(turn)}
+                        onExpandedChange={(next) => {
+                          preserveScrollAnchor?.(document.getElementById(`turn-${turn.id}`));
+                          setTurnExpanded(turn, next);
+                          if (next) loadTurnHistory(turn);
+                        }}
+                      >
+                        {turn.processItems.map((item, index) => renderItem(index, item, true))}
+                      </TurnProcess>
+                    )}
+                    {turn.finalItems.map((item, index) => renderItem(index, item))}
+                  </div>
+                );
+              })}
               <div className='h-20px' />
             </div>
           </div>

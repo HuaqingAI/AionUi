@@ -386,4 +386,95 @@ describe('useAutoScroll', () => {
       inline: 'nearest',
     });
   });
+
+  it.each([
+    ['expanding', 240],
+    ['collapsing', -120],
+  ] as const)(
+    'keeps the disclosure header in the same viewport position when %s changes the layout',
+    (_action, shift) => {
+      const scroller = createScroller();
+      const content = createContent();
+      const header = document.createElement('div');
+      content.append(header);
+      document.body.append(content);
+      let documentTop = 720;
+      header.getBoundingClientRect = () => ({ top: documentTop - scroller.scrollTop }) as DOMRect;
+      const { result, unmount } = renderHook(() =>
+        useAutoScroll({ messages: [createLeftMessage('hello')], itemCount: 1 })
+      );
+      attachElements(result, scroller, content);
+      act(() => vi.runAllTimers());
+      fireScroll(result.current.handleScroll, scroller, 240);
+      const previousTop = header.getBoundingClientRect().top;
+
+      act(() => {
+        result.current.preserveScrollAnchor(header);
+        documentTop += shift;
+        vi.runAllTimers();
+      });
+
+      expect(header.getBoundingClientRect().top).toBe(previousTop);
+      expect(scroller.scrollTop).toBe(240 + shift);
+      unmount();
+      content.remove();
+    }
+  );
+
+  it('cancels pending bottom-follow when a reader opens a disclosure and keeps later output from taking over', () => {
+    const scroller = createScroller({ scrollTop: 600 });
+    const content = createContent();
+    const header = document.createElement('div');
+    header.getBoundingClientRect = () => ({ top: 100 }) as DOMRect;
+    content.append(header);
+    document.body.append(content);
+    const { result, rerender, unmount } = renderHook(
+      ({ messages }) => useAutoScroll({ messages, itemCount: messages.length }),
+      { initialProps: { messages: [createLeftMessage('hello')] as TMessage[] } }
+    );
+    attachElements(result, scroller, content);
+    act(() => vi.runAllTimers());
+    vi.mocked(scroller.scrollTo).mockClear();
+
+    act(() => {
+      scroller.scrollHeight = 1200;
+      resizeObserverCallback?.([], {} as ResizeObserver);
+      result.current.preserveScrollAnchor(header);
+      vi.runAllTimers();
+    });
+    act(() => rerender({ messages: [createLeftMessage('more streaming output')] }));
+    act(() => {
+      resizeObserverCallback?.([], {} as ResizeObserver);
+      vi.runAllTimers();
+    });
+
+    expect(scroller.scrollTo).not.toHaveBeenCalled();
+    expect(scroller.scrollTop).toBe(600);
+    expect(result.current.showScrollButton).toBe(true);
+    unmount();
+    content.remove();
+  });
+
+  it('does not adjust a disclosure anchor after its scroll view unmounts', () => {
+    const scroller = createScroller({ scrollTop: 600 });
+    const content = createContent();
+    const header = document.createElement('div');
+    content.append(header);
+    document.body.append(content);
+    let documentTop = 720;
+    header.getBoundingClientRect = () => ({ top: documentTop - scroller.scrollTop }) as DOMRect;
+    const { result, unmount } = renderHook(() =>
+      useAutoScroll({ messages: [createLeftMessage('hello')], itemCount: 1 })
+    );
+    attachElements(result, scroller, content);
+    act(() => vi.runAllTimers());
+
+    act(() => result.current.preserveScrollAnchor(header));
+    unmount();
+    documentTop += 240;
+    act(() => vi.runAllTimers());
+
+    expect(scroller.scrollTop).toBe(600);
+    content.remove();
+  });
 });

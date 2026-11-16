@@ -794,24 +794,64 @@ const preferPersistedOrLiveMessage = (persisted: TMessage, live: TMessage): TMes
   return persisted;
 };
 
-function mergeLoadedPageWithCurrent(conversationId: string, messages: TMessage[], currentList: TMessage[]): TMessage[] {
+/** Reconcile persisted rows with compatible live segments without losing either history or streaming content. */
+export function mergeLoadedPageWithCurrent(
+  conversationId: string,
+  messages: TMessage[],
+  currentList: TMessage[]
+): TMessage[] {
   if (!currentList.length) return foldSupersededTips(messages);
 
   const sameConversation = currentList.filter((message) => message.conversation_id === conversationId);
   if (!sameConversation.length) return foldSupersededTips(messages);
 
   const currentById = new Map(sameConversation.map((message) => [message.id, message]));
-  const currentByKey = new Map(sameConversation.map((message) => [getMessageMergeKey(message), message]));
-  const loadedIds = new Set(messages.map((message) => message.id));
-  const loadedKeys = new Set(messages.map(getMessageMergeKey));
+  const currentByKey = new Map<string, TMessage | undefined>();
+  for (const message of sameConversation) {
+    const key = getMessageMergeKey(message);
+    currentByKey.set(key, currentByKey.has(key) ? undefined : message);
+  }
+  const loadedKeyCounts = new Map<string, number>();
+  for (const message of messages) {
+    const key = getMessageMergeKey(message);
+    loadedKeyCounts.set(key, (loadedKeyCounts.get(key) ?? 0) + 1);
+  }
+  const reconciledLiveIds = new Set<string>();
 
   const mergedMessages = messages.map((message) => {
-    const live = currentById.get(message.id) ?? currentByKey.get(getMessageMergeKey(message));
-    return live ? preferPersistedOrLiveMessage(message, live) : message;
+    const key = getMessageMergeKey(message);
+    // A turn can persist several text/thinking segments with the same msg_id.
+    // Even a unique key may refer to a different segment outside this page.
+    let live = currentById.get(message.id);
+    if (!live && loadedKeyCounts.get(key) === 1) {
+      const candidate = currentByKey.get(key);
+      if (candidate) {
+        let compatible = !message.turn_id || !candidate.turn_id || message.turn_id === candidate.turn_id;
+        if (
+          (message.type === 'text' && candidate.type === 'text') ||
+          (message.type === 'thinking' && candidate.type === 'thinking')
+        ) {
+          const persistedContent = message.content.content;
+          const liveContent = candidate.content.content;
+          compatible &&=
+            persistedContent === liveContent ||
+            (Boolean(persistedContent && liveContent) &&
+              (persistedContent.startsWith(liveContent) || liveContent.startsWith(persistedContent)));
+          if (message.type === 'text')
+            compatible &&= (message.position === 'right') === (candidate.position === 'right');
+        }
+        if (compatible) live = candidate;
+      }
+    }
+    if (!live) return message;
+    reconciledLiveIds.add(live.id);
+    return {
+      ...preferPersistedOrLiveMessage(message, live),
+      id: message.id,
+      turn_id: message.turn_id ?? live.turn_id,
+    };
   });
-  const liveOnly = sameConversation.filter(
-    (message) => !loadedIds.has(message.id) && !loadedKeys.has(getMessageMergeKey(message))
-  );
+  const liveOnly = sameConversation.filter((message) => !reconciledLiveIds.has(message.id));
 
   // Fold after the concat, not before: the live card and the persisted rows of
   // the same retry run reach this point as separate entries (a persisted tip has
@@ -826,7 +866,11 @@ export function prependHistoryMessages(currentList: TMessage[], messages: TMessa
   const currentIds = new Set(currentList.map((message) => message.id));
   const currentKeys = new Set(currentList.map(getMessageMergeKey));
   const uniqueHistory = messages.filter(
-    (message) => !currentIds.has(message.id) && !currentKeys.has(getMessageMergeKey(message))
+    (message) =>
+      !currentIds.has(message.id) &&
+      ((message.type === 'text' && message.position !== 'right') ||
+        message.type === 'thinking' ||
+        !currentKeys.has(getMessageMergeKey(message)))
   );
   // Folding the combined list (not the page alone) also covers a retry run whose
   // attempts straddle a page boundary.

@@ -1,4 +1,13 @@
 {
+  "turnProcess": {
+    "title": "執行過程",
+    "running": "執行中…",
+    "loadFailed": "無法載入更早的執行過程",
+    "hourUnit": "小時",
+    "minuteUnit": "分鐘",
+    "secondUnit": "秒",
+    "estimatedDuration": "根據訊息時間估算"
+  },
   "fileChanges": "檔案變更",
   "fileChangesCount": "{{count}} 個檔案變更",
   "fileChangesCount_one": "{{count}} 個檔案變更",

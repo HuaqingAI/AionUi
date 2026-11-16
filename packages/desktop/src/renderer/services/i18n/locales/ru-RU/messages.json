@@ -1,4 +1,13 @@
 {
+  "turnProcess": {
+    "title": "Ход выполнения",
+    "running": "Выполняется…",
+    "loadFailed": "Не удалось загрузить предыдущие шаги",
+    "hourUnit": "ч",
+    "minuteUnit": "мин",
+    "secondUnit": "с",
+    "estimatedDuration": "Оценка по времени сообщений"
+  },
   "fileChanges": "Изменения файлов",
   "fileChangesCount": "{{count}} изменений файлов",
   "fileChangesCount_one": "{{count}} изменение файлов",

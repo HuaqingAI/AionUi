@@ -40,6 +40,7 @@ interface UseAutoScrollReturn {
   scrollToBottom: (behavior?: ScrollBehavior) => void;
   scrollElementIntoView: (element: HTMLElement | null, options?: ScrollElementIntoViewOptions) => void;
   hideScrollButton: () => void;
+  preserveScrollAnchor: (element: HTMLElement | null) => void;
 }
 
 const getBottomGap = (element: HTMLElement): number => {
@@ -59,6 +60,7 @@ export function useAutoScroll({ messages, itemCount }: UseAutoScrollOptions): Us
   const initialScrollDoneRef = useRef(false);
   const pendingAutoFollowFrameRef = useRef<number | null>(null);
   const userInputActiveRef = useRef(false);
+  const anchorFrameRef = useRef<number | null>(null);
 
   const markProgrammaticScroll = useCallback(() => {
     lastProgrammaticScrollTimeRef.current = Date.now();
@@ -175,6 +177,38 @@ export function useAutoScroll({ messages, itemCount }: UseAutoScrollOptions): Us
     userInputActiveRef.current = true;
   }, []);
 
+  // A disclosure changes height without new messages. Keep its header (or the
+  // reader's current message) in place and stop streaming auto-follow.
+  const preserveScrollAnchor = useCallback(
+    (element: HTMLElement | null) => {
+      if (!scrollerEl || !element) return;
+      const top = element.getBoundingClientRect().top;
+      const id = element.id;
+      userScrolledRef.current = true;
+      if (pendingAutoFollowFrameRef.current !== null) {
+        cancelAnimationFrame(pendingAutoFollowFrameRef.current);
+        pendingAutoFollowFrameRef.current = null;
+      }
+      if (anchorFrameRef.current !== null) cancelAnimationFrame(anchorFrameRef.current);
+      anchorFrameRef.current = requestAnimationFrame(() => {
+        anchorFrameRef.current = null;
+        const anchor = element.isConnected ? element : id ? document.getElementById(id) : null;
+        if (anchor) scrollerEl.scrollTop += anchor.getBoundingClientRect().top - top;
+        lastScrollTopRef.current = scrollerEl.scrollTop;
+        markProgrammaticScroll();
+        updateBottomState(scrollerEl);
+      });
+    },
+    [markProgrammaticScroll, scrollerEl, updateBottomState]
+  );
+
+  useEffect(
+    () => () => {
+      if (anchorFrameRef.current !== null) cancelAnimationFrame(anchorFrameRef.current);
+    },
+    []
+  );
+
   useEffect(() => {
     if (!scrollerEl || !contentEl) return;
 
@@ -253,5 +287,6 @@ export function useAutoScroll({ messages, itemCount }: UseAutoScrollOptions): Us
     scrollToBottom,
     scrollElementIntoView,
     hideScrollButton,
+    preserveScrollAnchor,
   };
 }

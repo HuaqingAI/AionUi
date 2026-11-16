@@ -1,0 +1,90 @@
+.container {
+  min-width: 0;
+  margin-block: 8px;
+}
+
+.disclosure,
+.disclosure > :global(.arco-collapse-item),
+.disclosure > :global(.arco-collapse-item) > :global(.arco-collapse-item-header),
+.disclosure > :global(.arco-collapse-item) > :global(.arco-collapse-item-content) {
+  background: transparent;
+  border: 0;
+}
+
+.disclosure > :global(.arco-collapse-item) > :global(.arco-collapse-item-header) {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 28px;
+  padding: 4px 8px;
+  color: var(--color-text-3);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.disclosure > :global(.arco-collapse-item) > :global(.arco-collapse-item-header:hover) {
+  color: var(--color-text-2);
+}
+
+.disclosure > :global(.arco-collapse-item) > :global(.arco-collapse-item-header:focus-visible) {
+  outline: 2px solid var(--color-primary-light-4);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.disclosure
+  > :global(.arco-collapse-item)
+  > :global(.arco-collapse-item-header)
+  > :global(.arco-collapse-item-header-title) {
+  flex: initial;
+}
+
+.disclosure
+  > :global(.arco-collapse-item)
+  > :global(.arco-collapse-item-header)
+  > :global(.arco-collapse-item-icon-hover) {
+  position: relative;
+  inset: auto;
+  flex: none;
+  margin-inline-end: 6px;
+  transform: none;
+}
+
+.disclosure > :global(.arco-collapse-item) > :global(.arco-collapse-item-content) {
+  /* Keep the final answer anchored without a height animation on completion. */
+  transition: none;
+  height: auto !important;
+}
+
+.disclosure
+  > :global(.arco-collapse-item)
+  > :global(.arco-collapse-item-content:not(.arco-collapse-item-content-expanded)) {
+  display: none !important;
+}
+
+.disclosure
+  > :global(.arco-collapse-item)
+  > :global(.arco-collapse-item-content)
+  > :global(.arco-collapse-item-content-box) {
+  padding: 0;
+  border-inline-start: 1px solid var(--color-border-2);
+}
+
+.title,
+.notice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.duration {
+  white-space: nowrap;
+}
+
+.notice {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 6px 8px;
+  color: var(--color-text-3);
+  font-size: 12px;
+}

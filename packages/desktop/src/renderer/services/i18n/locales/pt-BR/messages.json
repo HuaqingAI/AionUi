@@ -1,4 +1,13 @@
 {
+  "turnProcess": {
+    "title": "Processo de execução",
+    "running": "Em andamento…",
+    "loadFailed": "Não foi possível carregar as etapas anteriores",
+    "hourUnit": "h",
+    "minuteUnit": "min",
+    "secondUnit": "s",
+    "estimatedDuration": "Estimado pelos horários das mensagens"
+  },
   "fileChanges": "Alterações de Arquivo",
   "fileChangesCount": "{{count}} Alterações de Arquivo",
   "fileChangesCount_one": "{{count}} Alteração de Arquivo",

@@ -1,4 +1,13 @@
 {
+  "turnProcess": {
+    "title": "روند اجرا",
+    "running": "در حال اجرا…",
+    "loadFailed": "بارگیری مراحل قبلی ممکن نشد",
+    "hourUnit": "ساعت",
+    "minuteUnit": "دقیقه",
+    "secondUnit": "ثانیه",
+    "estimatedDuration": "برآورد بر اساس زمان پیام‌ها"
+  },
   "fileChanges": "تغییرات فایل",
   "fileChangesCount": "{{count}} تغییر فایل",
   "fileChangesCount_one": "{{count}} تغییر فایل",

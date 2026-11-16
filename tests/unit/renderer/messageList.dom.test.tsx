@@ -5,7 +5,7 @@
  */
 
 import React, { type PropsWithChildren } from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IMessageAcpToolCall, IMessageText, IMessageToolGroup, TMessage } from '@/common/chat/chatLib';
 import type { MessageFileChangesProps } from '@/renderer/pages/conversation/Messages/MessageFileChanges';
@@ -13,29 +13,48 @@ import {
   MessageListLoadingProvider,
   MessageListProvider,
   MessagePaginationProvider,
+  type MessagePaginationState,
   useUpdateMessageList,
 } from '@/renderer/pages/conversation/Messages/hooks';
 import MessageList from '@/renderer/pages/conversation/Messages/MessageList';
+import TurnProcess from '@/renderer/pages/conversation/Messages/MessageList/TurnProcess';
+import type { ConversationTurnSnapshot } from '@/renderer/services/runtime/conversationTurnIndex';
+import zhMessages from '@/renderer/services/i18n/locales/zh-CN/messages.json';
+import { CHAT_MESSAGE_JUMP_EVENT } from '@/renderer/utils/chat/chatMinimapEvents';
 
-const { parseDiffMock, useTeamPermissionMock } = vi.hoisted(() => ({
+const { parseDiffMock, useTeamPermissionMock, scrollElementIntoViewMock, loadMessagePageMock } = vi.hoisted(() => ({
   parseDiffMock: vi.fn(),
   useTeamPermissionMock: vi.fn(),
+  scrollElementIntoViewMock: vi.fn(),
+  loadMessagePageMock: vi.fn(),
 }));
+let mockLocationState: { targetMessageId?: string } = {};
+let mockTurnSnapshot: ConversationTurnSnapshot;
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (_key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? _key,
+    t: (_key: string, options?: { defaultValue?: string }) => {
+      const durationKey = _key.slice('messages.turnProcess.'.length);
+      if (
+        _key.startsWith('messages.turnProcess.') &&
+        ['hourUnit', 'minuteUnit', 'secondUnit', 'estimatedDuration'].includes(durationKey)
+      ) {
+        return zhMessages.turnProcess[durationKey as keyof typeof zhMessages.turnProcess];
+      }
+      return options?.defaultValue ?? _key;
+    },
   }),
 }));
 
 vi.mock('react-router-dom', () => ({
   useLocation: () => ({
     key: 'location-key',
-    state: {},
+    state: mockLocationState,
   }),
 }));
 
-vi.mock('@arco-design/web-react', () => ({
+vi.mock('@arco-design/web-react', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@arco-design/web-react')>()),
   Image: {
     PreviewGroup: ({ children }: PropsWithChildren) => <>{children}</>,
   },
@@ -54,8 +73,22 @@ vi.mock('@/renderer/pages/conversation/runtime/useConversationRuntimeView', () =
   useConversationRuntimeView: () => ({ isProcessing: mockIsProcessing }),
 }));
 
+vi.mock('@/renderer/services/runtime/conversationTurnIndex', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/renderer/services/runtime/conversationTurnIndex')>()),
+  useConversationTurnIndex: () => mockTurnSnapshot,
+}));
+
 vi.mock('@/renderer/pages/conversation/Messages/artifacts', () => ({
   useConversationArtifacts: () => [],
+}));
+
+vi.mock('@/renderer/pages/conversation/Messages/anchorRail', () => ({
+  MessageAnchorRail: () => null,
+}));
+
+vi.mock('@/renderer/utils/chat/messagePagination', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/renderer/utils/chat/messagePagination')>()),
+  loadConversationMessagePage: loadMessagePageMock,
 }));
 
 vi.mock('@/renderer/pages/conversation/Messages/useAutoScroll', () => ({
@@ -67,14 +100,26 @@ vi.mock('@/renderer/pages/conversation/Messages/useAutoScroll', () => ({
     handlePointerDown: () => {},
     showScrollButton: false,
     scrollToBottom: () => {},
-    scrollElementIntoView: () => {},
+    scrollElementIntoView: scrollElementIntoViewMock,
     hideScrollButton: () => {},
   }),
 }));
 
 vi.mock('@/renderer/pages/conversation/Messages/components/MessageText', () => ({
-  default: ({ message, showCopyRow }: { message: IMessageText; showCopyRow?: boolean }) => (
-    <div data-testid={`msgtext-${message.id}`} data-copy-row={String(showCopyRow ?? true)}>
+  default: ({
+    message,
+    showCopyRow,
+    turnTexts,
+  }: {
+    message: IMessageText;
+    showCopyRow?: boolean;
+    turnTexts?: string[];
+  }) => (
+    <div
+      data-testid={`msgtext-${message.id}`}
+      data-copy-row={String(showCopyRow ?? true)}
+      data-copy-texts={turnTexts?.join('|')}
+    >
       {message.content.content}
     </div>
   ),
@@ -158,6 +203,7 @@ vi.mock('@/renderer/pages/conversation/Messages/components/SelectionReplyButton'
 
 vi.mock('@icon-park/react', () => ({
   Down: () => <span>down</span>,
+  Right: () => <span />,
 }));
 
 function createTextMessage(): IMessageText {
@@ -233,11 +279,22 @@ function Wrapper({
   children,
   messages = [createTextMessage()],
   loading = false,
-}: PropsWithChildren<{ messages?: TMessage[]; loading?: boolean }>): JSX.Element {
+  pagination,
+}: PropsWithChildren<{
+  messages?: TMessage[];
+  loading?: boolean;
+  pagination?: Partial<MessagePaginationState>;
+}>): JSX.Element {
   return (
     <MessageListLoadingProvider value={loading}>
       <MessagePaginationProvider
-        value={{ hasMoreBefore: false, hasMoreAfter: false, isLoadingBefore: false, isLoadingAnchor: false }}
+        value={{
+          hasMoreBefore: false,
+          hasMoreAfter: false,
+          isLoadingBefore: false,
+          isLoadingAnchor: false,
+          ...pagination,
+        }}
       >
         <MessageListProvider value={messages}>{children}</MessageListProvider>
       </MessagePaginationProvider>
@@ -253,6 +310,15 @@ function ReplaceMessagesButton({ messages }: { messages: TMessage[] }): JSX.Elem
 describe('MessageList', () => {
   beforeEach(() => {
     mockIsProcessing = false;
+    mockLocationState = {};
+    mockTurnSnapshot = {
+      records: new Map(),
+      messageTurnIds: new Map(),
+      toolTurnIds: new Map(),
+      backendTurnIds: new Map(),
+    };
+    scrollElementIntoViewMock.mockReset();
+    loadMessagePageMock.mockReset();
     parseDiffMock.mockReset();
     parseDiffMock.mockReturnValue({
       file_name: 'file.ts',
@@ -262,6 +328,95 @@ describe('MessageList', () => {
       diff: 'diff',
     });
     useTeamPermissionMock.mockReturnValue(null);
+  });
+
+  it.each([
+    [4830000, '1小时 20分钟 30秒'],
+    [105000, '1分钟 45秒'],
+    [23000, '23秒'],
+    [3600000, '1小时 0秒'],
+    [60000, '1分钟 0秒'],
+    [59999, '59秒'],
+    [0, '0秒'],
+  ])('shows %i milliseconds in hours, minutes and seconds', (durationMs, expected) => {
+    render(<TurnProcess id='duration' expanded={false} durationMs={durationMs} onExpandedChange={() => {}} />);
+
+    expect(screen.getByRole('button')).toHaveTextContent(`· ${expected}`);
+  });
+
+  it.each([undefined, -1, NaN, Infinity])('hides an unavailable or invalid duration: %s', (durationMs) => {
+    render(<TurnProcess id='duration' expanded={false} durationMs={durationMs} onExpandedChange={() => {}} />);
+
+    expect(screen.getByRole('button')).toHaveTextContent(/^messages.turnProcess.title$/);
+  });
+
+  it('uses the recorded duration instead of the message timestamp estimate', () => {
+    mockTurnSnapshot = {
+      ...mockTurnSnapshot,
+      records: new Map([['turn-1', { turnId: 'turn-1', state: 'completed', startedAt: 1000, completedAt: 106000 }]]),
+    };
+    const messages = [
+      { ...createTextMessage(), id: 'user', turn_id: 'turn-1', position: 'right', created_at: 1000 },
+      { ...createAcpToolCall(), turn_id: 'turn-1', created_at: 2000 },
+      { ...createTextMessage(), id: 'answer', turn_id: 'turn-1', created_at: 24000 },
+    ] as TMessage[];
+    render(<MessageList />, { wrapper: ({ children }) => <Wrapper messages={messages}>{children}</Wrapper> });
+
+    expect(screen.getByRole('button', { name: /messages.turnProcess.title/ })).toHaveTextContent('· 1分钟 45秒');
+    expect(screen.queryByTitle('根据消息时间估算')).not.toBeInTheDocument();
+  });
+
+  it('estimates older history from the user message through the final answer', () => {
+    const messages = [
+      { ...createTextMessage(), id: 'user', position: 'right', created_at: 1000 },
+      { ...createAcpToolCall(), created_at: 2000 },
+      { ...createTextMessage(), id: 'answer', created_at: 24000 },
+    ] as TMessage[];
+    render(<MessageList />, { wrapper: ({ children }) => <Wrapper messages={messages}>{children}</Wrapper> });
+
+    expect(screen.getByTitle('根据消息时间估算')).toHaveTextContent('· ≈ 23秒');
+  });
+
+  it('keeps the same whole-turn duration across a mid-turn follow-up', () => {
+    const messages = [
+      { ...createTextMessage(), id: 'user', turn_id: 'turn-1', position: 'right', created_at: 1000 },
+      { ...createAcpToolCall(), turn_id: 'turn-1', created_at: 2000 },
+      { ...createTextMessage(), id: 'followup', turn_id: 'turn-1', position: 'right', created_at: 10000 },
+      { ...createTextMessage(), id: 'more-progress', turn_id: 'turn-1', created_at: 11000 },
+      { ...createAcpToolCall(), id: 'second-tool', turn_id: 'turn-1', created_at: 12000 },
+      { ...createTextMessage(), id: 'answer', turn_id: 'turn-1', created_at: 24000 },
+    ] as TMessage[];
+    render(<MessageList />, { wrapper: ({ children }) => <Wrapper messages={messages}>{children}</Wrapper> });
+
+    const durations = screen.getAllByTitle('根据消息时间估算');
+    expect(durations).toHaveLength(2);
+    for (const duration of durations) expect(duration).toHaveTextContent('· ≈ 23秒');
+  });
+
+  it('does not include an earlier turn in the next turn duration', () => {
+    const messages = [
+      { ...createTextMessage(), id: 'first-user', position: 'right', created_at: 1000 },
+      { ...createAcpToolCall(), id: 'first-tool', created_at: 2000 },
+      { ...createTextMessage(), id: 'first-answer', created_at: 24000 },
+      { ...createTextMessage(), id: 'second-user', position: 'right', created_at: 60000 },
+      { ...createAcpToolCall(), id: 'second-tool', created_at: 61000 },
+      { ...createTextMessage(), id: 'second-answer', created_at: 165000 },
+    ] as TMessage[];
+    render(<MessageList />, { wrapper: ({ children }) => <Wrapper messages={messages}>{children}</Wrapper> });
+
+    expect(screen.getAllByTitle('根据消息时间估算').map((element) => element.textContent)).toEqual([
+      '· ≈ 23秒',
+      '· ≈ 1分钟 45秒',
+    ]);
+  });
+
+  it('does not invent a history duration when the start of the turn is missing', () => {
+    const messages = [createAcpToolCall(), { ...createTextMessage(), id: 'answer', created_at: 24000 }];
+    render(<MessageList />, { wrapper: ({ children }) => <Wrapper messages={messages}>{children}</Wrapper> });
+
+    expect(screen.getByRole('button', { name: 'messages.turnProcess.title' })).toHaveTextContent(
+      /^messages.turnProcess.title$/
+    );
   });
 
   it('never renders a plan as a stream row (it belongs to ConversationPlanBar)', () => {
@@ -385,7 +540,9 @@ describe('MessageList', () => {
       wrapper: ({ children }) => <Wrapper messages={messages}>{children}</Wrapper>,
     });
 
-    // Intermediate AI text (followed by a tool then another text) hides the row.
+    expect(screen.queryByTestId('msgtext-text-a')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'messages.turnProcess.title' }));
+    // Expanding the process does not add an answer-level copy row to progress.
     expect(screen.getByTestId('msgtext-text-a').getAttribute('data-copy-row')).toBe('false');
     // Last AI text of turn 1 (after the tool block) keeps the row — fallback strategy.
     expect(screen.getByTestId('msgtext-text-b').getAttribute('data-copy-row')).toBe('true');
@@ -420,6 +577,199 @@ describe('MessageList', () => {
     });
 
     expect(screen.getByText('empty state')).toBeInTheDocument();
+  });
+
+  it('collapses a completed turn into one process and copies only its trailing answer', () => {
+    const messages = [
+      { ...createTextMessage(), id: 'progress-a', content: { content: 'checking files' }, created_at: 1 },
+      { ...createAcpToolCall(), id: 'read-a', created_at: 2 },
+      { ...createTextMessage(), id: 'progress-b', content: { content: 'checking results' }, created_at: 3 },
+      { ...createAcpToolCall(), id: 'read-b', created_at: 4 },
+      { ...createTextMessage(), id: 'answer-a', content: { content: 'result one' }, created_at: 5 },
+      { ...createTextMessage(), id: 'answer-b', content: { content: 'result two' }, created_at: 6 },
+    ];
+    render(<MessageList />, { wrapper: ({ children }) => <Wrapper messages={messages}>{children}</Wrapper> });
+
+    expect(screen.queryByText('checking files')).not.toBeInTheDocument();
+    expect(screen.getByTestId('msgtext-answer-b')).toHaveAttribute('data-copy-texts', 'result one|result two');
+    const disclosure = screen.getByRole('button', { name: 'messages.turnProcess.title' });
+    expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(disclosure);
+    expect(screen.getByText('checking files')).toBeInTheDocument();
+    expect(screen.getByText('checking results')).toBeInTheDocument();
+    fireEvent.keyDown(disclosure, { key: ' ' });
+    expect(screen.queryByText('checking files')).not.toBeInTheDocument();
+  });
+
+  it('shows the running process and automatically collapses it when the turn completes', () => {
+    mockIsProcessing = true;
+    const messages = [
+      { ...createTextMessage(), id: 'progress', content: { content: 'working' }, created_at: 1 },
+      createAcpToolCall(),
+      { ...createTextMessage(), id: 'answer', content: { content: 'finished result' }, created_at: 3 },
+    ];
+    const view = render(<MessageList />, {
+      wrapper: ({ children }) => <Wrapper messages={messages}>{children}</Wrapper>,
+    });
+    expect(screen.getByText('working')).toBeInTheDocument();
+    mockIsProcessing = false;
+    view.rerender(<MessageList />);
+    expect(screen.queryByText('working')).not.toBeInTheDocument();
+    expect(screen.getByText('finished result')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'messages.turnProcess.title' })).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    );
+  });
+
+  it('opens a searched progress message before scrolling to its DOM node', async () => {
+    mockLocationState = { targetMessageId: 'searched-progress' };
+    const messages = [
+      { ...createTextMessage(), id: 'searched-progress', content: { content: 'search target' }, created_at: 1 },
+      createAcpToolCall(),
+      { ...createTextMessage(), id: 'answer', content: { content: 'final result' }, created_at: 3 },
+    ];
+    render(<MessageList />, { wrapper: ({ children }) => <Wrapper messages={messages}>{children}</Wrapper> });
+    await waitFor(() => expect(scrollElementIntoViewMock).toHaveBeenCalled());
+    expect(scrollElementIntoViewMock.mock.calls[0][0]).toBe(document.getElementById('message-searched-progress'));
+    expect(screen.getByText('search target')).toBeInTheDocument();
+  });
+
+  it('collapses after a final answer is flushed later than the completion state', () => {
+    mockIsProcessing = true;
+    const progress = {
+      ...createTextMessage(),
+      id: 'late-progress',
+      content: { content: 'still checking' },
+      created_at: 1,
+    };
+    const messages = [progress, createAcpToolCall()];
+    const view = render(
+      <>
+        <MessageList />
+        <ReplaceMessagesButton
+          messages={[
+            ...messages,
+            { ...createTextMessage(), id: 'late-answer', content: { content: 'late result' }, created_at: 3 },
+          ]}
+        />
+      </>,
+      {
+        wrapper: ({ children }) => <Wrapper messages={messages}>{children}</Wrapper>,
+      }
+    );
+    mockIsProcessing = false;
+    view.rerender(
+      <>
+        <MessageList />
+        <ReplaceMessagesButton
+          messages={[
+            ...messages,
+            { ...createTextMessage(), id: 'late-answer', content: { content: 'late result' }, created_at: 3 },
+          ]}
+        />
+      </>
+    );
+    expect(screen.getByText('still checking')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'replace messages' }));
+    expect(screen.queryByText('still checking')).not.toBeInTheDocument();
+    expect(screen.getByText('late result')).toBeInTheDocument();
+  });
+
+  it.each([false, true])(
+    'loads a missing process from an answer page with a same-turn follow-up: %s',
+    async (withFollowup) => {
+      const answer = {
+        ...createTextMessage(),
+        id: 'paged-answer',
+        turn_id: 'paged-turn',
+        content: { content: 'paged result' },
+        created_at: 4,
+      };
+      const followup = {
+        ...createTextMessage(),
+        id: 'paged-followup',
+        turn_id: 'paged-turn',
+        position: 'right',
+        content: { content: 'more detail' },
+        created_at: 3,
+      } as IMessageText;
+      loadMessagePageMock.mockResolvedValueOnce({
+        items: [
+          {
+            ...createTextMessage(),
+            id: 'paged-user',
+            position: 'right',
+            content: { content: 'question' },
+            created_at: 0,
+          },
+          {
+            ...createTextMessage(),
+            id: 'paged-progress',
+            turn_id: 'paged-turn',
+            content: { content: 'earlier work' },
+            created_at: 1,
+          },
+          { ...createAcpToolCall(), turn_id: 'paged-turn' },
+        ],
+        oldest_cursor: null,
+        newest_cursor: 'c2',
+        has_more_before: false,
+        has_more_after: true,
+      });
+      render(<MessageList />, {
+        wrapper: ({ children }) => (
+          <Wrapper
+            messages={withFollowup ? [followup, answer] : [answer]}
+            pagination={{ oldestCursor: 'c1', hasMoreBefore: true }}
+          >
+            {children}
+          </Wrapper>
+        ),
+      });
+      expect(screen.queryByTitle('根据消息时间估算')).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: /messages.turnProcess.title/ }));
+      await waitFor(() => expect(screen.getByText('earlier work')).toBeInTheDocument());
+      expect(screen.getByText('paged result')).toBeInTheDocument();
+      expect(screen.getAllByRole('button', { name: /messages.turnProcess.title/ })).toHaveLength(1);
+    }
+  );
+
+  it('reveals a collapsed process when the conversation anchor requests its message', async () => {
+    const messages = [
+      { ...createTextMessage(), id: 'jump-progress', content: { content: 'jump target' }, created_at: 1 },
+      createAcpToolCall(),
+      { ...createTextMessage(), id: 'answer', content: { content: 'final result' }, created_at: 3 },
+    ];
+    render(<MessageList />, { wrapper: ({ children }) => <Wrapper messages={messages}>{children}</Wrapper> });
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent(CHAT_MESSAGE_JUMP_EVENT, {
+          detail: { conversation_id: 'conversation-1', messageId: 'jump-progress' },
+        })
+      );
+    });
+    await waitFor(() => expect(scrollElementIntoViewMock).toHaveBeenCalled());
+    expect(screen.getByText('jump target')).toBeInTheDocument();
+  });
+
+  it('keeps a permission request outside a manually collapsed running process', () => {
+    mockIsProcessing = true;
+    const messages = [
+      createTextMessage(),
+      {
+        id: 'permission',
+        type: 'permission',
+        position: 'left',
+        conversation_id: 'conversation-1',
+        content: {},
+        created_at: 2,
+      },
+    ] as TMessage[];
+    render(<MessageList />, { wrapper: ({ children }) => <Wrapper messages={messages}>{children}</Wrapper> });
+    fireEvent.click(screen.getByRole('button', { name: 'messages.turnProcess.running' }));
+    expect(screen.queryByText('streaming reply')).not.toBeInTheDocument();
+    expect(screen.getByText('permission')).toBeInTheDocument();
   });
 
   it('renders a skeleton while the initial message batch is loading', () => {
@@ -622,7 +972,6 @@ describe('MessageList', () => {
     });
 
     expect(screen.getByTestId('file-changes')).toHaveAttribute('data-file-count', '2');
-    expect(parseDiffMock).toHaveBeenCalledTimes(2);
     expect(screen.queryByTestId('tool-summary')).not.toBeInTheDocument();
   });
 

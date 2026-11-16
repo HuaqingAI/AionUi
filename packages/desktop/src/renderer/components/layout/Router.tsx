@@ -1,6 +1,7 @@
 import React, { Suspense } from 'react';
 import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { ipcBridge } from '@/common';
+import { getBaseUrl } from '@/common/adapter/httpBridge';
 import type { HTHAuthStatus } from '@/common/types/hth';
 import {
   getAgentModelCatalogSnapshot,
@@ -8,6 +9,7 @@ import {
   seedAgentModelCatalog,
   setAgentModelCatalogScope,
 } from '@/renderer/services/runtime/agentModelCatalog';
+import { observeConversationTurns } from '@/renderer/services/runtime/conversationTurnIndex';
 import AppLoader from '@renderer/components/layout/AppLoader';
 import { useAuth } from '@renderer/hooks/context/AuthContext';
 import { checkOpenCodeAndCodexManagedAgentHealthAfterAuth } from '@renderer/hooks/agent/useManagedAgents';
@@ -55,11 +57,22 @@ const DeepLinkListener: React.FC = () => {
 };
 
 const ProtectedLayout: React.FC<{ layout: React.ReactElement }> = ({ layout }) => {
-  const { status } = useAuth();
+  const { status, user } = useAuth();
   const location = useLocation();
   const [hthAuthStatus, setHTHAuthStatus] = React.useState<HTHAuthStatus | null>(null);
   const hthLoggedIn = hthAuthStatus?.loggedIn ?? null;
   const managedAgentHealthStartedRef = React.useRef(false);
+
+  React.useEffect(() => {
+    if (status !== 'authenticated') return;
+    const scope = JSON.stringify([
+      getBaseUrl() || window.location.origin,
+      user?.id ?? 'desktop',
+      hthAuthStatus?.baseUrl ?? '',
+      hthAuthStatus?.email ?? '',
+    ]);
+    return observeConversationTurns(scope);
+  }, [status, user?.id, hthAuthStatus?.baseUrl, hthAuthStatus?.email]);
 
   React.useEffect(() => {
     if (status !== 'authenticated') {

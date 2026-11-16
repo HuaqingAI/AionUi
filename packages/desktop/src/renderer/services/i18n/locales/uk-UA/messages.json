@@ -1,4 +1,13 @@
 {
+  "turnProcess": {
+    "title": "Хід виконання",
+    "running": "Виконується…",
+    "loadFailed": "Не вдалося завантажити попередні кроки",
+    "hourUnit": "год",
+    "minuteUnit": "хв",
+    "secondUnit": "с",
+    "estimatedDuration": "Оцінка за часом повідомлень"
+  },
   "fileChanges": "Зміни у файлах",
   "fileChangesCount": "Зміни у файлах: {{count}}",
   "fileChangesCount_one": "Зміни у файлах: {{count}}",
