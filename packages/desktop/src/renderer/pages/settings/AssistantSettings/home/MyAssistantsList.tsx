@@ -5,6 +5,7 @@
  */
 
 import type { AssistantListItem } from '../types';
+import type { HTHAssistantUpdate } from '@/common/types/hth';
 import {
   type AssistantEnabledFilter,
   filterByEnabled,
@@ -19,6 +20,7 @@ import { useTranslation } from 'react-i18next';
 
 type MyAssistantsListProps = {
   assistants: AssistantListItem[];
+  assistantUpdates?: ReadonlyMap<string, HTHAssistantUpdate>;
   localeKey: string;
   onOpenDetail: (assistant: AssistantListItem) => void;
   onDelete: (assistant: AssistantListItem) => void;
@@ -41,6 +43,7 @@ const renderGroupHeader = (title: string, count: number, barClass: string) => (
 
 const MyAssistantsList: React.FC<MyAssistantsListProps> = ({
   assistants,
+  assistantUpdates,
   localeKey,
   onOpenDetail,
   onDelete,
@@ -75,6 +78,7 @@ const MyAssistantsList: React.FC<MyAssistantsListProps> = ({
         <MyAssistantCard
           key={assistant.id}
           assistant={assistant}
+          update={assistantUpdates?.get(assistant.id)}
           localeKey={localeKey}
           onOpenDetail={onOpenDetail}
           onDelete={onDelete}

@@ -35,7 +35,7 @@ vi.mock('electron', () => ({
   },
 }));
 
-import { HTH_UNAUTHORIZED_ERROR_CODE, type HTHSyncProgressEvent } from '@/common/types/hth';
+import { HTH_UNAUTHORIZED_ERROR_CODE, type HTHAgentConfigItem, type HTHSyncProgressEvent } from '@/common/types/hth';
 import { HTHAuthService } from '@/process/services/hth/authService';
 import { HTHConfigSyncService } from '@/process/services/hth/configSyncService';
 import { HTHPackageStore, resolveHTHAssistantId, resolveHTHPackageId } from '@/process/services/hth/packageStore';
@@ -118,6 +118,341 @@ describe('HTHConfigSyncService auth handling', () => {
       errorCode: HTH_UNAUTHORIZED_ERROR_CODE,
     });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('preserves the login session when a background update receives an unauthorized response', async () => {
+    const fixture = await createVersionSyncFixture(tempDir, authFile);
+    fixture.remoteFetch.mockResolvedValue(Response.json({ error: 'expired' }, { status: 401 }));
+
+    const result = await fixture.service.syncAgentConfigs({ incremental: true, background: true });
+
+    expect(result).toMatchObject({ success: false, errorCode: HTH_UNAUTHORIZED_ERROR_CODE });
+    await expect(fixture.authService.getStatus()).resolves.toMatchObject({ loggedIn: true });
+  });
+
+  it('clears a rejected login session for a manual incremental update', async () => {
+    const fixture = await createVersionSyncFixture(tempDir, authFile);
+    fixture.remoteFetch.mockResolvedValue(Response.json({ error: 'expired' }, { status: 401 }));
+
+    const result = await fixture.service.syncAgentConfigs({ incremental: true });
+
+    expect(result).toMatchObject({ success: false, errorCode: HTH_UNAUTHORIZED_ERROR_CODE });
+    await expect(fixture.authService.getStatus()).resolves.toMatchObject({ loggedIn: false });
+  });
+
+  it('does not clear a newly signed-in account when an older synchronization receives an unauthorized response', async () => {
+    const fixture = await createVersionSyncFixture(tempDir, authFile);
+    fixture.remoteFetch.mockImplementation(async () => {
+      await writeStoredAuth(authFile, { email: 'another@example.com' });
+      return Response.json({ error: 'expired' }, { status: 401 });
+    });
+
+    await expect(fixture.service.syncAgentConfigs({ force: true })).rejects.toThrow('HTH account changed');
+    await expect(fixture.authService.getStatus()).resolves.toMatchObject({
+      loggedIn: true,
+      email: 'another@example.com',
+    });
+  });
+
+  it('keeps session state intact when checking updates fails and propagates unexpected access errors', async () => {
+    const fixture = await createVersionSyncFixture(tempDir, authFile);
+    fixture.remoteFetch.mockResolvedValue(Response.json({ error: 'expired' }, { status: 401 }));
+
+    await expect(fixture.service.checkAgentUpdates()).rejects.toThrow('expired');
+    await expect(fixture.authService.getStatus()).resolves.toMatchObject({ loggedIn: true });
+    vi.spyOn(fixture.authService, 'getAccess').mockRejectedValue(new Error('Unable to read secure storage'));
+    await expect(fixture.service.syncAgentConfigs({ incremental: true, background: true })).rejects.toThrow(
+      'Unable to read secure storage'
+    );
+  });
+
+  it('checks versions without downloading packages, modifying assistants or changing package manifests', async () => {
+    const fixture = await createVersionSyncFixture(tempDir, authFile);
+    const before = await fixture.packageStore.readAllManifests();
+
+    const updates = await fixture.service.checkAgentUpdates();
+
+    expect(updates).toEqual([
+      { assistantId: fixture.assistantId, localVersion: '1.0.0', remoteVersion: '2.0.0', updateAvailable: true },
+    ]);
+    expect(fixture.remoteFetch.mock.calls.map(([url]) => new URL(url).pathname)).toEqual(['/api/aionui/agent-configs']);
+    expect({ calls: fixture.coreFetch.mock.calls, manifests: await fixture.packageStore.readAllManifests() }).toEqual({
+      calls: [['http://127.0.0.1:18181/api/assistants']],
+      manifests: before,
+    });
+  });
+
+  it('skips unchanged assistants completely during background synchronization', async () => {
+    const fixture = await createVersionSyncFixture(tempDir, authFile);
+    fixture.agent.version = '1.0.0';
+    const before = await fixture.packageStore.readAllManifests();
+
+    const result = await fixture.service.syncAgentConfigs({ incremental: true });
+
+    expect(result).toMatchObject({ success: true, skipped: 1, imported: 0, updated: 0 });
+    expect(fixture.remoteFetch.mock.calls.map(([url]) => new URL(url).pathname)).toEqual(['/api/aionui/agent-configs']);
+    expect({
+      writes: fixture.coreFetch.mock.calls.filter(([, init]) => init?.method),
+      manifests: await fixture.packageStore.readAllManifests(),
+    }).toEqual({
+      writes: [],
+      manifests: before,
+    });
+  });
+
+  it.each([
+    ['manual', false],
+    ['background', true],
+  ] as const)(
+    'removes revoked assistants during %s incremental sync while retaining unchanged authorized assistants',
+    async (_mode, background) => {
+      const fixture = await createVersionSyncFixture(tempDir, authFile);
+      fixture.agent.version = '1.0.0';
+      const previous = (await fixture.packageStore.readAllManifests())[0];
+      await fixture.packageStore.writeManifest({
+        ...previous,
+        assistantId: 'hth-revoked',
+        packageId: 'revoked-package',
+      });
+      fixture.state.otherAssistants.push({ id: 'hth-revoked', name: 'Revoked', source: 'user' });
+
+      const result = await fixture.service.syncAgentConfigs({ incremental: true, background });
+
+      expect(result).toMatchObject({ success: true, deleted: 1, skipped: 1, updated: 0, imported: 0 });
+      expect({
+        installed: fixture.state.installed,
+        assistants: fixture.state.otherAssistants,
+        manifests: (await fixture.packageStore.readAllManifests()).map(({ assistantId }) => assistantId),
+      }).toEqual({
+        installed: true,
+        assistants: [],
+        manifests: [fixture.assistantId],
+      });
+      expect(fixture.remoteFetch.mock.calls.map(([url]) => new URL(url).pathname)).toEqual([
+        '/api/aionui/agent-configs',
+      ]);
+    }
+  );
+
+  it('removes synchronized assistants from an empty successful list while preserving user-created assistants', async () => {
+    const fixture = await createVersionSyncFixture(tempDir, authFile);
+    fixture.agents.length = 0;
+    fixture.state.otherAssistants.push({ id: 'user-created', name: 'My Assistant', source: 'user' });
+
+    const result = await fixture.service.syncAgentConfigs({ incremental: true, background: true });
+
+    expect(result).toMatchObject({ success: true, deleted: 1, imported: 0 });
+    expect({
+      installed: fixture.state.installed,
+      assistants: fixture.state.otherAssistants,
+      manifests: await fixture.packageStore.readAllManifests(),
+    }).toEqual({
+      installed: false,
+      assistants: [{ id: 'user-created', name: 'My Assistant', source: 'user' }],
+      manifests: [],
+    });
+  });
+
+  it.each([
+    ['HTTP failure', (): Response => Response.json({ error: 'temporarily unavailable' }, { status: 503 })],
+    [
+      'network failure',
+      (): never => {
+        throw new Error('Connection unavailable');
+      },
+    ],
+    ['invalid list', (): Response => Response.json({ agents: null })],
+    ['unsuccessful envelope', (): Response => Response.json({ success: false, data: { agents: [] } })],
+    ['invalid list item', (): Response => Response.json({ agents: [null] })],
+  ] as const)('preserves managed assistants when the remote list has an %s', async (_failure, response) => {
+    const fixture = await createVersionSyncFixture(tempDir, authFile);
+    const before = await fixture.packageStore.readAllManifests();
+    fixture.remoteFetch.mockImplementation(async () => response());
+
+    await expect(fixture.service.syncAgentConfigs({ incremental: true, background: true })).rejects.toThrow();
+
+    expect({
+      installed: fixture.state.installed,
+      writes: fixture.coreFetch.mock.calls.filter(([, init]) => init?.method),
+      manifests: await fixture.packageStore.readAllManifests(),
+    }).toEqual({
+      installed: true,
+      writes: [],
+      manifests: before,
+    });
+  });
+
+  it('retains a revoked assistant manifest after a failed deletion and retries on the next incremental sync', async () => {
+    const fixture = await createVersionSyncFixture(tempDir, authFile);
+    fixture.agents.length = 0;
+    fixture.state.failedDeleteIds.add(fixture.assistantId);
+
+    const failed = await fixture.service.syncAgentConfigs({ incremental: true });
+    const retained = await fixture.packageStore.readAllManifests();
+    fixture.state.failedDeleteIds.clear();
+    const retried = await fixture.service.syncAgentConfigs({ incremental: true });
+
+    expect({ failed, retained: retained.map(({ assistantId }) => assistantId) }).toMatchObject({
+      failed: { success: false, deleted: 0, failed: 1 },
+      retained: [fixture.assistantId],
+    });
+    expect({
+      retried,
+      installed: fixture.state.installed,
+      manifests: await fixture.packageStore.readAllManifests(),
+    }).toMatchObject({
+      retried: { success: true, deleted: 1, failed: 0 },
+      installed: false,
+      manifests: [],
+    });
+  });
+
+  it('retries an assistant whose package downloaded successfully but whose metadata update failed', async () => {
+    const fixture = await createVersionSyncFixture(tempDir, authFile);
+    fixture.state.failUpdates = true;
+    const failed = await fixture.service.syncAgentConfigs({ incremental: true });
+    const pending = await fixture.service.checkAgentUpdates();
+    fixture.state.failUpdates = false;
+    const retried = await fixture.service.syncAgentConfigs({ incremental: true });
+
+    expect(failed).toMatchObject({ success: false, failed: 1 });
+    expect(pending[0]).toMatchObject({ localVersion: '1.0.0', remoteVersion: '2.0.0', updateAvailable: true });
+    expect({ retried, updates: await fixture.service.checkAgentUpdates() }).toMatchObject({
+      retried: { success: true, updated: 1 },
+      updates: [{ localVersion: '2.0.0', remoteVersion: '2.0.0', updateAvailable: false }],
+    });
+  });
+
+  it('selects one deterministic authorized version for an assistant', async () => {
+    const fixture = await createVersionSyncFixture(tempDir, authFile);
+    fixture.agents.push({ ...fixture.agent, version: '1.0.10' }, { ...fixture.agent, version: '1.0.9' });
+
+    const updates = await fixture.service.checkAgentUpdates();
+
+    expect(updates).toEqual([
+      { assistantId: fixture.assistantId, localVersion: '1.0.0', remoteVersion: '2.0.0', updateAvailable: true },
+    ]);
+  });
+
+  it('retains a retry badge for an installed assistant without a successfully applied package', async () => {
+    const fixture = await createVersionSyncFixture(tempDir, authFile);
+    const manifest = (await fixture.packageStore.readAllManifests())[0];
+    await fixture.packageStore.writeManifest({ ...manifest, appliedAt: null });
+
+    expect(await fixture.service.checkAgentUpdates()).toEqual([
+      { assistantId: fixture.assistantId, localVersion: undefined, remoteVersion: '2.0.0', updateAvailable: true },
+    ]);
+    fixture.state.installed = false;
+    expect(await fixture.service.checkAgentUpdates()).toEqual([
+      { assistantId: fixture.assistantId, localVersion: undefined, remoteVersion: '2.0.0', updateAvailable: false },
+    ]);
+  });
+
+  it('only retries the failed assistant after a partial update and preserves unrelated categories', async () => {
+    const fixture = await createVersionSyncFixture(tempDir, authFile);
+    const other = { ...fixture.agent, id: 'other-assistant', name: 'Other' };
+    const otherId = resolveHTHAssistantId('http://127.0.0.1:3001', other.cli_type, other);
+    fixture.agents.push(other);
+    fixture.state.otherAssistants.push({ id: otherId, name: 'Old Other', avatar: 'robot' });
+    fixture.state.failedAssistantIds.add(otherId);
+    const previous = (await fixture.packageStore.readAllManifests())[0];
+    await fixture.packageStore.writeManifest({
+      ...previous,
+      assistantId: otherId,
+      packageId: resolveHTHPackageId('http://127.0.0.1:3001', other.cli_type, other),
+    });
+
+    const result = await fixture.service.syncAgentConfigs({ incremental: true });
+    const updates = await fixture.service.checkAgentUpdates();
+
+    expect(result).toMatchObject({ success: false, failed: 1, updated: 1 });
+    expect(
+      updates.map(({ assistantId, localVersion, updateAvailable }) => ({ assistantId, localVersion, updateAvailable }))
+    ).toEqual([
+      { assistantId: fixture.assistantId, localVersion: '2.0.0', updateAvailable: false },
+      { assistantId: otherId, localVersion: '1.0.0', updateAvailable: true },
+    ]);
+    expect(fixture.state.settings['hth.assistantCategories']['hth-unchanged']).toEqual(['kept']);
+  });
+
+  it('stops before writing assistants when the active account changes during a download', async () => {
+    const fixture = await createVersionSyncFixture(tempDir, authFile);
+    const originalFetch = fixture.remoteFetch.getMockImplementation()!;
+    fixture.remoteFetch.mockImplementation(async (input) => {
+      if (new URL(input).pathname === '/demo.zip') {
+        await writeStoredAuth(authFile, { email: 'another@example.com' });
+      }
+      return originalFetch(input);
+    });
+
+    await expect(fixture.service.syncAgentConfigs({ incremental: true, background: true })).rejects.toThrow(
+      'HTH account changed'
+    );
+    expect(fixture.coreFetch.mock.calls.filter(([, init]) => init?.method)).toEqual([]);
+  });
+
+  it('shares concurrent login synchronization and reports progress to each caller', async () => {
+    const fixture = await createVersionSyncFixture(tempDir, authFile);
+    let release!: () => void;
+    let entered!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const originalFetch = fixture.remoteFetch.getMockImplementation()!;
+    fixture.remoteFetch.mockImplementation(async (input) => {
+      if (new URL(input).pathname === '/api/aionui/agent-configs') {
+        entered();
+        await pending;
+      }
+      return originalFetch(input);
+    });
+    const firstProgress = vi.fn();
+    const secondProgress = vi.fn();
+    const first = fixture.service.syncAgentConfigs({ force: true, syncId: 'first' }, firstProgress);
+    await started;
+    const second = fixture.service.syncAgentConfigs({ force: true, syncId: 'second' }, secondProgress);
+    release();
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+
+    expect(firstResult).toBe(secondResult);
+    expect(fixture.remoteFetch.mock.calls.filter(([url]) => new URL(url).pathname === '/demo.zip')).toHaveLength(1);
+    expect([firstProgress.mock.calls.at(-1)?.[0].syncId, secondProgress.mock.calls.at(-1)?.[0].syncId]).toEqual([
+      'first',
+      'second',
+    ]);
+  });
+
+  it('queues a background update behind an active login sync and rechecks the applied version', async () => {
+    const fixture = await createVersionSyncFixture(tempDir, authFile);
+    let release!: () => void;
+    let entered!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const originalFetch = fixture.remoteFetch.getMockImplementation()!;
+    fixture.remoteFetch.mockImplementation(async (input) => {
+      if (new URL(input).pathname === '/demo.zip') {
+        entered();
+        await pending;
+      }
+      return originalFetch(input);
+    });
+    const login = fixture.service.syncAgentConfigs({ force: true });
+    await started;
+    const background = fixture.service.syncAgentConfigs({ incremental: true, background: true });
+    release();
+
+    const [loginResult, backgroundResult] = await Promise.all([login, background]);
+
+    expect(loginResult).toMatchObject({ success: true, updated: 1 });
+    expect(backgroundResult).toMatchObject({ success: true, updated: 0, skipped: 1 });
+    expect(fixture.remoteFetch.mock.calls.filter(([url]) => new URL(url).pathname === '/demo.zip')).toHaveLength(1);
   });
 
   it('uses the injected Core fetcher for local agent management requests', async () => {
@@ -1421,6 +1756,7 @@ describe('HTHConfigSyncService auth handling', () => {
         projectFiles: [],
       })),
       readAllManifests: vi.fn(async () => []),
+      writeManifest: vi.fn(async () => undefined),
     } as unknown as HTHPackageStore;
     const fetchMock = vi
       .fn()
@@ -2710,6 +3046,7 @@ function createInitialModelCatalogFixture(authFile: string) {
   const packageStore = {
     readManifest: vi.fn(async (id: string) => manifests.find((manifest) => manifest.packageId === id)),
     readAllManifests: vi.fn(async () => manifests),
+    writeManifest: vi.fn(async () => undefined),
   } as unknown as HTHPackageStore;
   const modelRequest = vi.fn(async () => Response.json({ data: state.modelIds.map((id) => ({ id })) }));
   const pricingRequest = vi.fn(async () => Response.json({ data: [] }));
@@ -2740,6 +3077,100 @@ function createInitialModelCatalogFixture(authFile: string) {
   });
   const service = new HTHConfigSyncService(new HTHAuthService(authFile), packageStore, undefined, undefined, coreFetch);
   return { service, packageStore, state, coreFetch, modelRequest, pricingRequest };
+}
+
+async function createVersionSyncFixture(tempDir: string, authFile: string) {
+  await writeStoredAuth(authFile, { personalApiKeyName: 'custom' });
+  (globalThis as typeof globalThis & { __backendPort?: number }).__backendPort = 18181;
+  const zipPath = path.join(tempDir, 'demo.zip');
+  await writeStoredZip(zipPath, { 'global/version-test.txt': 'updated' });
+  const zip = await fs.readFile(zipPath);
+  const agent: HTHAgentConfigItem = {
+    id: 'versioned-demo',
+    cli_type: 'opencode',
+    artifact_key: 'oss://bucket/demo/2.0.0.zip',
+    url: 'https://oss.test/demo.zip',
+    url_type: 'https',
+    version: '2.0.0',
+    name: 'Updated Demo',
+    description: 'Updated description',
+    avatar: 'https://oss.test/avatar.png',
+    sha256: createHash('sha256').update(zip).digest('hex'),
+    size: zip.byteLength,
+  };
+  const agents = [agent];
+  const assistantId = resolveHTHAssistantId('http://127.0.0.1:3001', 'opencode', agent);
+  const packageId = resolveHTHPackageId('http://127.0.0.1:3001', 'opencode', agent);
+  const packageStore = new HTHPackageStore(path.join(tempDir, 'packages'));
+  await packageStore.writeManifest({
+    packageId,
+    assistantId,
+    cliType: 'opencode',
+    artifactKey: 'oss://bucket/demo/1.0.0.zip',
+    sourceUrl: agent.url,
+    version: '1.0.0',
+    name: 'Demo',
+    syncedAt: 1,
+    extractDir: packageStore.getExtractDir(packageId, '1.0.0'),
+    globalFiles: [],
+    projectFiles: [],
+  });
+  const state = {
+    failUpdates: false,
+    installed: true,
+    failedAssistantIds: new Set<string>(),
+    failedDeleteIds: new Set<string>(),
+    assistant: { id: assistantId, name: 'Demo', avatar: 'robot' },
+    otherAssistants: [] as Record<string, unknown>[],
+    settings: { 'hth.assistantCategories': { 'hth-unchanged': ['kept'], [assistantId]: ['old'] } },
+  };
+  const remoteFetch = vi.fn(async (input: string | URL) => {
+    const url = new URL(input);
+    if (url.pathname === '/api/aionui/agent-configs') return Response.json({ agents });
+    if (url.pathname === '/demo.zip') return new Response(zip);
+    if (url.pathname === '/avatar.png') return new Response('image', { headers: { 'Content-Type': 'image/png' } });
+    throw new Error(`Unexpected remote request: ${url.pathname}`);
+  });
+  vi.stubGlobal('fetch', remoteFetch);
+  const coreFetch = vi.fn(async (input: string, init?: RequestInit) => {
+    const url = new URL(input);
+    if (url.pathname === '/api/assistants')
+      return Response.json([...(state.installed ? [state.assistant] : []), ...state.otherAssistants]);
+    if (url.pathname === '/api/agents/management') return Response.json([{ id: 'opencode', backend: 'opencode' }]);
+    if (url.pathname === '/api/mcp/servers') return Response.json([]);
+    if (url.pathname === '/api/assistants/import')
+      return Response.json({ imported: 0, skipped: 1, failed: 0, errors: [] });
+    if (url.pathname === '/api/settings/client') {
+      if (init?.method === 'PUT') Object.assign(state.settings, JSON.parse(init.body as string));
+      return Response.json({ data: state.settings });
+    }
+    if (url.pathname.startsWith('/api/assistants/') && init?.method === 'PUT') {
+      const id = url.pathname.slice('/api/assistants/'.length);
+      if (state.failUpdates || state.failedAssistantIds.has(id))
+        return Response.json({ error: 'update failed' }, { status: 500 });
+      const assistant = id === assistantId ? state.assistant : state.otherAssistants.find((item) => item.id === id);
+      if (!assistant) throw new Error('Missing assistant in fixture');
+      Object.assign(assistant, JSON.parse(init.body as string));
+      return Response.json({});
+    }
+    if (url.pathname.startsWith('/api/assistants/') && init?.method === 'DELETE') {
+      const id = decodeURIComponent(url.pathname.slice('/api/assistants/'.length));
+      if (state.failedDeleteIds.has(id)) return Response.json({ error: 'deletion failed' }, { status: 500 });
+      if (id === assistantId) state.installed = false;
+      state.otherAssistants = state.otherAssistants.filter((assistant) => assistant.id !== id);
+      return new Response(null, { status: 204 });
+    }
+    throw new Error(`Unexpected Core request: ${url.pathname}`);
+  });
+  const authService = new HTHAuthService(authFile);
+  const service = new HTHConfigSyncService(
+    authService,
+    packageStore,
+    () => path.join(tempDir, 'codex'),
+    () => path.join(tempDir, 'opencode'),
+    coreFetch
+  );
+  return { service, authService, agent, agents, assistantId, packageStore, state, remoteFetch, coreFetch };
 }
 
 async function writeStoredAuth(authFile: string, overrides: Record<string, unknown> = {}): Promise<void> {

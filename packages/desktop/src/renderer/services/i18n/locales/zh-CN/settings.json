@@ -1420,6 +1420,8 @@
   "platformHTH": "HTH",
   "hth": {
     "syncAssistants": "同步助手",
+    "assistantUpdateAvailable": "有新版本",
+    "assistantUpdateVersions": "{{localVersion}} → {{remoteVersion}}，点击“同步助手”更新",
     "syncSuccess": "HTH 同步完成：成功 {{success}}，失败 {{failed}}",
     "syncFailed": "HTH 同步失败",
     "syncProgressTitle": "正在同步助手",

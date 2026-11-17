@@ -5,6 +5,7 @@
  */
 
 import type { AssistantListItem } from '../types';
+import type { HTHAssistantUpdate } from '@/common/types/hth';
 import { resolveAssistantSourceTag } from '../assistantUtils';
 import AssistantAvatar from '../AssistantAvatar';
 import RuntimeBadge from './RuntimeBadge';
@@ -32,6 +33,7 @@ import { selectableAssistants } from '@/renderer/utils/model/assistantSelection'
 
 type EnabledAssistantsListProps = {
   assistants: AssistantListItem[];
+  assistantUpdates?: ReadonlyMap<string, HTHAssistantUpdate>;
   assistantOrder: readonly string[];
   localeKey: string;
   searchActive: boolean;
@@ -43,6 +45,7 @@ type EnabledAssistantsListProps = {
 
 type EnabledAssistantRowProps = {
   assistant: AssistantListItem;
+  update?: HTHAssistantUpdate;
   localeKey: string;
   draggable: boolean;
   onOpenDetail: (assistant: AssistantListItem) => void;
@@ -52,6 +55,7 @@ type EnabledAssistantRowProps = {
 
 const EnabledAssistantRow: React.FC<EnabledAssistantRowProps> = ({
   assistant,
+  update,
   localeKey,
   draggable,
   onOpenDetail,
@@ -106,7 +110,7 @@ const EnabledAssistantRow: React.FC<EnabledAssistantRowProps> = ({
         >
           <Drag size={16} fill='currentColor' />
         </Button>
-        <AssistantAvatar assistant={assistant} imageFit='contain' shape='circle' size={20} />
+        <AssistantAvatar assistant={assistant} update={update} imageFit='contain' shape='circle' size={20} />
         <div className='flex min-w-0 flex-1 items-center gap-8px'>
           <span className='truncate font-medium text-t-primary'>{name}</span>
           <Tag
@@ -146,6 +150,7 @@ const EnabledAssistantRow: React.FC<EnabledAssistantRowProps> = ({
 
 const EnabledAssistantsList: React.FC<EnabledAssistantsListProps> = ({
   assistants,
+  assistantUpdates,
   assistantOrder,
   localeKey,
   searchActive,
@@ -211,6 +216,7 @@ const EnabledAssistantsList: React.FC<EnabledAssistantsListProps> = ({
                 <EnabledAssistantRow
                   key={assistant.id}
                   assistant={assistant}
+                  update={assistantUpdates?.get(assistant.id)}
                   localeKey={localeKey}
                   draggable={sortingEnabled}
                   onOpenDetail={onOpenDetail}

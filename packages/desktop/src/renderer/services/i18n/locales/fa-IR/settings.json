@@ -1419,6 +1419,8 @@
   "platformHTH": "HTH",
   "hth": {
     "syncAssistants": "Sync Assistants",
+    "assistantUpdateAvailable": "نسخهٔ جدید موجود است",
+    "assistantUpdateVersions": "{{localVersion}} → {{remoteVersion}}. برای به‌روزرسانی روی همگام‌سازی دستیارها کلیک کنید.",
     "syncSuccess": "HTH sync complete: {{success}} successful, {{failed}} failed",
     "syncFailed": "HTH sync failed",
     "syncProgressTitle": "Syncing assistants",

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import AssistantSyncProgressModal from '@/renderer/pages/settings/AssistantSettings/home/AssistantSyncProgressModal';
+import AssistantSyncProgressModal from '@/renderer/components/assistant/AssistantSyncProgressModal';
 import { ConfigProvider } from '@arco-design/web-react';
 import { render, screen } from '@testing-library/react';
 import React from 'react';

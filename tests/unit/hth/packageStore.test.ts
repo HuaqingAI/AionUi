@@ -67,6 +67,37 @@ describe('hth package store', () => {
 
     expect(manifest).toBeNull();
   });
+
+  it('keeps the last successfully applied version when a newer download fails to apply', async () => {
+    const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'aionui-hth-package-store-'));
+    tempDirs.push(rootDir);
+    const store = new HTHPackageStore(rootDir);
+    await store.writeManifest(createManifest({ version: '1.0.0', appliedAt: 100, appliedScope: 'account' }));
+    await store.writeManifest(createManifest({ version: '2.0.0', appliedAt: null, appliedScope: 'account' }));
+
+    expect((await store.findAppliedByAssistantId('hth-demo', 'account'))?.version).toBe('1.0.0');
+  });
+
+  it('uses the most recently applied version after a downgrade and isolates accounts', async () => {
+    const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'aionui-hth-package-store-'));
+    tempDirs.push(rootDir);
+    const store = new HTHPackageStore(rootDir);
+    await store.writeManifest(createManifest({ version: '2.0.0', appliedAt: 100, appliedScope: 'account' }));
+    await store.writeManifest(createManifest({ version: '1.0.0', appliedAt: 200, appliedScope: 'account' }));
+
+    expect((await store.findAppliedByAssistantId('hth-demo', 'account'))?.version).toBe('1.0.0');
+    expect(await store.findAppliedByAssistantId('hth-demo', 'another-account')).toBeNull();
+    expect((await store.findByAssistantId('hth-demo'))?.version).toBe('1.0.0');
+  });
+
+  it('accepts a legacy manifest without application tracking', async () => {
+    const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'aionui-hth-package-store-'));
+    tempDirs.push(rootDir);
+    const store = new HTHPackageStore(rootDir);
+    await store.writeManifest(createManifest({ version: '1.0.0' }));
+
+    expect((await store.findAppliedByAssistantId('hth-demo', 'account'))?.version).toBe('1.0.0');
+  });
 });
 
 function createManifest(overrides: Partial<HTHPackageManifest>): HTHPackageManifest {

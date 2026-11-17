@@ -10,6 +10,11 @@ import {
   setAgentModelCatalogScope,
 } from '@/renderer/services/runtime/agentModelCatalog';
 import { observeConversationTurns } from '@/renderer/services/runtime/conversationTurnIndex';
+import {
+  setHTHAssistantSyncScope,
+  startHTHAssistantBackgroundSync,
+} from '@/renderer/services/runtime/hthAssistantSync';
+import HTHLoginSyncProgress from '@renderer/components/assistant/HTHLoginSyncProgress';
 import AppLoader from '@renderer/components/layout/AppLoader';
 import { useAuth } from '@renderer/hooks/context/AuthContext';
 import { checkOpenCodeAndCodexManagedAgentHealthAfterAuth } from '@renderer/hooks/agent/useManagedAgents';
@@ -64,6 +69,12 @@ const ProtectedLayout: React.FC<{ layout: React.ReactElement }> = ({ layout }) =
   const managedAgentHealthStartedRef = React.useRef(false);
 
   React.useEffect(() => {
+    if (status === 'authenticated' && hthAuthStatus?.loggedIn) {
+      startHTHAssistantBackgroundSync(hthAuthStatus);
+    }
+  }, [status, hthAuthStatus]);
+
+  React.useEffect(() => {
     if (status !== 'authenticated') return;
     const scope = JSON.stringify([
       getBaseUrl() || window.location.origin,
@@ -76,6 +87,7 @@ const ProtectedLayout: React.FC<{ layout: React.ReactElement }> = ({ layout }) =
 
   React.useEffect(() => {
     if (status !== 'authenticated') {
+      setHTHAssistantSyncScope(null);
       setHTHAuthStatus(null);
       return;
     }
@@ -85,12 +97,14 @@ const ProtectedLayout: React.FC<{ layout: React.ReactElement }> = ({ layout }) =
       .invoke()
       .then((authStatus) => {
         if (!disposed) {
+          setHTHAssistantSyncScope(authStatus);
           setHTHAuthStatus(authStatus);
         }
       })
       .catch((error) => {
         console.error('[Router] Failed to check hth auth status:', error);
         if (!disposed) {
+          setHTHAssistantSyncScope(null);
           setHTHAuthStatus({ loggedIn: false });
         }
       });
@@ -176,6 +190,7 @@ const PanelRoute: React.FC<{ layout: React.ReactElement }> = ({ layout }) => {
   return (
     <HashRouter>
       <DeepLinkListener />
+      <HTHLoginSyncProgress />
       <Routes>
         <Route
           path='/login'

@@ -25,13 +25,14 @@ import { useManagedAgentRuntimeCatalog } from '@/renderer/hooks/agent/useManaged
 import { buildAssistantEditorBackends, filterCreateAssistantBackends, resolveAvatarImageSrc } from './assistantUtils';
 import AssistantEditorPage from './AssistantEditorPage';
 import AssistantHomeTabs, { type HomeTab } from './home/AssistantHomeTabs';
-import AssistantSyncProgressModal from './home/AssistantSyncProgressModal';
+import AssistantSyncProgressModal from '@renderer/components/assistant/AssistantSyncProgressModal';
 import DeleteAssistantModal from './DeleteAssistantModal';
 import SkillConfirmModals from './SkillConfirmModals';
 import type { AssistantEditorViewModel, AssistantListItem } from './types';
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
+import useSWR from 'swr';
 
 type AssistantNavigationState = {
   openAssistantId?: string;
@@ -67,6 +68,17 @@ const AssistantSettings: React.FC = () => {
   const [syncingFromHTH, setSyncingFromHTH] = React.useState(false);
   const [syncProgress, setSyncProgress] = React.useState<HTHSyncProgressEvent>(INITIAL_HTH_SYNC_PROGRESS);
   const activeSyncIdRef = useRef<string | null>(null);
+  const { data: updates, mutate: refreshUpdates } = useSWR(
+    'hth.assistantUpdates',
+    () => ipcBridge.hth.checkAgentUpdates.invoke(),
+    {
+      revalidateOnMount: true,
+      revalidateOnFocus: false,
+      dedupingInterval: 0,
+      onError: (error) => console.warn('[AssistantSettings] Failed to check assistant updates:', error),
+    }
+  );
+  const assistantUpdates = useMemo(() => new Map(updates?.map((update) => [update.assistantId, update])), [updates]);
 
   // "Chat" on an assistant → open a new conversation with it preselected.
   const handleStartChat = useCallback(
@@ -136,12 +148,15 @@ const AssistantSettings: React.FC = () => {
     setSyncProgress(INITIAL_HTH_SYNC_PROGRESS);
     setSyncingFromHTH(true);
     try {
-      const result = await ipcBridge.hth.syncAgentConfigs.invoke({ force: true, syncId });
+      const result = await ipcBridge.hth.syncAgentConfigs.invoke({ force: false, incremental: true, syncId });
       if (isHTHUnauthorizedSyncResult(result)) {
         await navigate('/hth-login', { replace: true });
         return;
       }
       await loadAssistants();
+      await refreshUpdates().catch((error) => {
+        console.warn('[AssistantSettings] Failed to refresh assistant updates after synchronization:', error);
+      });
       const syncToastSummary = summarizeHTHSyncToast(result);
       message.success(
         formatHTHText(
@@ -159,7 +174,7 @@ const AssistantSettings: React.FC = () => {
       setSyncProgress(INITIAL_HTH_SYNC_PROGRESS);
       setSyncingFromHTH(false);
     }
-  }, [loadAssistants, message, navigate, t]);
+  }, [loadAssistants, message, navigate, refreshUpdates, t]);
 
   const editAvatarImage = editor.editAvatarPreview || resolveAvatarImageSrc(editor.editAvatar);
   const hasConsumedNavigationIntentRef = useRef(false);
@@ -289,6 +304,7 @@ const AssistantSettings: React.FC = () => {
           ) : (
             <AssistantHomeTabs
               assistants={assistants}
+              assistantUpdates={assistantUpdates}
               assistantOrder={assistantOrder}
               localeKey={localeKey}
               initialTab={homeTab}

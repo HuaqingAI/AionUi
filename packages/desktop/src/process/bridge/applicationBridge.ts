@@ -396,6 +396,7 @@ export function initApplicationBridge(): void {
       ipcBridge.hth.syncAgentConfigsProgress.emit(event)
     );
   });
+  ipcBridge.hth.checkAgentUpdates.provider(() => hthConfigSyncService.checkAgentUpdates());
   ipcBridge.hth.injectProjectConfig.provider(async (request) => {
     const access = await hthAuthService.getAccess();
     if (access) {

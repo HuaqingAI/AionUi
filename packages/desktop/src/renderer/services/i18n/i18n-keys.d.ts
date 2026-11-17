@@ -2122,6 +2122,8 @@ export type I18nKey =
   | 'settings.healthCheck'
   | 'settings.healthStatusCleared'
   | 'settings.helpDocumentation'
+  | 'settings.hth.assistantUpdateAvailable'
+  | 'settings.hth.assistantUpdateVersions'
   | 'settings.hth.logout'
   | 'settings.hth.logoutFailed'
   | 'settings.hth.logoutSuccess'

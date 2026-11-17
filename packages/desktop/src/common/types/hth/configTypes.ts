@@ -100,7 +100,16 @@ export function isHTHUnauthorizedSyncResult(result: unknown): result is HTHUnaut
 
 export type HTHSyncAgentConfigsRequest = {
   force?: boolean;
+  incremental?: boolean;
+  background?: boolean;
   syncId?: string;
+};
+
+export type HTHAssistantUpdate = {
+  assistantId: string;
+  localVersion?: string;
+  remoteVersion: string;
+  updateAvailable: boolean;
 };
 
 export type HTHInjectProjectConfigRequest = {

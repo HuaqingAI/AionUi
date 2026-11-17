@@ -6,6 +6,8 @@
 
 import { ipcBridge } from '@/common';
 import { isHTHUnauthorizedSyncResult } from '@/common/types/hth';
+import type { HTHAuthStatus } from '@/common/types/hth';
+import { syncHTHAssistantsAfterLogin } from '@renderer/services/runtime/hthAssistantSync';
 import AppLoader from '@renderer/components/layout/AppLoader';
 import AppLogo from '@renderer/components/layout/AppLogo';
 import WindowControls from '@renderer/components/layout/WindowControls';
@@ -58,30 +60,34 @@ const HTHLogin: React.FC = () => {
     };
   }, [navigate]);
 
-  const completeLogin = useCallback(async () => {
-    try {
-      const syncResult = await ipcBridge.hth.syncAgentConfigs.invoke({ force: true });
-      if (isHTHUnauthorizedSyncResult(syncResult)) {
-        if (!disposedRef.current) {
-          await navigate('/hth-login', { replace: true });
+  const completeLogin = useCallback(
+    async (status: HTHAuthStatus) => {
+      try {
+        const syncResult = await syncHTHAssistantsAfterLogin(status);
+        if (isHTHUnauthorizedSyncResult(syncResult)) {
+          if (!disposedRef.current) {
+            await navigate('/hth-login', { replace: true });
+          }
+          return;
         }
-        return;
+        if (!syncResult.success) Message.warning(formatHTHText(t('settings.hth.syncFailed')));
+      } catch (error) {
+        console.error('[HTHLogin] Failed to sync hth configs after login:', error);
+        Message.warning(formatHTHText(t('settings.hth.syncFailed')));
       }
-    } catch (error) {
-      console.error('[HTHLogin] Failed to sync hth configs after login:', error);
-      Message.warning(formatHTHText(t('settings.hth.syncFailed')));
-    }
-    if (!disposedRef.current) {
-      await navigate('/guid', { replace: true });
-    }
-  }, [navigate, t]);
+      if (!disposedRef.current) {
+        await navigate('/guid', { replace: true });
+      }
+    },
+    [navigate, t]
+  );
 
   const waitForAuthStatus = useCallback(async (): Promise<boolean> => {
     const deadline = Date.now() + 2 * 60 * 1000;
     while (!disposedRef.current && Date.now() < deadline) {
       const status = await ipcBridge.hth.authStatus.invoke();
       if (status.loggedIn) {
-        await completeLogin();
+        await completeLogin(status);
         return true;
       }
       await new Promise((resolve) => setTimeout(resolve, 1000));

@@ -44,6 +44,11 @@
   background: var(--bg-1);
 }
 
+/* Login messages are centered in the window without a sidebar offset. */
+:global(body):has(.loginCanvas) :global(.arco-message-wrapper) {
+  padding-inline: 10px;
+}
+
 .loginPanel {
   display: grid;
   grid-template-columns: minmax(230px, 0.75fr) minmax(360px, 1.25fr);

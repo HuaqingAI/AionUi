@@ -25,6 +25,9 @@ export type HTHPackageManifest = {
   avatarPath?: string;
   name: string;
   syncedAt: number;
+  /** Undefined keeps manifests written before successful application was tracked compatible. */
+  appliedAt?: number | null;
+  appliedScope?: string;
   extractDir: string;
   globalFiles: string[];
   projectFiles: string[];
@@ -103,11 +106,32 @@ export class HTHPackageStore {
   }
 
   async findByAssistantId(assistantId: string): Promise<HTHPackageManifest | null> {
-    const manifests = await this.readAllManifests();
-    return (
-      manifests.filter((manifest) => manifest.assistantId === assistantId).toSorted(compareManifestsByFreshness)[0] ??
-      null
+    const manifests = (await this.readAllManifests()).filter(
+      (manifest) => manifest.assistantId === assistantId && manifest.appliedAt !== null
     );
+    const applied = manifests.filter((manifest) => manifest.appliedAt !== undefined);
+    if (applied.length > 0) {
+      return applied.toSorted((a, b) => (b.appliedAt ?? 0) - (a.appliedAt ?? 0))[0];
+    }
+    return manifests.toSorted(compareManifestsByFreshness)[0] ?? null;
+  }
+
+  async findAppliedByAssistantId(
+    assistantId: string,
+    scope: string,
+    knownManifests?: HTHPackageManifest[]
+  ): Promise<HTHPackageManifest | null> {
+    const manifests = (knownManifests ?? (await this.readAllManifests())).filter(
+      (manifest) =>
+        manifest.assistantId === assistantId &&
+        manifest.appliedAt !== null &&
+        (!manifest.appliedScope || manifest.appliedScope === scope)
+    );
+    const applied = manifests.filter((manifest) => manifest.appliedAt !== undefined);
+    if (applied.length > 0) {
+      return applied.toSorted((a, b) => (b.appliedAt ?? 0) - (a.appliedAt ?? 0))[0];
+    }
+    return manifests.toSorted(compareManifestsByFreshness)[0] ?? null;
   }
 
   async readAllManifests(): Promise<HTHPackageManifest[]> {

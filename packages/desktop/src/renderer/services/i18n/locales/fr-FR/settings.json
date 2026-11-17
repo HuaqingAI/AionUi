@@ -1419,6 +1419,8 @@
   "platformHTH": "HTH",
   "hth": {
     "syncAssistants": "Sync Assistants",
+    "assistantUpdateAvailable": "Nouvelle version disponible",
+    "assistantUpdateVersions": "{{localVersion}} → {{remoteVersion}}. Cliquez sur Synchroniser les assistants pour mettre à jour.",
     "syncSuccess": "HTH sync complete: {{success}} successful, {{failed}} failed",
     "syncFailed": "HTH sync failed",
     "syncProgressTitle": "Syncing assistants",

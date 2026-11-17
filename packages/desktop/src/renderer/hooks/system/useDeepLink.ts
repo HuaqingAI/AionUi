@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { ipcBridge } from '@/common';
 import { isHTHUnauthorizedSyncResult } from '@/common/types/hth';
+import { syncHTHAssistantsAfterLogin } from '@renderer/services/runtime/hthAssistantSync';
 
 /**
  * Deep link event payload from main process
@@ -70,14 +71,19 @@ export const useDeepLink = () => {
 
         void ipcBridge.hth.exchangeLoginCode
           .invoke({ code, state })
-          .then(async () => {
+          .then(async (status) => {
+            if (!status.loggedIn) {
+              await navigate('/hth-login', { replace: true });
+              return;
+            }
             Message.success(formatHTHText(t('login.hth.success')));
             try {
-              const syncResult = await ipcBridge.hth.syncAgentConfigs.invoke({ force: true });
+              const syncResult = await syncHTHAssistantsAfterLogin(status);
               if (isHTHUnauthorizedSyncResult(syncResult)) {
                 await navigate('/hth-login', { replace: true });
                 return;
               }
+              if (!syncResult.success) Message.warning(formatHTHText(t('settings.hth.syncFailed')));
             } catch (error) {
               console.error('[DeepLink] Failed to sync hth configs after login:', error);
               Message.warning(formatHTHText(t('settings.hth.syncFailed')));

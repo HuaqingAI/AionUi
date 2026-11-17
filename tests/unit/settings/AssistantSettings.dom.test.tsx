@@ -6,19 +6,40 @@
 
 import React from 'react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { ConfigProvider } from '@arco-design/web-react';
 import { MemoryRouter } from 'react-router-dom';
 import AssistantSettings from '@/renderer/pages/settings/AssistantSettings';
 import EnabledAssistantsList from '@/renderer/pages/settings/AssistantSettings/home/EnabledAssistantsList';
 import type { AssistantListItem } from '@/renderer/pages/settings/AssistantSettings/types';
+import { SWRConfig } from 'swr';
 
 const useAssistantListMock = vi.fn();
 const useAssistantEditorMock = vi.fn();
+const hthMocks = vi.hoisted(() => ({
+  checkAgentUpdates: vi.fn(),
+  syncAgentConfigs: vi.fn(),
+}));
+
+vi.mock('@/common', async () => {
+  const actual = await vi.importActual<typeof import('@/common')>('@/common');
+  return {
+    ...actual,
+    ipcBridge: {
+      ...actual.ipcBridge,
+      hth: {
+        ...actual.ipcBridge.hth,
+        checkAgentUpdates: { invoke: hthMocks.checkAgentUpdates },
+        syncAgentConfigs: { invoke: hthMocks.syncAgentConfigs },
+      },
+    },
+  };
+});
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (_key: string, options?: { defaultValue?: string }) => options?.defaultValue || _key,
+    t: (_key: string, options?: Record<string, unknown> & { defaultValue?: string }) =>
+      (options?.defaultValue || _key).replace(/\{\{(\w+)\}\}/g, (_match, key: string) => String(options?.[key] ?? '')),
     i18n: { language: 'en-US' },
   }),
 }));
@@ -36,6 +57,14 @@ vi.mock('@arco-design/web-react', async () => {
 vi.mock('@/renderer/hooks/assistant', () => ({
   useAssistantList: () => useAssistantListMock(),
   useAssistantEditor: (params: unknown) => useAssistantEditorMock(params),
+}));
+
+vi.mock('@/renderer/hooks/agent/useManagedAgents', () => ({
+  useManagedAgentRuntimeCatalog: () => [],
+}));
+
+vi.mock('@/renderer/hooks/context/LayoutContext', () => ({
+  useLayoutContext: () => null,
 }));
 
 vi.mock('@/renderer/pages/settings/components/SettingsPageWrapper', () => ({
@@ -78,6 +107,8 @@ vi.mock('@/renderer/pages/settings/AssistantSettings/assistantUtils', async () =
 
 describe('AssistantSettings', () => {
   beforeEach(() => {
+    hthMocks.checkAgentUpdates.mockReset().mockResolvedValue([]);
+    hthMocks.syncAgentConfigs.mockReset();
     useAssistantListMock.mockReturnValue({
       assistants: [],
       activeAssistantId: 'assistant-1',
@@ -148,6 +179,107 @@ describe('AssistantSettings', () => {
       handleDeleteConfirm: vi.fn(),
       setEditVisible: vi.fn(),
     });
+  });
+
+  const renderHome = () => {
+    useAssistantEditorMock.mockReturnValue({ ...useAssistantEditorMock(), editVisible: false });
+    useAssistantListMock.mockReturnValue({
+      ...useAssistantListMock(),
+      assistants: [
+        { id: 'hth-helper', name: 'HTH Helper', source: 'user', enabled: true, sort_order: 1 },
+        { id: 'hth-current', name: 'Current Helper', source: 'user', enabled: true, sort_order: 2 },
+        { id: 'custom', name: 'Local Helper', source: 'user', enabled: true, sort_order: 3 },
+      ] as AssistantListItem[],
+    });
+    return render(
+      <SWRConfig value={{ provider: () => new Map(), shouldRetryOnError: false, dedupingInterval: 0 }}>
+        <ConfigProvider>
+          <MemoryRouter>
+            <AssistantSettings />
+          </MemoryRouter>
+        </ConfigProvider>
+      </SWRConfig>
+    );
+  };
+
+  it('checks versions without synchronizing and marks updated avatars in both assistant tabs', async () => {
+    hthMocks.checkAgentUpdates.mockResolvedValue([
+      { assistantId: 'hth-helper', localVersion: '1.0.0', remoteVersion: '1.0.1', updateAvailable: true },
+      { assistantId: 'hth-current', localVersion: '1.0.0', remoteVersion: '1.0.0', updateAvailable: false },
+    ]);
+    renderHome();
+
+    const updateBadge = await screen.findByTestId('assistant-update-hth-helper');
+    expect(updateBadge).toHaveAccessibleName('New version available');
+    expect(updateBadge.querySelector('.arco-badge-dot')).toBeVisible();
+    expect(screen.queryByTestId('assistant-update-hth-current')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('assistant-update-custom')).not.toBeInTheDocument();
+    expect(hthMocks.syncAgentConfigs).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText('My Assistants'));
+    const cardBadge = within(screen.getByTestId('assistant-card-hth-helper')).getByTestId(
+      'assistant-update-hth-helper'
+    );
+    expect(cardBadge.querySelector('.arco-badge-dot')).toBeVisible();
+    fireEvent.mouseEnter(cardBadge);
+    expect(await screen.findByText('1.0.0 → 1.0.1. Click Sync Assistants to update.')).toBeVisible();
+  });
+
+  it('keeps local assistants usable when checking versions fails', async () => {
+    hthMocks.checkAgentUpdates.mockRejectedValue(new Error('Offline'));
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    renderHome();
+
+    await waitFor(() => expect(warning).toHaveBeenCalled());
+    expect(screen.getByTestId('enabled-assistant-row-custom')).toHaveTextContent('Local Helper');
+    expect(screen.queryByTestId('assistant-update-hth-helper')).not.toBeInTheDocument();
+    warning.mockRestore();
+  });
+
+  it('synchronizes changed assistants and clears their version badges after successful installation', async () => {
+    hthMocks.checkAgentUpdates
+      .mockResolvedValueOnce([
+        { assistantId: 'hth-helper', localVersion: '1.0.0', remoteVersion: '1.0.1', updateAvailable: true },
+      ])
+      .mockResolvedValue([
+        { assistantId: 'hth-helper', localVersion: '1.0.1', remoteVersion: '1.0.1', updateAvailable: false },
+      ]);
+    hthMocks.syncAgentConfigs.mockResolvedValue({
+      success: true,
+      imported: 0,
+      skipped: 0,
+      failed: 0,
+      updated: 1,
+      packages: [{ id: 'hth-helper', name: 'HTH Helper', version: '1.0.1', status: 'updated' }],
+    });
+    renderHome();
+    await screen.findByTestId('assistant-update-hth-helper');
+
+    fireEvent.click(screen.getByRole('button', { name: 'settings.HTH.syncAssistants' }));
+
+    await waitFor(() => expect(screen.queryByTestId('assistant-update-hth-helper')).not.toBeInTheDocument());
+    expect(hthMocks.syncAgentConfigs).toHaveBeenCalledWith({
+      incremental: true,
+      force: false,
+      syncId: expect.any(String),
+    });
+    expect(useAssistantListMock().loadAssistants).toHaveBeenCalled();
+  });
+
+  it('preserves version badges when synchronizing fails', async () => {
+    hthMocks.checkAgentUpdates.mockResolvedValue([
+      { assistantId: 'hth-helper', localVersion: '1.0.0', remoteVersion: '1.0.1', updateAvailable: true },
+    ]);
+    hthMocks.syncAgentConfigs.mockRejectedValue(new Error('Download failed'));
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    renderHome();
+    await screen.findByTestId('assistant-update-hth-helper');
+
+    fireEvent.click(screen.getByRole('button', { name: 'settings.HTH.syncAssistants' }));
+
+    await waitFor(() => expect(error).toHaveBeenCalled());
+    expect(screen.getByTestId('assistant-update-hth-helper')).toBeInTheDocument();
+    error.mockRestore();
   });
 
   it('keeps the editor visible when an existing assistant session is open and activeAssistant is temporarily null', () => {

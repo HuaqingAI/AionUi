@@ -53,6 +53,7 @@ import type {
 } from '../types/provider/providerApi';
 import type {
   HTHAuthStatus,
+  HTHAssistantUpdate,
   HTHExchangeLoginCodeRequest,
   HTHInitialModelCatalog,
   HTHInjectProjectConfigRequest,
@@ -863,6 +864,7 @@ export const hth = {
   exchangeLoginCode: bridge.buildProvider<HTHAuthStatus, HTHExchangeLoginCodeRequest>('hth.exchange-login-code'),
   logout: bridge.buildProvider<HTHAuthStatus, void>('hth.logout'),
   syncAgentConfigs: bridge.buildProvider<HTHSyncResult, HTHSyncAgentConfigsRequest>('hth.sync-agent-configs'),
+  checkAgentUpdates: bridge.buildProvider<HTHAssistantUpdate[], void>('hth.check-agent-updates'),
   initialModelCatalog: bridge.buildProvider<HTHInitialModelCatalog | null, void>('hth.initial-model-catalog'),
   syncAgentConfigsProgress: bridge.buildEmitter<HTHSyncProgressEvent>('hth.sync-agent-configs.progress'),
   injectProjectConfig: bridge.buildProvider<HTHInjectProjectConfigResult, HTHInjectProjectConfigRequest>(

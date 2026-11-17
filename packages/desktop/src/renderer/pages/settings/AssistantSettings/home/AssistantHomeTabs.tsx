@@ -5,6 +5,7 @@
  */
 
 import type { AssistantListItem } from '../types';
+import type { HTHAssistantUpdate } from '@/common/types/hth';
 import EnabledAssistantsList from './EnabledAssistantsList';
 import MyAssistantsList from './MyAssistantsList';
 import { useLayoutContext } from '@/renderer/hooks/context/LayoutContext';
@@ -17,6 +18,7 @@ import { useTranslation } from 'react-i18next';
 
 type AssistantHomeTabsProps = {
   assistants: AssistantListItem[];
+  assistantUpdates?: ReadonlyMap<string, HTHAssistantUpdate>;
   assistantOrder: readonly string[];
   localeKey: string;
   onOpenDetail: (assistant: AssistantListItem) => void;
@@ -38,6 +40,7 @@ const formatHTHText = (value: string): string => value.replace(/hth/gi, 'HTH');
 
 const AssistantHomeTabs: React.FC<AssistantHomeTabsProps> = ({
   assistants,
+  assistantUpdates,
   assistantOrder,
   localeKey,
   onOpenDetail,
@@ -167,6 +170,7 @@ const AssistantHomeTabs: React.FC<AssistantHomeTabsProps> = ({
           {tab === 'enabled' ? (
             <EnabledAssistantsList
               assistants={filteredAssistants}
+              assistantUpdates={assistantUpdates}
               assistantOrder={assistantOrder}
               localeKey={localeKey}
               searchActive={Boolean(normalizedSearchQuery)}
@@ -178,6 +182,7 @@ const AssistantHomeTabs: React.FC<AssistantHomeTabsProps> = ({
           ) : tab === 'mine' ? (
             <MyAssistantsList
               assistants={filteredAssistants}
+              assistantUpdates={assistantUpdates}
               localeKey={localeKey}
               onOpenDetail={onOpenDetail}
               onDelete={onDelete}

@@ -1421,6 +1421,8 @@
   "platformHTH": "HTH",
   "hth": {
     "syncAssistants": "Sync Assistants",
+    "assistantUpdateAvailable": "新しいバージョンがあります",
+    "assistantUpdateVersions": "{{localVersion}} → {{remoteVersion}}。「アシスタントを同期」をクリックして更新してください。",
     "syncSuccess": "HTH sync complete: {{success}} successful, {{failed}} failed",
     "syncFailed": "HTH sync failed",
     "syncProgressTitle": "Syncing assistants",

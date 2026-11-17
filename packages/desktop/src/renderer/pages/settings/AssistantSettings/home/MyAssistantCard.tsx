@@ -5,6 +5,7 @@
  */
 
 import type { AssistantListItem } from '../types';
+import type { HTHAssistantUpdate } from '@/common/types/hth';
 import AssistantAvatar from '../AssistantAvatar';
 import RuntimeBadge from './RuntimeBadge';
 import { Button, Dropdown, Menu, Switch, Tooltip } from '@arco-design/web-react';
@@ -14,6 +15,7 @@ import { useTranslation } from 'react-i18next';
 
 type MyAssistantCardProps = {
   assistant: AssistantListItem;
+  update?: HTHAssistantUpdate;
   localeKey: string;
   onOpenDetail: (assistant: AssistantListItem) => void;
   onDelete: (assistant: AssistantListItem) => void;
@@ -29,6 +31,7 @@ type MyAssistantCardProps = {
  */
 const MyAssistantCard: React.FC<MyAssistantCardProps> = ({
   assistant,
+  update,
   localeKey,
   onOpenDetail,
   onDelete,
@@ -68,7 +71,7 @@ const MyAssistantCard: React.FC<MyAssistantCardProps> = ({
       {/* Header row: avatar on the left, enable switch on the right. */}
       <div className='flex items-start justify-between'>
         <span className={enabled ? '' : 'opacity-55'}>
-          <AssistantAvatar assistant={assistant} size={42} />
+          <AssistantAvatar assistant={assistant} update={update} size={42} />
         </span>
         <span onClick={(e) => e.stopPropagation()}>
           <Switch

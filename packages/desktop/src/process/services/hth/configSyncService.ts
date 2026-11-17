@@ -17,6 +17,7 @@ import { HTH_DEFAULT_MODEL } from '@/common/config/constants';
 import type {
   HTHAgentConfigItem,
   HTHAgentConfigs,
+  HTHAssistantUpdate,
   HTHCliType,
   HTHInjectProjectConfigRequest,
   HTHInjectProjectConfigResult,
@@ -66,6 +67,7 @@ type AssistantWriteResult = {
   deleted: number;
   skipped: number;
   failed: number;
+  failedIds?: string[];
 };
 
 type PackageSyncOutcome = {
@@ -80,6 +82,11 @@ type PreparedAssistantAvatar = {
 };
 
 type HTHSyncProgressReporter = (event: HTHSyncProgressEvent) => void;
+type HTHSyncTask = {
+  promise: Promise<HTHSyncResult>;
+  reporters: Set<HTHSyncProgressReporter>;
+  progress?: HTHSyncProgressEvent;
+};
 type HTHCoreFetch = (url: string, init?: RequestInit) => Promise<Response>;
 
 type ApiEnvelope<T> = {
@@ -193,6 +200,8 @@ class HTHUnauthorizedConfigError extends Error {
 }
 
 export class HTHConfigSyncService {
+  private syncQueue: Promise<void> = Promise.resolve();
+  private readonly syncTasks = new Map<string, HTHSyncTask>();
   private readonly initialModelCatalogRequests = new Map<string, Promise<HTHInitialModelCatalog | null>>();
   private codexModelCatalogSyncPromise: Promise<CodexConfigFailureReason | string[]> | null = null;
   private modelPricingCache: { key: string; expiresAt: number; snapshot: ModelPricingSnapshot } | null = null;
@@ -211,10 +220,79 @@ export class HTHConfigSyncService {
     request: HTHSyncAgentConfigsRequest,
     reportProgress: HTHSyncProgressReporter = () => undefined
   ): Promise<HTHSyncResult> {
-    const access = await this.getAccessOrLogout();
+    const access = await this.getAccessOrLogout(request.background !== true);
+    if (!access) return this.authRequiredSyncResult();
+    const scope = JSON.stringify([access.baseUrl, access.email]);
+    const key = JSON.stringify([
+      scope,
+      request.force === true,
+      request.incremental === true,
+      request.background === true,
+    ]);
+    const reporter: HTHSyncProgressReporter = (event) => this.reportSyncProgress(reportProgress, request.syncId, event);
+    const existing = this.syncTasks.get(key);
+    if (existing) {
+      existing.reporters.add(reporter);
+      if (existing.progress) reporter(existing.progress);
+      return existing.promise;
+    }
+
+    const run: Promise<HTHSyncResult> = this.syncQueue.then(() =>
+      this.applyAgentConfigs(request, scope, (event) => {
+        task.progress = event;
+        for (const subscriber of task.reporters) subscriber(event);
+      })
+    );
+    const task: HTHSyncTask = {
+      promise: run.finally(() => this.syncTasks.delete(key)),
+      reporters: new Set([reporter]),
+    };
+    this.syncTasks.set(key, task);
+    this.syncQueue = task.promise.then(
+      (): void => undefined,
+      (): void => undefined
+    );
+    return task.promise;
+  }
+
+  /** Compare remote versions without downloading packages or changing local assistants. */
+  async checkAgentUpdates(): Promise<HTHAssistantUpdate[]> {
+    const access = await this.getAccessOrLogout(false);
+    if (!access) return [];
+    const configs = await this.fetchConfigs(access.baseUrl, access.token);
+    const scope = JSON.stringify([access.baseUrl, access.email]);
+    const [existing, manifests] = await Promise.all([
+      this.listAssistants(this.requireBackendPort()),
+      this.packageStore.readAllManifests(),
+    ]);
+    await this.assertSyncScope(scope);
+    return Promise.all(
+      this.selectAgentVersions(configs.agents, access.baseUrl).map(async (agent) => {
+        const assistantId = resolveHTHAssistantId(access.baseUrl, agent.cli_type, agent);
+        const local = await this.packageStore.findAppliedByAssistantId(assistantId, scope, manifests);
+        const installed = existing.has(assistantId);
+        return {
+          assistantId,
+          localVersion: installed ? local?.version : undefined,
+          remoteVersion: agent.version,
+          updateAvailable: installed && (!local || local.version !== agent.version),
+        };
+      })
+    );
+  }
+
+  private async applyAgentConfigs(
+    request: HTHSyncAgentConfigsRequest,
+    expectedScope: string,
+    reportProgress: HTHSyncProgressReporter
+  ): Promise<HTHSyncResult> {
+    const incremental = request.incremental === true && request.force !== true;
+    const access = await this.getAccessOrLogout(request.background !== true);
     if (!access) {
       return this.authRequiredSyncResult();
     }
+    const scope = JSON.stringify([access.baseUrl, access.email]);
+    if (scope !== expectedScope) throw new Error('HTH account changed before assistant synchronization');
 
     this.reportSyncProgress(reportProgress, request.syncId, {
       stage: 'preparing',
@@ -229,18 +307,46 @@ export class HTHConfigSyncService {
       configs = await this.fetchConfigs(access.baseUrl, access.token);
     } catch (error) {
       if (error instanceof HTHUnauthorizedConfigError) {
-        await this.authService.logout();
+        if (!request.background) {
+          await this.assertSyncScope(scope);
+          await this.authService.logout();
+        }
         return this.authRequiredSyncResult(access.email, error.message);
       }
       throw error;
     }
+    await this.assertSyncScope(scope);
 
-    const managedAgentIds = await this.resolveManagedAgentIds();
+    const remoteAgents = this.selectAgentVersions(configs.agents, access.baseUrl);
+    const currentAssistantIds = new Set(
+      remoteAgents.map((agent) => resolveHTHAssistantId(access.baseUrl, agent.cli_type, agent))
+    );
+    let agents = remoteAgents;
+    let versionSkipped = 0;
+    if (incremental) {
+      const [existing, manifests] = await Promise.all([
+        this.listAssistants(this.requireBackendPort()),
+        this.packageStore.readAllManifests(),
+      ]);
+      const updates = await Promise.all(
+        remoteAgents.map(async (agent) => {
+          const id = resolveHTHAssistantId(access.baseUrl, agent.cli_type, agent);
+          const applied = await this.packageStore.findAppliedByAssistantId(id, scope, manifests);
+          return !existing.has(id) || applied?.version !== agent.version;
+        })
+      );
+      agents = remoteAgents.filter((_, index) => updates[index]);
+      versionSkipped = remoteAgents.length - agents.length;
+    }
+    const managedAgentIds =
+      agents.length > 0 || !incremental
+        ? await this.resolveManagedAgentIds()
+        : new Map<HTHCliType, string | undefined>();
     const packageResults: HTHSyncPackageResult[] = [];
     const assistants: CreateAssistantRequest[] = [];
-    const currentAssistantIds = new Set<string>();
+    const appliedPackages: HTHPackageManifest[] = [];
     const unchangedRemoteAvatarIds = new Set<string>();
-    const total = configs.agents.length;
+    const total = agents.length;
     let completed = 0;
     let synced = 0;
     let failed = 0;
@@ -253,7 +359,7 @@ export class HTHConfigSyncService {
       failed,
     });
 
-    for (const agent of configs.agents) {
+    for (const agent of agents) {
       let packageId = agent.id?.trim() || agent.url || agent.name;
       let packageSynced = false;
       this.reportSyncProgress(reportProgress, request.syncId, {
@@ -271,7 +377,6 @@ export class HTHConfigSyncService {
         const cliType = this.requireAgentCliType(agent);
         const assistantId = resolveHTHAssistantId(access.baseUrl, cliType, agent);
         packageId = resolveHTHPackageId(access.baseUrl, cliType, agent);
-        currentAssistantIds.add(assistantId);
         // eslint-disable-next-line no-await-in-loop -- package sync is intentionally ordered for deterministic results.
         const outcome = await this.syncPackage({
           agent,
@@ -280,7 +385,8 @@ export class HTHConfigSyncService {
           cliType,
           access,
           packageId,
-          force: request.force === true,
+          force: request.force === true || incremental,
+          scope,
         });
         // eslint-disable-next-line no-await-in-loop -- avatar preparation belongs to the same ordered agent sync step.
         const avatar = await this.prepareAssistantAvatar(agent.avatar, assistantId);
@@ -298,6 +404,7 @@ export class HTHConfigSyncService {
           await this.packageStore.writeManifest(outcome.manifest);
         }
         assistants.push(this.mapAssistant(agent, assistantId, managedAgentIds.get(cliType), avatar.value));
+        appliedPackages.push(outcome.manifest);
         packageResults.push({
           id: outcome.manifest.packageId,
           name: agent.name,
@@ -337,6 +444,7 @@ export class HTHConfigSyncService {
       synced,
       failed,
     });
+    await this.assertSyncScope(scope);
     const backendPort = this.requireBackendPort();
     const existingAssistants =
       assistants.length > 0 ? await this.listAssistants(backendPort) : new Map<string, Assistant>();
@@ -357,8 +465,25 @@ export class HTHConfigSyncService {
       assistantsWithDefaultMcp.length > 0
         ? await this.updateAssistants(assistantsWithDefaultMcp, existingAssistants, unchangedRemoteAvatarIds)
         : this.emptyAssistantWriteResult();
-    if (assistantsWithDefaultMcp.some((assistant) => (assistant.categories?.length ?? 0) > 0)) {
-      await this.persistAssistantCategories(assistantsWithDefaultMcp);
+    if (
+      (incremental && assistantsWithDefaultMcp.length > 0) ||
+      assistantsWithDefaultMcp.some((assistant) => (assistant.categories?.length ?? 0) > 0)
+    ) {
+      await this.persistAssistantCategories(assistantsWithDefaultMcp, incremental);
+    }
+    const failedImportIds = new Set(importResult.errors?.map((error) => error.id));
+    const failedUpdateIds = new Set(updateResult.failedIds);
+    const identifiedImportFailures = failedImportIds.size >= importResult.failed;
+    for (const manifest of appliedPackages) {
+      if (
+        identifiedImportFailures &&
+        !failedImportIds.has(manifest.assistantId) &&
+        !failedUpdateIds.has(manifest.assistantId)
+      ) {
+        manifest.appliedAt = Date.now();
+        manifest.appliedScope = scope;
+        await this.packageStore.writeManifest(manifest);
+      }
     }
     this.reportSyncProgress(reportProgress, request.syncId, {
       stage: 'removing_revoked',
@@ -367,13 +492,14 @@ export class HTHConfigSyncService {
       synced,
       failed,
     });
+    await this.assertSyncScope(scope);
     const deleteResult = await this.deleteRevokedAssistants(currentAssistantIds);
     const success =
       packageResults.every((item) => item.status !== 'failed') &&
       importResult.failed === 0 &&
       updateResult.failed === 0 &&
       deleteResult.failed === 0;
-    if (success && assistants.length > 0) {
+    if (success && assistants.length > 0 && !request.background) {
       await this.getInitialModelCatalog();
     }
     return {
@@ -381,7 +507,7 @@ export class HTHConfigSyncService {
       email: configs.user_email || access.email,
       revision: configs.revision,
       imported: importResult.imported,
-      skipped: updateResult.skipped,
+      skipped: updateResult.skipped + versionSkipped,
       failed:
         importResult.failed +
         updateResult.failed +
@@ -937,14 +1063,15 @@ export class HTHConfigSyncService {
     } catch {
       throw new Error(`hth config request failed: ${response.status}`);
     }
-    if (!response.ok) {
+    if (!response.ok || ('success' in parsed && parsed.success === false)) {
       const envelope = parsed as ApiEnvelope<HTHAgentConfigs>;
       throw new Error(envelope.error || envelope.msg || `hth config request failed: ${response.status}`);
     }
-    if ('data' in parsed && parsed.data) {
-      return parsed.data;
+    const configs = 'data' in parsed && parsed.data ? parsed.data : (parsed as HTHAgentConfigs);
+    if (!Array.isArray(configs.agents)) {
+      throw new Error('Invalid HTH assistant list');
     }
-    return parsed as HTHAgentConfigs;
+    return configs;
   }
 
   private requireAgentCliType(agent: HTHAgentConfigItem): HTHCliType {
@@ -954,12 +1081,31 @@ export class HTHConfigSyncService {
     throw new Error(`Unsupported agent cli_type: ${String(agent.cli_type)}`);
   }
 
-  private async getAccessOrLogout(): Promise<HTHAccess | null> {
+  private selectAgentVersions(agents: HTHAgentConfigItem[], baseUrl: string): HTHAgentConfigItem[] {
+    const selected = new Map<string, HTHAgentConfigItem>();
+    for (const agent of agents) {
+      const id = resolveHTHAssistantId(baseUrl, agent.cli_type, agent);
+      const previous = selected.get(id);
+      if (!previous || agent.version.localeCompare(previous.version, 'en', { numeric: true }) > 0) {
+        selected.set(id, agent);
+      }
+    }
+    return [...selected.values()];
+  }
+
+  private async assertSyncScope(scope: string): Promise<void> {
+    const current = await this.authService.getAccess();
+    if (JSON.stringify([current.baseUrl, current.email]) !== scope) {
+      throw new Error('HTH account changed during assistant synchronization');
+    }
+  }
+
+  private async getAccessOrLogout(logout = true): Promise<HTHAccess | null> {
     try {
       return await this.authService.getAccess();
     } catch (error) {
       if (this.isLoginRequiredError(error)) {
-        await this.authService.logout();
+        if (logout) await this.authService.logout();
         return null;
       }
       throw error;
@@ -1469,10 +1615,15 @@ export class HTHConfigSyncService {
     access: HTHAccess;
     packageId: string;
     force: boolean;
+    scope: string;
   }): Promise<PackageSyncOutcome> {
     const manifest = await this.packageStore.readManifest(params.packageId, params.agent.version);
     if (!params.force && manifest && this.isPackageManifestCurrent(manifest, params.agent)) {
       return { manifest, changed: false, existing: true };
+    }
+
+    if (manifest) {
+      await this.packageStore.writeManifest({ ...manifest, appliedAt: null, appliedScope: params.scope });
     }
 
     const zipPath = this.packageStore.getZipPath(params.packageId, params.agent.version);
@@ -1489,6 +1640,7 @@ export class HTHConfigSyncService {
     const projectFiles = entries.filter((entry) => entry.section === 'project').map((entry) => entry.relativePath);
     const globalTarget = this.globalTargetForCliType(params.cliType);
     const globalConfigDir = this.globalConfigDirForCliType(params.cliType);
+    await this.assertSyncScope(params.scope);
     const trustedCodexWorkspaces = params.cliType === 'codex' ? await this.readCodexTrustedWorkspaces() : [];
     const copiedGlobalFiles = await copyManagedSection(extractDir, 'global', globalConfigDir, params.agent.version);
     await this.replaceRuntimePlaceholdersInFiles(globalConfigDir, copiedGlobalFiles, params.access, params.cliType);
@@ -1507,6 +1659,8 @@ export class HTHConfigSyncService {
       size: params.agent.size,
       name: params.agent.name,
       syncedAt: Date.now(),
+      appliedAt: null,
+      appliedScope: params.scope,
       extractDir,
       globalFiles,
       projectFiles,
@@ -1850,14 +2004,29 @@ export class HTHConfigSyncService {
       deleted: 0,
       skipped,
       failed,
+      failedIds: existingAssistantUpdates
+        .filter((_, index) => results[index].status === 'rejected')
+        .map((assistant) => assistant.id),
     };
   }
 
-  private async persistAssistantCategories(assistants: CreateAssistantRequest[]): Promise<void> {
+  private async persistAssistantCategories(assistants: CreateAssistantRequest[], merge = false): Promise<void> {
     const port = this.requireBackendPort();
-    const categories = Object.fromEntries(
+    let categories: Record<string, string[]> = Object.fromEntries(
       assistants.map((assistant) => [assistant.id || '', assistant.categories ?? []]).filter(([id]) => Boolean(id))
     );
+    if (merge) {
+      const existing = await this.coreFetch(
+        `http://127.0.0.1:${port}/api/settings/client?keys=${encodeURIComponent(HTH_ASSISTANT_CATEGORIES_SETTING)}`
+      );
+      if (!existing.ok) {
+        throw new Error(await this.extractBackendError(existing, 'Assistant categories load failed'));
+      }
+      const payload: unknown = await existing.json();
+      const settings = this.isRecord(payload) && this.isRecord(payload.data) ? payload.data : payload;
+      const previous = this.isRecord(settings) ? settings[HTH_ASSISTANT_CATEGORIES_SETTING] : undefined;
+      if (this.isRecord(previous)) categories = { ...(previous as Record<string, string[]>), ...categories };
+    }
     const response = await this.coreFetch(`http://127.0.0.1:${port}/api/settings/client`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
