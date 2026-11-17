@@ -36,6 +36,8 @@ type GuidModelSelectorProps = {
   currentAcpCachedModelInfo: AcpModelInfo | null;
   selectedAcpModel: string | null;
   setSelectedAcpModel: React.Dispatch<React.SetStateAction<string | null>>;
+  allowDefaultModel?: boolean;
+  submenuPosition?: 'lt' | 'rt';
   thoughtLevelOption?: AgentRuntimeDerivedOption | null;
   onThoughtLevelSelect?: (value: string) => void;
 };
@@ -51,6 +53,8 @@ const GuidModelSelector: React.FC<GuidModelSelectorProps> = ({
   currentAcpCachedModelInfo,
   selectedAcpModel,
   setSelectedAcpModel,
+  allowDefaultModel = false,
+  submenuPosition = 'lt',
   thoughtLevelOption,
   onThoughtLevelSelect,
 }) => {
@@ -78,6 +82,13 @@ const GuidModelSelector: React.FC<GuidModelSelectorProps> = ({
   }, [current_model?.use_model, defaultModelLabel, geminiSelectedLabel]);
 
   const acpSelectedLabel = React.useMemo(() => {
+    if (allowDefaultModel) {
+      return (
+        currentAcpCachedModelInfo?.available_models?.find((m) => m.id === selectedAcpModel)?.label ||
+        selectedAcpModel ||
+        ''
+      );
+    }
     return (
       currentAcpCachedModelInfo?.available_models?.find((m) => m.id === selectedAcpModel)?.label ||
       currentAcpCachedModelInfo?.current_model_label ||
@@ -85,6 +96,7 @@ const GuidModelSelector: React.FC<GuidModelSelectorProps> = ({
       ''
     );
   }, [
+    allowDefaultModel,
     currentAcpCachedModelInfo?.available_models,
     currentAcpCachedModelInfo?.current_model_id,
     currentAcpCachedModelInfo?.current_model_label,
@@ -93,12 +105,20 @@ const GuidModelSelector: React.FC<GuidModelSelectorProps> = ({
 
   const acpButtonLabel = React.useMemo(() => {
     return getModelDisplayLabel({
-      selected_value: selectedAcpModel || currentAcpCachedModelInfo?.current_model_id,
+      selected_value: allowDefaultModel
+        ? selectedAcpModel
+        : selectedAcpModel || currentAcpCachedModelInfo?.current_model_id,
       selectedLabel: acpSelectedLabel,
       defaultModelLabel,
       fallbackLabel: defaultModelLabel,
     });
-  }, [acpSelectedLabel, currentAcpCachedModelInfo?.current_model_id, defaultModelLabel, selectedAcpModel]);
+  }, [
+    allowDefaultModel,
+    acpSelectedLabel,
+    currentAcpCachedModelInfo?.current_model_id,
+    defaultModelLabel,
+    selectedAcpModel,
+  ]);
   const modelScopedThoughtLevelOption = thoughtLevelOption;
   const selectedThoughtLevelValue =
     modelScopedThoughtLevelOption?.currentValue || modelScopedThoughtLevelOption?.options[0]?.value || '';
@@ -198,11 +218,20 @@ const GuidModelSelector: React.FC<GuidModelSelectorProps> = ({
   if (currentAcpCachedModelInfo && currentAcpCachedModelInfo.available_models?.length > 0) {
     if (currentAcpCachedModelInfo.available_models.length > 0) {
       const modelListNode = (
-        <RuntimeSelectorModelList
-          models={currentAcpCachedModelInfo.available_models}
-          currentModelId={selectedAcpModel}
-          onSelect={(modelId) => setSelectedAcpModel(modelId)}
-        />
+        <>
+          {allowDefaultModel && (
+            <Menu.Item key='default-model' onClick={() => setSelectedAcpModel(null)}>
+              <RuntimeSelectorCheckedItem selected={selectedAcpModel === null}>
+                {defaultModelLabel}
+              </RuntimeSelectorCheckedItem>
+            </Menu.Item>
+          )}
+          <RuntimeSelectorModelList
+            models={currentAcpCachedModelInfo.available_models}
+            currentModelId={selectedAcpModel}
+            onSelect={(modelId) => setSelectedAcpModel(modelId)}
+          />
+        </>
       );
 
       return (
@@ -216,7 +245,7 @@ const GuidModelSelector: React.FC<GuidModelSelectorProps> = ({
                       each expands into a left-side submenu. */}
                   <Menu.SubMenu
                     key='model'
-                    triggerProps={RUNTIME_SUBMENU_TRIGGER_PROPS}
+                    triggerProps={{ ...RUNTIME_SUBMENU_TRIGGER_PROPS, position: submenuPosition }}
                     title={
                       <RuntimeSelectorSubMenuTitle
                         label={t('common.model', { defaultValue: 'Model' })}
@@ -228,7 +257,7 @@ const GuidModelSelector: React.FC<GuidModelSelectorProps> = ({
                   </Menu.SubMenu>
                   <Menu.SubMenu
                     key='thought-level'
-                    triggerProps={RUNTIME_SUBMENU_TRIGGER_PROPS}
+                    triggerProps={{ ...RUNTIME_SUBMENU_TRIGGER_PROPS, position: submenuPosition }}
                     title={
                       <RuntimeSelectorSubMenuTitle
                         label={t('agent.thoughtLevel.label')}

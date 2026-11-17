@@ -16,11 +16,10 @@ import type { ICreateCronJobParams, ICronJob, ICronJobUpdateParams } from '@/com
 import { useConversationAssistants } from '@renderer/pages/conversation/hooks/useConversationAssistants';
 import dayjs from 'dayjs';
 import type { TChatConversation, TProviderWithModel } from '@/common/config/storage';
-import { type AcpModelInfo } from '@/common/types/platform/acpTypes';
 import { useManagedAgentRuntimeCatalog } from '@/renderer/hooks/agent/useManagedAgents';
 import { useModelProviderList } from '@renderer/hooks/agent/useModelProviderList';
+import { useAssistantRuntimeCatalog } from '@renderer/hooks/assistant/useAssistantRuntimeCatalog';
 import GuidModelSelector from '@renderer/pages/guid/components/GuidModelSelector';
-import { buildAssistantModelInfo } from '@renderer/pages/guid/hooks/useGuidAssistantSelection';
 import { WorkspaceFolderSelect } from '@renderer/components/workspace';
 import { createCronSchedule } from '@renderer/pages/cron/cronUtils';
 import { getConversationCreateErrorMessage } from '@renderer/pages/conversation/utils/conversationCreateError';
@@ -260,7 +259,7 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [teamOwnershipStatus, setTeamOwnershipStatus] = useState<'checking' | 'team' | 'standalone'>('standalone');
 
-  // Advanced settings state
+  // Task runtime settings
   const [model_id, setModelId] = useState<string | undefined>(undefined);
   const [config_options, setConfigOptions] = useState<Record<string, string> | undefined>(undefined);
   const [workspace, setWorkspace] = useState<string | undefined>(undefined);
@@ -282,20 +281,13 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
       setExecutionMode(editJob.target.execution_mode || 'existing');
       setQueueEnabled(editJob.state.queue_enabled);
       setSelectedAssistantId(agentKey);
-      setAdvancedOpen(
-        Boolean(
-          editJob.metadata.agent_config?.model_id ||
-          editJob.metadata.agent_config?.workspace ||
-          (editJob.metadata.agent_config?.config_options &&
-            Object.keys(editJob.metadata.agent_config.config_options).length > 0)
-        )
-      );
+      setAdvancedOpen(Boolean(editJob.metadata.agent_config?.workspace));
       form.setFieldsValue({
         name: editJob.name,
         assistant: agentKey,
         prompt: editJob.target.payload.text,
       });
-      // Populate advanced settings from editJob
+      // Restore the saved runtime settings.
       setModelId(editJob.metadata.agent_config?.model_id ?? editJob.metadata.agent_config?.model?.model);
       setConfigOptions(editJob.metadata.agent_config?.config_options);
       setWorkspace(editJob.metadata.agent_config?.workspace);
@@ -363,7 +355,7 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
   );
 
   const resolvedBackend = assistantRuntimeKey(selectedAssistant);
-  const selectedAssistantModels = selectedAssistant?.models ?? [];
+  const { modelInfo, thoughtLevelOption: runtimeThoughtLevelOption } = useAssistantRuntimeCatalog(selectedAssistant);
   const resolveAutoApproveModeFromAgentMetadata = useCallback(
     (assistant: (typeof presetAssistants)[number]): string => {
       const agent = managedAgentRuntimeCatalog.find((item) => item.id === assistant.agent_id);
@@ -426,10 +418,29 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
     []
   );
 
-  const acpCachedModelInfo = useMemo<AcpModelInfo | null>(() => {
+  const acpCachedModelInfo = useMemo(() => {
     if (!resolvedBackend || resolvedBackend === 'gemini' || resolvedBackend === 'aionrs') return null;
-    return buildAssistantModelInfo(selectedAssistantModels);
-  }, [resolvedBackend, selectedAssistantModels]);
+    return modelInfo;
+  }, [resolvedBackend, modelInfo]);
+
+  const thoughtLevelOption = useMemo(() => {
+    if (isGeminiMode || !runtimeThoughtLevelOption?.options.length) return null;
+    const savedValue = config_options?.[runtimeThoughtLevelOption.id];
+    const currentValue = runtimeThoughtLevelOption.options.some((option) => option.value === savedValue)
+      ? savedValue
+      : runtimeThoughtLevelOption.options.some((option) => option.value === 'high')
+        ? 'high'
+        : (runtimeThoughtLevelOption.options[0]?.value ?? '');
+    return { ...runtimeThoughtLevelOption, currentValue };
+  }, [isGeminiMode, runtimeThoughtLevelOption, config_options]);
+
+  const handleThoughtLevelSelect = useCallback(
+    (value: string) => {
+      if (!thoughtLevelOption) return;
+      setConfigOptions((previous) => ({ ...previous, [thoughtLevelOption.id]: value }));
+    },
+    [thoughtLevelOption]
+  );
 
   // Auto-pick the first available model from /api/providers when aionrs is
   // selected but none is set yet. Source of truth is the backend provider
@@ -495,7 +506,6 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
   const selectedExecutionModeOption =
     executionModeOptions.find((option) => option.value === execution_mode) ?? executionModeOptions[0];
   const showModelSelector = Boolean(resolvedBackend && (isGeminiMode || acpCachedModelInfo));
-  const advancedFieldCount = Number(showModelSelector) + 1;
   const isOriginalExistingConversationTask = isEditMode && editJob?.target.execution_mode === 'existing';
   const isCheckingTeamOwnership = teamOwnershipStatus === 'checking';
   const isTeamOwnedTask = teamOwnershipStatus === 'team';
@@ -552,7 +562,9 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
               }
             : undefined,
           model_id,
-          config_options,
+          config_options: thoughtLevelOption
+            ? { ...config_options, [thoughtLevelOption.id]: thoughtLevelOption.currentValue }
+            : config_options,
           workspace,
           localeKey,
           getMode: resolveAutoApproveModeFromAgentMetadata,
@@ -701,6 +713,24 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
               </p>
             )}
           </FormItem>
+
+          {canEditAgentConfig && showModelSelector && (
+            <FormItem label={t('cron.page.form.model')}>
+              <GuidModelSelector
+                isGeminiMode={isGeminiMode}
+                modelList={filteredProviders}
+                current_model={geminiCurrentModel}
+                setCurrentModel={handleGeminiModelSelect}
+                currentAcpCachedModelInfo={acpCachedModelInfo}
+                selectedAcpModel={model_id ?? null}
+                setSelectedAcpModel={handleAcpModelSelect}
+                thoughtLevelOption={thoughtLevelOption}
+                onThoughtLevelSelect={handleThoughtLevelSelect}
+                allowDefaultModel
+                submenuPosition='rt'
+              />
+            </FormItem>
+          )}
 
           <FormItem label={t('cron.page.form.executionMode')}>
             <Radio.Group
@@ -964,24 +994,7 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
 
               {advancedOpen && (
                 <div className='mt-12px grid gap-x-16px gap-y-16px md:grid-cols-2'>
-                  {showModelSelector && (
-                    <div className='min-w-0'>
-                      <label className='mb-8px block text-14px font-medium text-t-primary'>
-                        {t('cron.page.form.model')}
-                      </label>
-                      <GuidModelSelector
-                        isGeminiMode={isGeminiMode}
-                        modelList={filteredProviders}
-                        current_model={geminiCurrentModel}
-                        setCurrentModel={handleGeminiModelSelect}
-                        currentAcpCachedModelInfo={acpCachedModelInfo}
-                        selectedAcpModel={model_id ?? null}
-                        setSelectedAcpModel={handleAcpModelSelect}
-                      />
-                    </div>
-                  )}
-
-                  <div className={advancedFieldCount === 1 ? 'md:col-span-2' : ''}>
+                  <div className='md:col-span-2'>
                     <label className='mb-8px block text-14px font-medium text-t-primary'>
                       {t('cron.page.form.workspace')}
                     </label>

@@ -25,6 +25,7 @@ describe('resolveCronAgentConfig', () => {
         name: 'Gemini',
       },
       model_id: 'gemini-3.1-pro-preview',
+      config_options: { thinking_level: 'high' },
       workspace: '/tmp/project',
       getMode: () => 'yolo',
       aionrsModelRequiredMessage: 'provider required',
@@ -41,13 +42,13 @@ describe('resolveCronAgentConfig', () => {
           model: 'gemini-3.1-pro-preview',
           use_model: 'gemini-3.1-pro-preview',
         },
-        config_options: undefined,
+        config_options: { thinking_level: 'high' },
         workspace: '/tmp/project',
       },
     });
   });
 
-  it('keeps preset acp assistants on their backend slug', () => {
+  it('preserves an explicitly selected ACP model and reasoning strength', () => {
     const result = resolveCronAgentConfig({
       agentValue: 'assistant-2',
       presetAssistants: [
@@ -58,6 +59,7 @@ describe('resolveCronAgentConfig', () => {
           agent: agent('agent-codex', 'acp', 'codex'),
         }),
       ],
+      model_id: 'gpt-6.1-sol',
       config_options: { reasoning_effort: 'high' },
       getMode: (selectedAssistant) => (selectedAssistant.agent_id === 'agent-codex' ? 'full-access' : 'yolo'),
       aionrsModelRequiredMessage: 'provider required',
@@ -69,7 +71,7 @@ describe('resolveCronAgentConfig', () => {
         assistant_id: 'assistant-2',
         mode: 'full-access',
         config_options: { reasoning_effort: 'high' },
-        model_id: undefined,
+        model_id: 'gpt-6.1-sol',
         workspace: undefined,
       },
     });

@@ -13,6 +13,7 @@ import { ipcBridge } from '@/common';
 import type { ICronJob } from '@/common/adapter/ipcBridge';
 import type { TChatConversation } from '@/common/config/storage';
 import { useConversationAssistants } from '@renderer/pages/conversation/hooks/useConversationAssistants';
+import { useAssistantRuntimeCatalog } from '@renderer/hooks/assistant/useAssistantRuntimeCatalog';
 import CronStatusTag from './CronStatusTag';
 import CreateTaskDialog from './CreateTaskDialog';
 import { getJobAgentMeta } from './jobAgentMeta';
@@ -54,6 +55,10 @@ const TaskDetailPage: React.FC = () => {
   const isManualOnly = job?.schedule.kind === 'cron' && !job.schedule.expr;
   const { conversations, refetch: refetchConversations } = useCronJobConversations(job_id);
   const { presetAssistants } = useConversationAssistants();
+  const taskAssistant = presetAssistants.find((assistant) => assistant.id === job?.metadata.agent_config?.assistant_id);
+  const { modelInfo } = useAssistantRuntimeCatalog(taskAssistant);
+  const modelId = job?.metadata.agent_config?.model_id;
+  const modelLabel = modelInfo?.available_models.find((model) => model.id === modelId)?.label || modelId;
   const logos = useAgentLogos();
   const assistantIdentity = job ? getJobAgentMeta(job, presetAssistants, logos) : null;
 
@@ -565,9 +570,7 @@ const TaskDetailPage: React.FC = () => {
             {job.metadata.agent_config?.model_id && (
               <section className='flex flex-col gap-10px'>
                 <h2 className='m-0 text-13px font-medium text-t-secondary'>{t('cron.page.form.model')}</h2>
-                <span className='break-words text-14px leading-22px text-t-primary'>
-                  {job.metadata.agent_config.model_id}
-                </span>
+                <span className='break-words text-14px leading-22px text-t-primary'>{modelLabel?.toUpperCase()}</span>
               </section>
             )}
 
@@ -585,7 +588,7 @@ const TaskDetailPage: React.FC = () => {
                 <section className='flex flex-col gap-10px'>
                   <h2 className='m-0 text-13px font-medium text-t-secondary'>{t('acp.config.reasoning_effort')}</h2>
                   <span className='break-words text-14px leading-22px text-t-primary'>
-                    {Object.values(job.metadata.agent_config.config_options).join(', ')}
+                    {Object.values(job.metadata.agent_config.config_options).join(', ').toUpperCase()}
                   </span>
                 </section>
               )}

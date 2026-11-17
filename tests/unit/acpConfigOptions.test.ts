@@ -41,7 +41,10 @@ describe('ACP config option derivation', () => {
     expect(thought?.options.map((item) => item.value)).toEqual(['low', 'high']);
   });
 
-  it('derives select options from backend DTOs using type', () => {
+  it.each([
+    { backend: 'codex', labels: ['Low', 'High'] },
+    { backend: 'opencode', labels: ['low', 'high'] },
+  ])('derives display labels for $backend while preserving protocol values', ({ backend, labels }) => {
     const backendOptions = [
       {
         id: 'reasoning_effort',
@@ -49,16 +52,17 @@ describe('ACP config option derivation', () => {
         type: 'select',
         current_value: 'high',
         options: [
-          { value: 'low', name: 'Low' },
-          { value: 'high', name: 'High' },
+          { value: 'low', name: 'low' },
+          { value: 'high', name: 'high' },
         ],
       },
     ] as unknown as AcpConfigOptionDto[];
 
-    const thought = deriveSelectOption(backendOptions, 'thought_level', ['reasoning_effort']);
+    const thought = deriveSelectOption(backendOptions, 'thought_level', ['reasoning_effort'], backend);
 
     expect(thought?.currentValue).toBe('high');
     expect(thought?.options.map((item) => item.value)).toEqual(['low', 'high']);
+    expect(thought?.options.map((item) => item.label)).toEqual(labels);
   });
 
   it('accepts only observed set responses with matching current_value', () => {

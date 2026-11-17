@@ -69,6 +69,7 @@ export function resolveCronAgentConfig(input: ResolveCronAgentConfigInput): Reso
         model: model_id,
         use_model: model_id,
       },
+      config_options,
       workspace,
     };
   } else {

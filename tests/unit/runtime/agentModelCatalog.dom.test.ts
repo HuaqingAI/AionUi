@@ -6,6 +6,7 @@ import type {
   EnsureConversationRuntimeResponse,
 } from '@/common/types/platform/acpTypes';
 import {
+  applyConfirmedCodexThoughtLevel,
   ensureConversationRuntime,
   resetEnsureConversationRuntimeStateForTests,
 } from '@/renderer/pages/conversation/utils/ensureConversationRuntime';
@@ -20,8 +21,18 @@ import {
 } from '@/renderer/services/runtime/agentModelCatalog';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { ensureRuntimeInvokeMock } = vi.hoisted(() => ({ ensureRuntimeInvokeMock: vi.fn() }));
-vi.mock('@/common', () => ({ ipcBridge: { conversation: { ensureRuntime: { invoke: ensureRuntimeInvokeMock } } } }));
+const { ensureRuntimeInvokeMock, conversationGetInvokeMock } = vi.hoisted(() => ({
+  ensureRuntimeInvokeMock: vi.fn(),
+  conversationGetInvokeMock: vi.fn(),
+}));
+vi.mock('@/common', () => ({
+  ipcBridge: {
+    conversation: {
+      ensureRuntime: { invoke: ensureRuntimeInvokeMock },
+      get: { invoke: conversationGetInvokeMock },
+    },
+  },
+}));
 
 const SCOPE = 'https://gateway.test|alice';
 
@@ -73,8 +84,23 @@ function runtimeResponse(ids: string[]): EnsureConversationRuntimeResponse {
   };
 }
 
+function codexRuntimeResponse(thoughtLevel: string | null = null): EnsureConversationRuntimeResponse {
+  const response = runtimeResponse(['gpt-6.1-sol']);
+  response.config_options[0].current_value = 'gpt-6.1-sol';
+  response.config_options.push({
+    id: 'reasoning_effort',
+    category: 'thought_level',
+    type: 'select',
+    current_value: thoughtLevel,
+    options: ['low', 'medium', 'high'].map((value) => ({ value })),
+  });
+  return response;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  ensureRuntimeInvokeMock.mockReset();
+  conversationGetInvokeMock.mockReset();
   resetEnsureConversationRuntimeStateForTests();
   setAgentModelCatalogScope(null);
   localStorage.clear();
@@ -450,5 +476,182 @@ describe('runtime preparation model snapshots', () => {
 
     await expect(ensureConversationRuntime('first')).rejects.toThrow('startup failed');
     expect(observedIds()).toEqual(['hth/a']);
+  });
+});
+
+describe('confirmed Codex effort', () => {
+  const runtime = { backend: 'codex', model: 'gpt-6.1-sol', thoughtLevel: 'medium' };
+  const confirmed = { backend: 'codex', model: 'gpt-6.1-sol', thoughtLevel: 'medium' };
+  const snapshot = { version: 1, runtime, confirmed };
+
+  it.each(['cron', 'conversation'])(
+    'fills a missing supported effort from actual %s metadata and retains it for later empty catalogs',
+    async (source) => {
+      const response = codexRuntimeResponse();
+      ensureRuntimeInvokeMock.mockResolvedValueOnce(response);
+      conversationGetInvokeMock.mockResolvedValueOnce({
+        id: 'first',
+        extra:
+          source === 'cron'
+            ? { aionui_cron_runtime: snapshot }
+            : { thought_level: 'high', aionui_codex_runtime: { version: 1, confirmed } },
+      });
+
+      const result = await ensureConversationRuntime('first');
+
+      expect(result.config_options[1].current_value).toBe('medium');
+      expect(response.config_options[1].current_value).toBeNull();
+      expect(applyConfirmedCodexThoughtLevel('first', codexRuntimeResponse().config_options)[1].current_value).toBe(
+        'medium'
+      );
+    }
+  );
+
+  it.each([
+    { thought_level: 'medium' },
+    { aionui_codex_runtime: { version: 1 } },
+    { aionui_codex_runtime: { version: 2, confirmed } },
+    { aionui_codex_runtime: { version: 1, confirmed: { ...confirmed, thoughtLevel: 42 } } },
+    { aionui_codex_runtime: { version: 1, confirmed: { ...confirmed, backend: 'opencode' } } },
+    { aionui_codex_runtime: { version: 1, confirmed: { ...confirmed, model: 'another-model' } } },
+    { aionui_codex_runtime: { version: 1, confirmed: { ...confirmed, thoughtLevel: 'unsupported' } } },
+    {
+      aionui_codex_runtime: null,
+      aionui_cron_runtime: { ...snapshot, runtime: { ...runtime, thoughtLevel: 'high' } },
+    },
+  ])('does not invent a homepage effort from invalid or unconfirmed metadata: %j', async (extra) => {
+    ensureRuntimeInvokeMock.mockResolvedValueOnce(codexRuntimeResponse());
+    conversationGetInvokeMock.mockResolvedValueOnce({ id: 'first', extra });
+
+    expect((await ensureConversationRuntime('first')).config_options[1].current_value).toBeNull();
+  });
+
+  it.each([
+    { cron: snapshot, effort: 'medium' },
+    { cron: { ...snapshot, runtime: { backend: 'codex', suppressSkillSuggestion: true } }, effort: 'high' },
+  ])(
+    'uses the confirmation for the active runtime when ordinary chat and cron share a conversation: %j',
+    async ({ cron, effort }) => {
+      ensureRuntimeInvokeMock.mockResolvedValueOnce(codexRuntimeResponse());
+      conversationGetInvokeMock.mockResolvedValueOnce({
+        id: 'first',
+        extra: {
+          aionui_codex_runtime: { version: 1, confirmed: { ...confirmed, thoughtLevel: 'high' } },
+          aionui_cron_runtime: cron,
+        },
+      });
+
+      expect((await ensureConversationRuntime('first')).config_options[1].current_value).toBe(effort);
+    }
+  );
+
+  it('waits for native discovery before applying a confirmation cached from an empty initial snapshot', async () => {
+    const response = { ...codexRuntimeResponse(), config_options: [] };
+    ensureRuntimeInvokeMock.mockResolvedValueOnce(response);
+    conversationGetInvokeMock.mockResolvedValueOnce({ id: 'first', extra: { aionui_cron_runtime: snapshot } });
+
+    const result = await ensureConversationRuntime('first');
+
+    expect(result.config_options).toEqual([]);
+    expect(applyConfirmedCodexThoughtLevel('first', codexRuntimeResponse().config_options)[1].current_value).toBe(
+      'medium'
+    );
+  });
+
+  it.each([
+    { name: 'desired settings without confirmation', metadata: { version: 1, runtime } },
+    { name: 'unsupported metadata version', metadata: { ...snapshot, version: 2 } },
+    { name: 'malformed confirmed effort', metadata: { ...snapshot, confirmed: { ...confirmed, thoughtLevel: 42 } } },
+    { name: 'non-Codex requested runtime', metadata: { ...snapshot, runtime: { ...runtime, backend: 'opencode' } } },
+    { name: 'non-Codex confirmation', metadata: { ...snapshot, confirmed: { ...confirmed, backend: 'opencode' } } },
+    { name: 'requested model mismatch', metadata: { ...snapshot, runtime: { ...runtime, model: 'another-model' } } },
+    { name: 'requested effort mismatch', metadata: { ...snapshot, runtime: { ...runtime, thoughtLevel: 'high' } } },
+    {
+      name: 'native model mismatch',
+      metadata: {
+        ...snapshot,
+        runtime: { ...runtime, model: 'another-model' },
+        confirmed: { ...confirmed, model: 'another-model' },
+      },
+    },
+    {
+      name: 'effort absent from the native options',
+      metadata: {
+        ...snapshot,
+        runtime: { ...runtime, thoughtLevel: 'max' },
+        confirmed: { ...confirmed, thoughtLevel: 'max' },
+      },
+    },
+  ])('keeps the native snapshot for $name', async ({ metadata }) => {
+    const response = codexRuntimeResponse();
+    ensureRuntimeInvokeMock.mockResolvedValueOnce(response);
+    conversationGetInvokeMock.mockResolvedValueOnce({ id: 'first', extra: { aionui_cron_runtime: metadata } });
+
+    const result = await ensureConversationRuntime('first');
+
+    expect(result).toEqual(response);
+  });
+
+  it('preserves a nonempty native effort without reading metadata even after a different effort was confirmed', async () => {
+    ensureRuntimeInvokeMock.mockResolvedValueOnce(codexRuntimeResponse());
+    conversationGetInvokeMock.mockResolvedValueOnce({ id: 'first', extra: { aionui_cron_runtime: snapshot } });
+    await ensureConversationRuntime('first');
+    conversationGetInvokeMock.mockClear();
+    const response = codexRuntimeResponse('high');
+    ensureRuntimeInvokeMock.mockResolvedValueOnce(response);
+
+    const result = await ensureConversationRuntime('first');
+
+    expect(result.config_options[1].current_value).toBe('high');
+    expect(conversationGetInvokeMock).not.toHaveBeenCalled();
+  });
+
+  it('retains the actual runtime response when the confirmation metadata cannot be read', async () => {
+    const response = codexRuntimeResponse();
+    ensureRuntimeInvokeMock.mockResolvedValueOnce(response);
+    conversationGetInvokeMock.mockRejectedValueOnce(new Error('metadata unavailable'));
+
+    await expect(ensureConversationRuntime('first')).resolves.toEqual(response);
+  });
+
+  it.each(['other-account', null])('does not apply a cached confirmation to account scope %s', async (scope) => {
+    const response = codexRuntimeResponse();
+    ensureRuntimeInvokeMock.mockResolvedValueOnce(response);
+    conversationGetInvokeMock.mockResolvedValueOnce({ id: 'first', extra: { aionui_cron_runtime: snapshot } });
+    await ensureConversationRuntime('first');
+    setAgentModelCatalogScope(scope);
+
+    expect(applyConfirmedCodexThoughtLevel('first', response.config_options)).toBe(response.config_options);
+  });
+
+  it('does not read or apply confirmation metadata without an account scope', async () => {
+    const response = codexRuntimeResponse();
+    ensureRuntimeInvokeMock.mockResolvedValueOnce(response);
+    conversationGetInvokeMock.mockResolvedValueOnce({ id: 'first', extra: { aionui_cron_runtime: snapshot } });
+    setAgentModelCatalogScope(null);
+
+    await expect(ensureConversationRuntime('first')).resolves.toEqual(response);
+
+    expect(conversationGetInvokeMock).not.toHaveBeenCalled();
+  });
+
+  it('does not cache a confirmation that arrives after switching account scope', async () => {
+    const response = codexRuntimeResponse();
+    const metadata = { id: 'first', extra: { aionui_cron_runtime: snapshot } };
+    let complete!: (value: typeof metadata) => void;
+    ensureRuntimeInvokeMock.mockResolvedValueOnce(response);
+    conversationGetInvokeMock.mockReturnValueOnce(
+      new Promise<typeof metadata>((resolve) => {
+        complete = resolve;
+      })
+    );
+    const pending = ensureConversationRuntime('first');
+    await Promise.resolve();
+    setAgentModelCatalogScope('other-account');
+    complete(metadata);
+
+    expect(await pending).toEqual(response);
+    setAgentModelCatalogScope(SCOPE);
+    expect(applyConfirmedCodexThoughtLevel('first', response.config_options)).toBe(response.config_options);
   });
 });

@@ -39,6 +39,7 @@ import { createHash, randomUUID } from 'crypto';
 import { parse as parseToml, stringify as stringifyToml } from 'smol-toml';
 import { resolveOpenCodeProviderApiBase } from './baseUrl';
 import codexModelCatalogTemplate from './codexModelCatalogTemplate.json';
+import type { CronRuntimeConfirmation, CronRuntimeOverrides } from './runtime/cronRuntimeOverrides';
 import {
   appendModelMultiplier,
   calculateModelPricing,
@@ -679,7 +680,10 @@ export class HTHConfigSyncService {
   }
 
   /** Prepare the persisted conversation's own workspace before starting its CLI. */
-  async prepareConversationWorkspace(request: { conversationId: string; workspace: string }): Promise<void> {
+  async prepareConversationWorkspace(request: {
+    conversationId: string;
+    workspace: string;
+  }): Promise<void | CronRuntimeOverrides> {
     if (!(await this.getAccessOrLogout())) {
       throw new Error('authRequired');
     }
@@ -761,6 +765,126 @@ export class HTHConfigSyncService {
     } catch {
       throw new Error('workspaceMismatch');
     }
+    let runtime: CronRuntimeOverrides | undefined;
+    let saveRuntimeSnapshot = false;
+    const backend =
+      this.isRecord(conversation.assistant) && typeof conversation.assistant.backend === 'string'
+        ? conversation.assistant.backend
+        : extra.backend;
+    const cronJobId = extra.cron_job_id ?? extra.cronJobId;
+    const runtimeSnapshot = extra.aionui_cron_runtime;
+    if (runtimeSnapshot !== undefined) {
+      if (
+        !this.isRecord(runtimeSnapshot) ||
+        runtimeSnapshot.version !== 1 ||
+        runtimeSnapshot.assistant_id !== assistantId ||
+        runtimeSnapshot.job_id !== cronJobId ||
+        !this.isRecord(runtimeSnapshot.runtime)
+      ) {
+        throw new Error('cronConfigurationInvalid');
+      }
+      const stored = runtimeSnapshot.runtime;
+      if (
+        (stored.backend !== 'codex' && stored.backend !== 'opencode') ||
+        stored.backend !== backend ||
+        ![stored.model, stored.thoughtLevel].every(
+          (value) =>
+            value === undefined ||
+            (typeof value === 'string' &&
+              value.trim() &&
+              value.length <= 500 &&
+              [...value].every((character) => character.charCodeAt(0) >= 32))
+        ) ||
+        (stored.suppressSkillSuggestion !== undefined && stored.suppressSkillSuggestion !== true) ||
+        (!stored.model && !stored.thoughtLevel && !stored.suppressSkillSuggestion)
+      ) {
+        throw new Error('cronConfigurationInvalid');
+      }
+      runtime = {
+        backend: stored.backend,
+        ...(typeof stored.model === 'string' && { model: stored.model }),
+        ...(typeof stored.thoughtLevel === 'string' && { thoughtLevel: stored.thoughtLevel }),
+        ...(stored.suppressSkillSuggestion === true && { suppressSkillSuggestion: true as const }),
+      };
+    } else if (cronJobId !== undefined) {
+      if (
+        typeof cronJobId !== 'string' ||
+        !/^[A-Za-z0-9_-]{1,200}$/.test(cronJobId) ||
+        (extra.cron_job_id != null && extra.cronJobId != null && extra.cron_job_id !== extra.cronJobId)
+      ) {
+        throw new Error('cronConfigurationInvalid');
+      }
+      // Both resources are fetched through the same authenticated Core identity.
+      // Never trust a launcher-supplied model, assistant id, or workspace.
+      const jobResponse = await this.coreFetch(`http://127.0.0.1:${port}/api/cron/jobs/${cronJobId}`);
+      // Deleted jobs leave their conversations available for ordinary chat.
+      if (!jobResponse.ok && jobResponse.status !== 404) throw new Error('cronConfigurationUnavailable');
+      if (jobResponse.ok) {
+        const envelope: unknown = await jobResponse.json();
+        const job = this.isRecord(envelope) && 'data' in envelope ? envelope.data : envelope;
+        if (
+          !this.isRecord(job) ||
+          job.id !== cronJobId ||
+          !this.isRecord(job.metadata) ||
+          (this.isRecord(envelope) && envelope.success === false)
+        ) {
+          throw new Error('cronConfigurationInvalid');
+        }
+        const config = job.metadata.agent_config ?? {};
+        if (!this.isRecord(config)) throw new Error('cronConfigurationInvalid');
+        const model = typeof config.model_id === 'string' ? config.model_id.trim() : undefined;
+        if (config.model_id != null && typeof config.model_id !== 'string') {
+          throw new Error('cronConfigurationInvalid');
+        }
+        const options = config.config_options;
+        if (options != null && !this.isRecord(options)) throw new Error('cronConfigurationInvalid');
+        const rawThought = this.isRecord(options)
+          ? (options.thought_level ?? options.reasoning_effort ?? options.effort)
+          : undefined;
+        if (rawThought != null && typeof rawThought !== 'string') throw new Error('cronConfigurationInvalid');
+        const thoughtLevel = typeof rawThought === 'string' ? rawThought.trim() : undefined;
+        const suppressSkillSuggestion =
+          this.isRecord(job.target) &&
+          job.target.execution_mode === 'new_conversation' &&
+          (backend === 'codex' || backend === 'opencode');
+        if (model || thoughtLevel || suppressSkillSuggestion) {
+          if (
+            !this.isRecord(job.target) ||
+            ((model || thoughtLevel || config.assistant_id !== undefined) && config.assistant_id !== assistantId)
+          )
+            throw new Error('cronAssistantMismatch');
+          if (
+            job.target.execution_mode !== 'new_conversation' &&
+            job.metadata.conversation_id !== request.conversationId
+          ) {
+            throw new Error('cronConversationMismatch');
+          }
+          if (
+            [model, thoughtLevel].some(
+              (value) => value && (value.length > 500 || [...value].some((character) => character.charCodeAt(0) < 32))
+            )
+          ) {
+            throw new Error('cronConfigurationInvalid');
+          }
+          if (backend !== 'codex' && backend !== 'opencode') throw new Error('cronRuntimeUnsupported');
+          runtime = {
+            backend,
+            ...(model && { model }),
+            ...(thoughtLevel && { thoughtLevel }),
+            ...(suppressSkillSuggestion && { suppressSkillSuggestion: true as const }),
+          };
+          saveRuntimeSnapshot = true;
+        } else if (
+          backend === 'opencode' &&
+          this.isRecord(job.target) &&
+          job.target.execution_mode === 'existing' &&
+          job.metadata.conversation_id === request.conversationId &&
+          (config.assistant_id === undefined || config.assistant_id === assistantId)
+        ) {
+          runtime = { backend: 'opencode' };
+        }
+      }
+    }
     const result = await this.injectProjectConfig(
       { conversationId: request.conversationId, workspace, assistantId },
       { overwrite: false }
@@ -774,6 +898,111 @@ export class HTHConfigSyncService {
       await this.removeIncompleteProjectConfig(workspace, result.files);
       throw new Error(result.reason);
     }
+    if (saveRuntimeSnapshot) {
+      // This is conversation metadata, not Core's ACP runtime state or the
+      // assistant's global defaults. Reopening a historical run must retain
+      // its own choices even after its source job is edited or deleted.
+      const snapshotResponse = await this.coreFetch(
+        `http://127.0.0.1:${port}/api/conversations/${encodeURIComponent(request.conversationId)}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            extra: { aionui_cron_runtime: { version: 1, assistant_id: assistantId, job_id: cronJobId, runtime } },
+          }),
+        }
+      );
+      if (!snapshotResponse.ok) throw new Error('cronConfigurationSnapshotFailed');
+    }
+    if (backend === 'codex' && !runtime?.model && !runtime?.thoughtLevel) {
+      // Observe ordinary sessions without overriding the model or effort Core applies.
+      return { ...runtime, backend: 'codex', observeOnly: true };
+    }
+    return runtime;
+  }
+
+  /** Persist settings confirmed by the managed Codex thread, independently of requested defaults. */
+  async confirmConversationWorkspaceRuntime(
+    request: { conversationId: string; workspace: string },
+    confirmation: CronRuntimeConfirmation
+  ): Promise<void> {
+    const runtime = await this.prepareConversationWorkspace(request);
+    if (
+      !runtime ||
+      runtime.backend !== 'codex' ||
+      !this.isRecord(confirmation) ||
+      confirmation.backend !== runtime.backend ||
+      typeof confirmation.model !== 'string' ||
+      !confirmation.model.trim() ||
+      ![confirmation.model, confirmation.thoughtLevel].every(
+        (value) =>
+          value === undefined ||
+          (typeof value === 'string' &&
+            value.trim() &&
+            value.length <= 500 &&
+            [...value].every((character) => character.charCodeAt(0) >= 32))
+      )
+    ) {
+      throw new Error('cronRuntimeConfirmationMismatch');
+    }
+    if (
+      runtime.observeOnly !== true &&
+      ((!runtime.model && !runtime.thoughtLevel) ||
+        (runtime.model !== undefined && confirmation.model !== runtime.model) ||
+        (runtime.thoughtLevel !== undefined && confirmation.thoughtLevel !== runtime.thoughtLevel))
+    ) {
+      throw new Error('cronRuntimeConfirmationMismatch');
+    }
+    const url = `http://127.0.0.1:${this.requireBackendPort()}/api/conversations/${encodeURIComponent(request.conversationId)}`;
+    if (runtime.observeOnly === true) {
+      const saved = await this.coreFetch(url, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          extra: {
+            aionui_codex_runtime: {
+              version: 1,
+              confirmed: {
+                backend: 'codex',
+                model: confirmation.model,
+                ...(confirmation.thoughtLevel !== undefined && { thoughtLevel: confirmation.thoughtLevel }),
+              },
+            },
+          },
+        }),
+      });
+      if (!saved.ok) throw new Error('cronRuntimeConfirmationSaveFailed');
+      return;
+    }
+    const response = await this.coreFetch(url);
+    if (!response.ok) throw new Error('conversationUnavailable');
+    const envelope: unknown = await response.json();
+    const conversation = this.isRecord(envelope) && 'data' in envelope ? envelope.data : envelope;
+    if (
+      !this.isRecord(conversation) ||
+      conversation.id !== request.conversationId ||
+      (this.isRecord(envelope) && envelope.success === false)
+    ) {
+      throw new Error('conversationInvalid');
+    }
+    const extra: unknown = typeof conversation.extra === 'string' ? JSON.parse(conversation.extra) : conversation.extra;
+    const snapshot = this.isRecord(extra) ? extra.aionui_cron_runtime : undefined;
+    if (
+      !this.isRecord(snapshot) ||
+      snapshot.version !== 1 ||
+      !this.isRecord(snapshot.runtime) ||
+      snapshot.runtime.backend !== runtime.backend ||
+      snapshot.runtime.model !== runtime.model ||
+      snapshot.runtime.thoughtLevel !== runtime.thoughtLevel
+    ) {
+      throw new Error('cronRuntimeConfirmationMismatch');
+    }
+    const saved = await this.coreFetch(url, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ extra: { aionui_cron_runtime: { ...snapshot, confirmed: confirmation } } }),
+    });
+    if (!saved.ok) throw new Error('cronRuntimeConfirmationSaveFailed');
   }
 
   async injectProjectConfig(

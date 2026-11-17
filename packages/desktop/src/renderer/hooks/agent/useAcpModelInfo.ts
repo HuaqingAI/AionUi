@@ -80,6 +80,7 @@ export const useAcpModelInfo = ({
 }: UseAcpModelInfoArgs): UseAcpModelInfoResult => {
   const runtimeConfig = useAcpConfigOptions({
     conversation_id,
+    backend,
     prepareRuntime,
     prepareSetRuntime,
     configOptionsPort,

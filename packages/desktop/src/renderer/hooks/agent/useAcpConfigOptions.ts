@@ -12,11 +12,15 @@ import type {
   AcpConfigSelectOptionDto,
   SetConfigOptionResponse,
 } from '@/common/types/platform/acpTypes';
-import { ensureConversationRuntime } from '@/renderer/pages/conversation/utils/ensureConversationRuntime';
+import {
+  applyConfirmedCodexThoughtLevel,
+  ensureConversationRuntime,
+} from '@/renderer/pages/conversation/utils/ensureConversationRuntime';
 import {
   getConversationRuntimeViewSnapshot,
   subscribeConversationRuntimeView,
 } from '@/renderer/pages/conversation/runtime/conversationRuntimeViewStore';
+import { formatThoughtLevelLabel } from '@/renderer/utils/model/agentRuntimeCatalog';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import useSWR, { mutate as swrMutate } from 'swr';
 
@@ -64,7 +68,8 @@ export function findConfigOption(
 export function deriveSelectOption(
   options: AcpConfigOptionDto[] | null | undefined,
   category: string,
-  fallbackIds: string[] = []
+  fallbackIds: string[] = [],
+  backend?: string
 ): AcpDerivedOption | null {
   const option = findConfigOption(options, category, fallbackIds);
   if (!option || (option.option_type ?? option.type) !== 'select') return null;
@@ -74,7 +79,10 @@ export function deriveSelectOption(
     currentValue: getOptionCurrentValue(option),
     options: option.options.map((choice) => ({
       value: choice.value,
-      label: optionLabel(choice),
+      label:
+        category === 'thought_level'
+          ? formatThoughtLevelLabel(choice.value, optionLabel(choice), backend)
+          : optionLabel(choice),
       description: choice.description,
     })),
   };
@@ -238,19 +246,34 @@ const conversationConfigOptionsPort: AcpConfigOptionsPort = {
   load: async (conversation_id: string) => (await ensureConversationRuntime(conversation_id)).config_options,
 };
 
-const configOptionsInFlight = new Map<string, Promise<AcpConfigOptionDto[] | null>>();
+type ConfigOptionsRead = { options: AcpConfigOptionDto[] | null; observedRevision: number };
+type ObservedConfigOptions = { options: AcpConfigOptionDto[]; revision: number };
 
-function fetchConfigOptionsOnce(
-  key: AcpConfigOptionsKey,
-  port: AcpConfigOptionsPort
-): Promise<AcpConfigOptionDto[] | null> {
+const configOptionsInFlight = new Map<string, Promise<ConfigOptionsRead>>();
+// Keep confirmations shared so a late-mounted selector cannot replay an older in-flight HTTP snapshot.
+const observedConfigOptions = new Map<string, ObservedConfigOptions>();
+
+function resolveConfigOptionsRead(conversation_id: string, read: ConfigOptionsRead): AcpConfigOptionDto[] | null {
+  const observed = observedConfigOptions.get(conversation_id);
+  const options = observed && observed.revision !== read.observedRevision ? observed.options : read.options;
+  return options && applyConfirmedCodexThoughtLevel(conversation_id, options);
+}
+
+/** Clear shared runtime reads and confirmations between isolated hook tests. */
+export function resetAcpConfigOptionsStateForTests(): void {
+  configOptionsInFlight.clear();
+  observedConfigOptions.clear();
+}
+
+function fetchConfigOptionsOnce(key: AcpConfigOptionsKey, port: AcpConfigOptionsPort): Promise<ConfigOptionsRead> {
   const [, conversation_id] = key;
   const existing = configOptionsInFlight.get(conversation_id);
   if (existing) return existing;
 
+  const observedRevision = observedConfigOptions.get(conversation_id)?.revision ?? 0;
   const promise = port
     .load(conversation_id)
-    .then((options) => options ?? null)
+    .then((options) => ({ options: options ?? null, observedRevision }))
     .finally(() => {
       if (configOptionsInFlight.get(conversation_id) === promise) {
         configOptionsInFlight.delete(conversation_id);
@@ -262,12 +285,14 @@ function fetchConfigOptionsOnce(
 
 export function useAcpConfigOptions({
   conversation_id,
+  backend,
   prepareRuntime,
   prepareSetRuntime,
   configOptionsPort = conversationConfigOptionsPort,
   enabled = true,
 }: {
   conversation_id: string;
+  backend?: string;
   prepareRuntime?: () => Promise<void>;
   prepareSetRuntime?: () => Promise<void>;
   configOptionsPort?: AcpConfigOptionsPort;
@@ -296,7 +321,10 @@ export function useAcpConfigOptions({
     isLoading,
   } = useSWR<AcpConfigOptionDto[] | null, unknown, AcpConfigOptionsKey | null>(
     enabled ? key : null,
-    (runtimeKey) => fetchConfigOptionsOnce(runtimeKey, configOptionsPort),
+    (runtimeKey) =>
+      fetchConfigOptionsOnce(runtimeKey, configOptionsPort).then((read) =>
+        resolveConfigOptionsRead(runtimeKey[1], read)
+      ),
     {
       revalidateOnMount: false,
     }
@@ -318,11 +346,16 @@ export function useAcpConfigOptions({
   }, [conversation_id]);
 
   const replaceSnapshot = useCallback(
-    (next: AcpConfigOptionDto[]) => {
-      optionsRef.current = next;
-      void mutate(next, false);
+    (next: AcpConfigOptionDto[], observed = false) => {
+      if (observed) {
+        const revision = (observedConfigOptions.get(conversation_id)?.revision ?? 0) + 1;
+        observedConfigOptions.set(conversation_id, { options: next, revision });
+      }
+      const current = applyConfirmedCodexThoughtLevel(conversation_id, next);
+      optionsRef.current = current;
+      void mutate(current, false);
     },
-    [mutate]
+    [conversation_id, mutate]
   );
 
   const isConfigOptionBlocked = useCallback(
@@ -341,7 +374,8 @@ export function useAcpConfigOptions({
     setIsReloading(true);
     try {
       await prepareRuntime?.();
-      const next = await fetchConfigOptionsOnce(key, configOptionsPort);
+      const read = await fetchConfigOptionsOnce(key, configOptionsPort);
+      const next = resolveConfigOptionsRead(conversation_id, read);
       if (next) {
         replaceSnapshot(next);
         if (runtimeGenerationRef.current === runtimeGeneration) {
@@ -354,7 +388,7 @@ export function useAcpConfigOptions({
       setIsReloading(false);
       throw error;
     }
-  }, [key, configOptionsPort, prepareRuntime, replaceSnapshot]);
+  }, [conversation_id, key, configOptionsPort, prepareRuntime, replaceSnapshot]);
 
   const setConfigOption = useCallback(
     async (optionId: string, value: string) => {
@@ -365,7 +399,10 @@ export function useAcpConfigOptions({
       try {
         await (prepareSetRuntime ?? prepareRuntime)?.();
         if (isConfigOptionBlocked(optionId)) throw new Error('config_update_in_progress');
-        const beforeSet = await fetchConfigOptionsOnce(key, configOptionsPort);
+        const beforeSet = resolveConfigOptionsRead(
+          conversation_id,
+          await fetchConfigOptionsOnce(key, configOptionsPort)
+        );
         if (beforeSet) replaceSnapshot(beforeSet);
         if (isConfigOptionBlocked(optionId)) throw new Error('config_update_in_progress');
         const response = configOptionsPort.setConfigOption
@@ -382,7 +419,7 @@ export function useAcpConfigOptions({
         // snapshot the backend returned — which deliberately still reports the OLD value.
         if (confirmation === 'pending_next_turn') {
           markPending(conversation_id, optionId, value);
-          if (response.config_options) replaceSnapshot(response.config_options);
+          if (response.config_options) replaceSnapshot(response.config_options, true);
           return response.config_options;
         }
         if (!hasObservedValue(response, optionId, value)) {
@@ -390,7 +427,7 @@ export function useAcpConfigOptions({
         }
         // A switch that landed supersedes any pending entry for the same option.
         resolvePendingFromSnapshot(conversation_id, response.config_options);
-        replaceSnapshot(response.config_options);
+        replaceSnapshot(response.config_options, true);
         return response.config_options;
       } finally {
         setConversationSetStatus(conversation_id, { state: 'idle' });
@@ -406,6 +443,34 @@ export function useAcpConfigOptions({
 
   useEffect(() => {
     if (!enabled) return;
+    let disposed = false;
+    const unsubscribe = ipcBridge.conversation.listChanged?.on((event) => {
+      if (event.conversation_id !== conversation_id || event.action !== 'updated') return;
+      const hasThoughtLevel = optionsRef.current?.some(
+        (option) =>
+          (option.category === 'thought_level' || ['thought_level', 'reasoning_effort'].includes(option.id)) &&
+          Boolean(option.current_value?.trim())
+      );
+      if (hasThoughtLevel && backend !== 'codex') return;
+      // The first ensure can finish before native Codex completes its handshake.
+      // Saving its confirmed settings emits this event. Read after any older
+      // request settles so confirmation cannot join a pre-handshake read.
+      const pending = configOptionsInFlight.get(conversation_id);
+      void Promise.resolve(pending)
+        .catch(() => {})
+        .then(() => {
+          if (!disposed) return reload();
+        })
+        .catch(() => {});
+    });
+    return () => {
+      disposed = true;
+      unsubscribe?.();
+    };
+  }, [conversation_id, backend, enabled, reload]);
+
+  useEffect(() => {
+    if (!enabled) return;
     const handler = (message: IResponseMessage) => {
       if (message.conversation_id !== conversation_id) return;
       if (message.type === 'acp_config_option' && message.data) {
@@ -416,7 +481,7 @@ export function useAcpConfigOptions({
           // snapshot when it sees `ConfigChanged`), so anything it now reports as current
           // is no longer pending.
           resolvePendingFromSnapshot(conversation_id, next);
-          replaceSnapshot(next);
+          replaceSnapshot(next, true);
         }
       }
       if (message.type === 'agent_status') {
@@ -435,7 +500,7 @@ export function useAcpConfigOptions({
     pendingValues,
     mode: deriveSelectOption(configOptions, 'mode', ['mode']),
     model: deriveSelectOption(configOptions, 'model', ['model']),
-    thoughtLevel: deriveSelectOption(configOptions, 'thought_level', ['thought_level', 'reasoning_effort']),
+    thoughtLevel: deriveSelectOption(configOptions, 'thought_level', ['thought_level', 'reasoning_effort'], backend),
     reload,
     setConfigOption,
     isConfigOptionBlocked,

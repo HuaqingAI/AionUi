@@ -168,6 +168,7 @@ const AcpSendBox: React.FC<{
   }, [teamPermission]);
   const runtimeConfig = useAcpConfigOptions({
     conversation_id,
+    backend,
     prepareRuntime: prepareRuntimeConfig,
     prepareSetRuntime: teamPermission?.warmupSession,
     configOptionsPort: teamPermission?.configOptionsPort,

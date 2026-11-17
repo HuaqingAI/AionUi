@@ -756,6 +756,404 @@ describe('HTHConfigSyncService auth handling', () => {
     }
   );
 
+  async function cronPreparationFixture(
+    options: {
+      backend?: string;
+      config?: Record<string, unknown> | null;
+      jobStatus?: number;
+      snapshotStatus?: number;
+      mode?: string;
+      anchor?: string;
+    } = {}
+  ) {
+    await writeStoredAuth(authFile, { displayName: 'Alice' });
+    vi.stubGlobal('__backendPort', 18181);
+    const workspace = path.join(tempDir, 'cron-workspace');
+    await fs.mkdir(workspace);
+    const backend = options.backend ?? 'codex';
+    const extra: Record<string, unknown> = { workspace, backend, cron_job_id: 'cron-1' };
+    const job = {
+      id: 'cron-1',
+      target: { execution_mode: options.mode ?? 'new_conversation' },
+      metadata: {
+        conversation_id: options.anchor ?? '',
+        agent_config:
+          options.config === undefined
+            ? { assistant_id: 'manual-codex', model_id: 'gpt-6.1-sol', config_options: { thought_level: 'high' } }
+            : options.config,
+      },
+    };
+    const coreFetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/api/cron/jobs/cron-1'))
+        return Response.json({ data: job }, { status: options.jobStatus ?? 200 });
+      if (url.endsWith('/api/conversations/conversation-1')) {
+        if (init?.method === 'PATCH') {
+          if (options.snapshotStatus) return new Response('', { status: options.snapshotStatus });
+          const update = JSON.parse(init.body as string) as { extra: Record<string, unknown> };
+          Object.assign(extra, update.extra);
+        }
+        return Response.json({ data: { id: 'conversation-1', assistant: { id: 'manual-codex', backend }, extra } });
+      }
+      throw new Error('Unexpected Core request');
+    });
+    const service = new HTHConfigSyncService(new HTHAuthService(authFile), undefined, undefined, undefined, coreFetch);
+    vi.spyOn(service, 'injectProjectConfig').mockResolvedValue({
+      injected: false,
+      files: [],
+      reason: 'assistantNotManaged',
+    });
+    return { service, workspace, extra, job, coreFetch };
+  }
+
+  async function ordinaryPreparationFixture() {
+    await writeStoredAuth(authFile, { displayName: 'Alice' });
+    vi.stubGlobal('__backendPort', 18181);
+    const workspace = path.join(tempDir, 'ordinary-workspace');
+    await fs.mkdir(workspace);
+    // Core persists homepage conversation_overrides here. They describe the
+    // initial request; they are not evidence of what the native thread applied.
+    const extra: Record<string, unknown> = {
+      workspace,
+      backend: 'codex',
+      current_model_id: 'homepage-seed-model',
+      thought_level: 'medium',
+    };
+    const conversation = { id: 'conversation-1', assistant: { id: 'manual-codex', backend: 'codex' }, extra };
+    const state = { patchStatus: 200 };
+    const coreFetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (!url.endsWith('/api/conversations/conversation-1')) throw new Error('Unexpected Core request');
+      if (init?.method === 'PATCH') {
+        if (state.patchStatus !== 200) return new Response('', { status: state.patchStatus });
+        const update = JSON.parse(init.body as string) as { extra: Record<string, unknown> };
+        Object.assign(extra, update.extra);
+      }
+      return Response.json({ data: conversation });
+    });
+    const service = new HTHConfigSyncService(new HTHAuthService(authFile), undefined, undefined, undefined, coreFetch);
+    const inject = vi.spyOn(service, 'injectProjectConfig').mockResolvedValue({
+      injected: false,
+      files: [],
+      reason: 'assistantNotManaged',
+    });
+    return { service, workspace, extra, conversation, state, coreFetch, inject };
+  }
+
+  describe('ordinary Codex runtime observation', () => {
+    it('observes a non-cron conversation without promoting its homepage seed to runtime overrides or confirmation', async () => {
+      const fixture = await ordinaryPreparationFixture();
+      await expect(
+        fixture.service.prepareConversationWorkspace({ conversationId: 'conversation-1', workspace: fixture.workspace })
+      ).resolves.toEqual({ backend: 'codex', observeOnly: true });
+
+      expect(fixture.extra).toEqual({
+        workspace: fixture.workspace,
+        backend: 'codex',
+        current_model_id: 'homepage-seed-model',
+        thought_level: 'medium',
+      });
+      expect(fixture.inject).toHaveBeenCalledExactlyOnceWith(
+        { conversationId: 'conversation-1', workspace: fixture.workspace, assistantId: 'manual-codex' },
+        { overwrite: false }
+      );
+      expect(fixture.coreFetch.mock.calls).toEqual([['http://127.0.0.1:18181/api/conversations/conversation-1']]);
+    });
+
+    it.each([
+      { backend: 'codex' as const, model: 'native-resumed-model', thoughtLevel: 'high' },
+      { backend: 'codex' as const, model: 'native-resumed-model' },
+    ])('records the actual native thread settings independently of the homepage seed: %j', async (confirmation) => {
+      const fixture = await ordinaryPreparationFixture();
+      await fixture.service.confirmConversationWorkspaceRuntime(
+        { conversationId: 'conversation-1', workspace: fixture.workspace },
+        confirmation
+      );
+
+      expect(fixture.extra.aionui_codex_runtime).toEqual({ version: 1, confirmed: confirmation });
+      expect(fixture.extra.aionui_cron_runtime).toBeUndefined();
+      expect(fixture.extra.thought_level).toBe('medium');
+      expect(fixture.extra.current_model_id).toBe('homepage-seed-model');
+      expect(fixture.coreFetch.mock.calls.filter(([, init]) => init?.method)).toEqual([
+        [
+          'http://127.0.0.1:18181/api/conversations/conversation-1',
+          {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ extra: { aionui_codex_runtime: { version: 1, confirmed: confirmation } } }),
+          },
+        ],
+      ]);
+    });
+
+    it.each([
+      { mismatch: 'conversation', error: 'conversationInvalid' },
+      { mismatch: 'assistant', error: 'conversationInvalid' },
+      { mismatch: 'workspace', error: 'workspaceMismatch' },
+      { mismatch: 'backend', error: 'cronRuntimeConfirmationMismatch' },
+    ])('rejects an observed confirmation after a $mismatch mismatch', async ({ mismatch, error }) => {
+      const fixture = await ordinaryPreparationFixture();
+      if (mismatch === 'conversation') fixture.conversation.id = 'another-conversation';
+      if (mismatch === 'assistant') fixture.conversation.assistant.id = '';
+      if (mismatch === 'backend') fixture.conversation.assistant.backend = 'opencode';
+      await expect(
+        fixture.service.confirmConversationWorkspaceRuntime(
+          { conversationId: 'conversation-1', workspace: mismatch === 'workspace' ? tempDir : fixture.workspace },
+          { backend: 'codex', model: 'native-resumed-model', thoughtLevel: 'high' }
+        )
+      ).rejects.toThrow(error);
+
+      expect(fixture.extra).not.toHaveProperty('aionui_codex_runtime');
+      expect(fixture.coreFetch.mock.calls.filter(([, init]) => init?.method)).toEqual([]);
+    });
+
+    it('rejects a failed observed confirmation write and retains the unconfirmed homepage seed', async () => {
+      const fixture = await ordinaryPreparationFixture();
+      fixture.state.patchStatus = 503;
+      await expect(
+        fixture.service.confirmConversationWorkspaceRuntime(
+          { conversationId: 'conversation-1', workspace: fixture.workspace },
+          { backend: 'codex', model: 'native-resumed-model', thoughtLevel: 'high' }
+        )
+      ).rejects.toThrow('cronRuntimeConfirmationSaveFailed');
+
+      expect(fixture.extra).not.toHaveProperty('aionui_codex_runtime');
+      expect(fixture.extra.thought_level).toBe('medium');
+      expect(fixture.coreFetch.mock.calls.filter(([, init]) => init?.method)).toHaveLength(1);
+    });
+  });
+
+  describe('confirmed managed Codex runtime', () => {
+    it('stores the CLI-confirmed model and medium effort separately from the requested task settings', async () => {
+      const fixture = await cronPreparationFixture({
+        config: { assistant_id: 'manual-codex', model_id: 'gpt-6.1-sol', config_options: { thought_level: 'medium' } },
+      });
+      const confirmation = { backend: 'codex' as const, model: 'gpt-6.1-sol', thoughtLevel: 'medium' };
+
+      await fixture.service.confirmConversationWorkspaceRuntime(
+        { conversationId: 'conversation-1', workspace: fixture.workspace },
+        confirmation
+      );
+
+      expect(fixture.extra.aionui_cron_runtime).toEqual({
+        version: 1,
+        assistant_id: 'manual-codex',
+        job_id: 'cron-1',
+        runtime: { backend: 'codex', model: 'gpt-6.1-sol', thoughtLevel: 'medium', suppressSkillSuggestion: true },
+        confirmed: confirmation,
+      });
+      expect(fixture.coreFetch.mock.calls.filter(([, init]) => init?.method)).toEqual([
+        ['http://127.0.0.1:18181/api/conversations/conversation-1', expect.objectContaining({ method: 'PATCH' })],
+        ['http://127.0.0.1:18181/api/conversations/conversation-1', expect.objectContaining({ method: 'PATCH' })],
+      ]);
+    });
+
+    it.each([
+      { model: 'another-model', thoughtLevel: 'medium' },
+      { model: 'gpt-6.1-sol', thoughtLevel: 'high' },
+      { model: 'gpt-6.1-sol' },
+    ])('does not record a confirmation that differs from the requested runtime: %j', async (actual) => {
+      const fixture = await cronPreparationFixture({
+        config: { assistant_id: 'manual-codex', model_id: 'gpt-6.1-sol', config_options: { thought_level: 'medium' } },
+      });
+      const request = { conversationId: 'conversation-1', workspace: fixture.workspace };
+      await fixture.service.prepareConversationWorkspace(request);
+      fixture.coreFetch.mockClear();
+
+      await expect(
+        fixture.service.confirmConversationWorkspaceRuntime(request, { backend: 'codex', ...actual })
+      ).rejects.toThrow('cronRuntimeConfirmationMismatch');
+
+      expect(fixture.extra.aionui_cron_runtime).not.toHaveProperty('confirmed');
+      expect(fixture.coreFetch.mock.calls.filter(([, init]) => init?.method)).toEqual([]);
+    });
+
+    it('rejects a failed confirmation write instead of reporting that the runtime was recorded', async () => {
+      const options = { snapshotStatus: 0 };
+      const fixture = await cronPreparationFixture(options);
+      const request = { conversationId: 'conversation-1', workspace: fixture.workspace };
+      await fixture.service.prepareConversationWorkspace(request);
+      options.snapshotStatus = 503;
+
+      await expect(
+        fixture.service.confirmConversationWorkspaceRuntime(request, {
+          backend: 'codex',
+          model: 'gpt-6.1-sol',
+          thoughtLevel: 'high',
+        })
+      ).rejects.toThrow('cronRuntimeConfirmationSaveFailed');
+
+      expect(fixture.extra.aionui_cron_runtime).not.toHaveProperty('confirmed');
+    });
+
+    it('does not record a Codex confirmation for an OpenCode conversation', async () => {
+      const fixture = await cronPreparationFixture({ backend: 'opencode' });
+      const request = { conversationId: 'conversation-1', workspace: fixture.workspace };
+      await fixture.service.prepareConversationWorkspace(request);
+      fixture.coreFetch.mockClear();
+
+      await expect(
+        fixture.service.confirmConversationWorkspaceRuntime(request, {
+          backend: 'codex',
+          model: 'gpt-6.1-sol',
+          thoughtLevel: 'high',
+        })
+      ).rejects.toThrow('cronRuntimeConfirmationMismatch');
+
+      expect(fixture.extra.aionui_cron_runtime).not.toHaveProperty('confirmed');
+      expect(fixture.coreFetch.mock.calls.filter(([, init]) => init?.method)).toEqual([]);
+    });
+  });
+
+  it.each(['codex', 'opencode'])(
+    'loads and snapshots explicit %s task model settings through authenticated Core APIs',
+    async (backend) => {
+      const fixture = await cronPreparationFixture({ backend });
+      await expect(
+        fixture.service.prepareConversationWorkspace({ conversationId: 'conversation-1', workspace: fixture.workspace })
+      ).resolves.toEqual({
+        backend,
+        model: 'gpt-6.1-sol',
+        thoughtLevel: 'high',
+        suppressSkillSuggestion: true,
+      });
+      expect(fixture.extra.aionui_cron_runtime).toEqual({
+        version: 1,
+        assistant_id: 'manual-codex',
+        job_id: 'cron-1',
+        runtime: { backend, model: 'gpt-6.1-sol', thoughtLevel: 'high', suppressSkillSuggestion: true },
+      });
+      expect(fixture.coreFetch.mock.calls.filter(([, init]) => init?.method)).toEqual([
+        ['http://127.0.0.1:18181/api/conversations/conversation-1', expect.objectContaining({ method: 'PATCH' })],
+      ]);
+    }
+  );
+
+  it('keeps per-conversation choices after the job is edited without looking up the changed job again', async () => {
+    const fixture = await cronPreparationFixture();
+    await fixture.service.prepareConversationWorkspace({
+      conversationId: 'conversation-1',
+      workspace: fixture.workspace,
+    });
+    fixture.job.metadata.agent_config = { assistant_id: 'another-assistant', model_id: 'different-model' };
+    fixture.coreFetch.mockClear();
+    await expect(
+      fixture.service.prepareConversationWorkspace({ conversationId: 'conversation-1', workspace: fixture.workspace })
+    ).resolves.toEqual({
+      backend: 'codex',
+      model: 'gpt-6.1-sol',
+      thoughtLevel: 'high',
+      suppressSkillSuggestion: true,
+    });
+    expect(fixture.coreFetch.mock.calls).toEqual([['http://127.0.0.1:18181/api/conversations/conversation-1']]);
+  });
+
+  it.each([
+    { jobStatus: 404 },
+    { config: null, mode: 'existing' },
+    { config: {}, mode: 'existing', anchor: 'legacy-anchor' },
+  ])('retains ordinary CLI behavior for deleted or unconfigured legacy tasks: %j', async (options) => {
+    const fixture = await cronPreparationFixture(options);
+    await expect(
+      fixture.service.prepareConversationWorkspace({ conversationId: 'conversation-1', workspace: fixture.workspace })
+    ).resolves.toEqual({ backend: 'codex', observeOnly: true });
+    expect(fixture.extra).not.toHaveProperty('aionui_cron_runtime');
+  });
+
+  it('prepares browser injection for an existing OpenCode task without model overrides or an empty snapshot', async () => {
+    const fixture = await cronPreparationFixture({
+      backend: 'opencode',
+      config: {},
+      mode: 'existing',
+      anchor: 'conversation-1',
+    });
+
+    await expect(
+      fixture.service.prepareConversationWorkspace({ conversationId: 'conversation-1', workspace: fixture.workspace })
+    ).resolves.toEqual({ backend: 'opencode' });
+    expect(fixture.extra).not.toHaveProperty('aionui_cron_runtime');
+  });
+
+  it('allows a task to select reasoning effort without selecting a model', async () => {
+    const fixture = await cronPreparationFixture({
+      config: { assistant_id: 'manual-codex', config_options: { thought_level: 'high' } },
+    });
+    await expect(
+      fixture.service.prepareConversationWorkspace({ conversationId: 'conversation-1', workspace: fixture.workspace })
+    ).resolves.toEqual({
+      backend: 'codex',
+      thoughtLevel: 'high',
+      suppressSkillSuggestion: true,
+    });
+    expect(JSON.stringify(fixture.extra.aionui_cron_runtime)).not.toContain('"model"');
+  });
+
+  it.each([
+    { backend: 'codex', config: null },
+    { backend: 'opencode', config: {} },
+  ])('suppresses new-conversation skill suggestions without changing model defaults: %j', async (options) => {
+    const fixture = await cronPreparationFixture(options);
+    await expect(
+      fixture.service.prepareConversationWorkspace({ conversationId: 'conversation-1', workspace: fixture.workspace })
+    ).resolves.toEqual({
+      backend: options.backend,
+      suppressSkillSuggestion: true,
+      ...(options.backend === 'codex' && { observeOnly: true }),
+    });
+    expect(fixture.extra.aionui_cron_runtime).toEqual({
+      version: 1,
+      assistant_id: 'manual-codex',
+      job_id: 'cron-1',
+      runtime: { backend: options.backend, suppressSkillSuggestion: true },
+    });
+  });
+
+  it('does not suppress skill suggestions when applying explicit settings to an existing conversation', async () => {
+    const fixture = await cronPreparationFixture({ mode: 'existing', anchor: 'conversation-1' });
+    await expect(
+      fixture.service.prepareConversationWorkspace({ conversationId: 'conversation-1', workspace: fixture.workspace })
+    ).resolves.toEqual({ backend: 'codex', model: 'gpt-6.1-sol', thoughtLevel: 'high' });
+  });
+
+  it('keeps the authenticated suppression snapshot without re-reading the source job', async () => {
+    const fixture = await cronPreparationFixture({ config: null });
+    await fixture.service.prepareConversationWorkspace({
+      conversationId: 'conversation-1',
+      workspace: fixture.workspace,
+    });
+    fixture.coreFetch.mockClear();
+    await expect(
+      fixture.service.prepareConversationWorkspace({ conversationId: 'conversation-1', workspace: fixture.workspace })
+    ).resolves.toEqual({ backend: 'codex', suppressSkillSuggestion: true, observeOnly: true });
+    expect(fixture.coreFetch.mock.calls).toEqual([['http://127.0.0.1:18181/api/conversations/conversation-1']]);
+  });
+
+  it('rejects malformed suppression metadata instead of activating a prompt rewrite', async () => {
+    const fixture = await cronPreparationFixture({ config: null });
+    fixture.extra.aionui_cron_runtime = {
+      version: 1,
+      assistant_id: 'manual-codex',
+      job_id: 'cron-1',
+      runtime: { backend: 'codex', suppressSkillSuggestion: 'true' },
+    };
+    await expect(
+      fixture.service.prepareConversationWorkspace({ conversationId: 'conversation-1', workspace: fixture.workspace })
+    ).rejects.toThrow('cronConfigurationInvalid');
+    expect(fixture.coreFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    [{ jobStatus: 403 }, 'cronConfigurationUnavailable'],
+    [{ config: { assistant_id: 'different', model_id: 'gpt-6.1-sol' } }, 'cronAssistantMismatch'],
+    [{ mode: 'existing', anchor: 'another-conversation' }, 'cronConversationMismatch'],
+    [{ backend: 'claude' }, 'cronRuntimeUnsupported'],
+    [{ config: { assistant_id: 'manual-codex', model_id: 'bad\nmodel' } }, 'cronConfigurationInvalid'],
+    [{ snapshotStatus: 500 }, 'cronConfigurationSnapshotFailed'],
+  ] as const)('blocks invalid task settings before launching: %j', async (options, error) => {
+    const fixture = await cronPreparationFixture(options);
+    await expect(
+      fixture.service.prepareConversationWorkspace({ conversationId: 'conversation-1', workspace: fixture.workspace })
+    ).rejects.toThrow(error);
+  });
+
   it('prepares conversation workspace files from the persisted assistant before the CLI starts', async () => {
     await writeStoredAuth(authFile, { displayName: 'Alice' });
     vi.stubGlobal(

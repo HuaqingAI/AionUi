@@ -11,6 +11,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Assistant } from '@/common/types/agent/assistantTypes';
 import type { ICronJob } from '@/common/adapter/ipcBridge';
 import type { TChatConversation } from '@/common/config/storage';
+import type { AcpModelInfo } from '@/common/types/platform/acpTypes';
+
+let currentModelInfo: AcpModelInfo | null = null;
 
 const getJobInvokeMock = vi.fn();
 const runNowInvokeMock = vi.fn();
@@ -94,6 +97,13 @@ vi.mock('@renderer/pages/conversation/hooks/useConversationAssistants', () => ({
   }),
 }));
 
+vi.mock('@renderer/hooks/assistant/useAssistantRuntimeCatalog', () => ({
+  useAssistantRuntimeCatalog: (assistant: Assistant | undefined) => ({
+    modelInfo: assistant ? currentModelInfo : null,
+    thoughtLevelOption: null,
+  }),
+}));
+
 vi.mock('@renderer/pages/cron/useCronJobs', () => ({
   useCronJobConversations: (...args: unknown[]) => useCronJobConversationsMock(...args),
 }));
@@ -110,6 +120,7 @@ import TaskDetailPage from '@/renderer/pages/cron/ScheduledTasksPage/TaskDetailP
 
 describe('TaskDetailPage', () => {
   beforeEach(() => {
+    currentModelInfo = null;
     getJobInvokeMock.mockReset();
     getJobInvokeMock.mockResolvedValue(job());
     runNowInvokeMock.mockReset();
@@ -169,6 +180,46 @@ describe('TaskDetailPage', () => {
     expect(assistantAvatar).toHaveAttribute('src', 'data:image/svg+xml;base64,assistant-avatar');
     expect(screen.queryByText('Codex CLI')).not.toBeInTheDocument();
   });
+
+  it.each([
+    { modelId: 'hth/deepseek-v4.1-flash', label: undefined, expected: 'HTH/DEEPSEEK-V4.1-FLASH' },
+    { modelId: 'gpt-6.1-sol', label: 'HTH/GPT-6.1-SOL x1', expected: 'HTH/GPT-6.1-SOL X1' },
+    { modelId: 'model-alpha', label: 'Acme/Model Alpha', expected: 'ACME/MODEL ALPHA' },
+    { modelId: 'unlisted-model', label: undefined, expected: 'UNLISTED-MODEL' },
+  ])(
+    'displays the selected model label $expected without changing saved settings',
+    async ({ modelId, label, expected }) => {
+      currentModelInfo = {
+        current_model_id: 'different-model',
+        current_model_label: 'Different Provider/Another Model',
+        available_models: label ? [{ id: modelId, label }] : [],
+      };
+      const configuredJob = job({
+        metadata: {
+          agent_config: {
+            model_id: modelId,
+            config_options: { reasoning_effort: 'max' },
+          },
+        },
+      });
+      getJobInvokeMock.mockResolvedValue(configuredJob);
+
+      render(
+        <MemoryRouter initialEntries={['/scheduled/job-1']}>
+          <Routes>
+            <Route path='/scheduled/:job_id' element={<TaskDetailPage />} />
+          </Routes>
+        </MemoryRouter>
+      );
+
+      expect(await screen.findByText(expected)).toBeInTheDocument();
+      expect(screen.getByText('MAX')).toBeInTheDocument();
+      expect(configuredJob.metadata.agent_config).toMatchObject({
+        model_id: modelId,
+        config_options: { reasoning_effort: 'max' },
+      });
+    }
+  );
 
   it('renames run-now conversations with the execution date in new conversation mode', async () => {
     runNowInvokeMock.mockResolvedValue({ conversation_id: 'conv-run' });

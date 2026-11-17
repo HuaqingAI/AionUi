@@ -11,8 +11,16 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Assistant } from '@/common/types/agent/assistantTypes';
 import type { ICronJob } from '@/common/adapter/ipcBridge';
 import type { TChatConversation } from '@/common/config/storage';
+import type { AcpModelInfo } from '@/common/types/platform/acpTypes';
+import type { AgentRuntimeDerivedOption } from '@/renderer/utils/model/agentRuntimeCatalog';
 
 let currentAssistants: Assistant[] = [];
+let currentModelInfo: AcpModelInfo | null = null;
+let currentThoughtLevelOption: AgentRuntimeDerivedOption | null = null;
+
+type ModelSelectorProps = React.ComponentProps<
+  typeof import('@/renderer/pages/guid/components/GuidModelSelector').default
+>;
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -74,7 +82,52 @@ vi.mock('@renderer/hooks/agent/useModelProviderList', () => ({
 
 vi.mock('@renderer/pages/guid/components/GuidModelSelector', () => ({
   __esModule: true,
-  default: () => <div data-testid='guid-model-selector' />,
+  default: ({
+    currentAcpCachedModelInfo,
+    selectedAcpModel,
+    setSelectedAcpModel,
+    allowDefaultModel,
+    thoughtLevelOption,
+    onThoughtLevelSelect,
+  }: ModelSelectorProps) => (
+    <div data-testid='guid-model-selector'>
+      <select
+        aria-label='Task model'
+        value={selectedAcpModel ?? ''}
+        onChange={(event) => setSelectedAcpModel(event.target.value || null)}
+      >
+        {allowDefaultModel && <option value=''>Use assistant default</option>}
+        {currentAcpCachedModelInfo?.available_models.map((model) => (
+          <option key={model.id} value={model.id}>
+            {model.label}
+          </option>
+        ))}
+      </select>
+      {thoughtLevelOption && (
+        <select
+          aria-label='Task thinking strength'
+          value={thoughtLevelOption.currentValue ?? ''}
+          onChange={(event) => onThoughtLevelSelect?.(event.target.value)}
+        >
+          {thoughtLevelOption.options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      )}
+    </div>
+  ),
+}));
+
+vi.mock('@renderer/hooks/assistant/useAssistantRuntimeCatalog', () => ({
+  useAssistantRuntimeCatalog: (assistant: Assistant | undefined) => ({
+    modelInfo: assistant ? currentModelInfo : null,
+    runtimeModelInfo: assistant ? currentModelInfo : null,
+    thoughtLevelOption: assistant ? currentThoughtLevelOption : null,
+    modeState: { currentMode: 'default', options: [] },
+    availableCommands: [],
+  }),
 }));
 
 vi.mock('@renderer/components/workspace', () => ({
@@ -107,15 +160,12 @@ vi.mock('@renderer/utils/model/agentTypeSupportPolicy', () => ({
   resolveSupportedConversationType: () => 'acp',
 }));
 
-vi.mock('@renderer/pages/cron/ScheduledTasksPage/resolveCronAgentConfig', () => ({
-  resolveCronAgentConfig: vi.fn(() => ({
-    agent_config: {
-      assistant_id: 'assistant-1',
-      name: '问好助手',
-      mode: 'default',
-    },
-  })),
-}));
+vi.mock('@renderer/pages/cron/ScheduledTasksPage/resolveCronAgentConfig', async () => {
+  const actual = await vi.importActual<
+    typeof import('@/renderer/pages/cron/ScheduledTasksPage/resolveCronAgentConfig')
+  >('@renderer/pages/cron/ScheduledTasksPage/resolveCronAgentConfig');
+  return { ...actual, resolveCronAgentConfig: vi.fn(actual.resolveCronAgentConfig) };
+});
 
 import { ipcBridge } from '@/common';
 import CreateTaskDialog from '@/renderer/pages/cron/ScheduledTasksPage/CreateTaskDialog';
@@ -141,6 +191,24 @@ describe('CreateTaskDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     currentAssistants = assistants();
+    currentModelInfo = {
+      current_model_id: null,
+      current_model_label: null,
+      available_models: [
+        { id: 'gpt-6.1-sol', label: 'HTH/GPT-6.1-SOL' },
+        { id: 'gpt-5.6-terra', label: 'HTH/GPT-5.6-TERRA' },
+      ],
+    };
+    currentThoughtLevelOption = {
+      id: 'reasoning_effort',
+      category: 'thought_level',
+      currentValue: 'medium',
+      options: [
+        { value: 'low', label: 'Low' },
+        { value: 'medium', label: 'Medium' },
+        { value: 'high', label: 'High' },
+      ],
+    };
     vi.mocked(ipcBridge.cron.addJob.invoke).mockResolvedValue(job());
     vi.mocked(ipcBridge.cron.updateJob.invoke).mockResolvedValue(job());
     vi.mocked(ipcBridge.cron.createJob.invoke).mockResolvedValue(job());
@@ -259,6 +327,162 @@ describe('CreateTaskDialog', () => {
     render(<CreateTaskDialog visible onClose={() => {}} editJob={job()} />);
 
     expect(await screen.findByText('问好助手')).toBeInTheDocument();
+  });
+
+  it('offers runtime models below the assistant without opening advanced settings', async () => {
+    render(<CreateTaskDialog visible onClose={() => {}} editJob={job()} />);
+
+    const selector = await screen.findByTestId('guid-model-selector');
+    const assistantSelect = screen.getByTestId('cron-assistant-select');
+    const executionMode = screen.getByText('cron.page.form.executionMode');
+    expect(assistantSelect.compareDocumentPosition(selector) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(selector.compareDocumentPosition(executionMode) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'HTH/GPT-6.1-SOL' })).toBeInTheDocument();
+  });
+
+  it('keeps the assistant model unspecified and defaults thinking strength to high', async () => {
+    const user = userEvent.setup();
+    render(<CreateTaskDialog visible onClose={() => {}} editJob={job()} />);
+
+    expect(await screen.findByLabelText('Task model')).toHaveValue('');
+    expect(screen.getByLabelText('Task thinking strength')).toHaveValue('high');
+    await user.click(screen.getByTestId('modal-ok'));
+
+    await waitFor(() =>
+      expect(ipcBridge.cron.updateJob.invoke).toHaveBeenCalledWith(
+        expect.objectContaining({
+          updates: expect.objectContaining({
+            metadata: expect.objectContaining({
+              agent_config: expect.objectContaining({
+                model_id: undefined,
+                config_options: { reasoning_effort: 'high' },
+              }),
+            }),
+          }),
+        })
+      )
+    );
+  });
+
+  it('saves an explicitly selected model and thinking strength', async () => {
+    const user = userEvent.setup();
+    render(<CreateTaskDialog visible onClose={() => {}} editJob={job()} />);
+
+    await user.selectOptions(await screen.findByLabelText('Task model'), 'gpt-6.1-sol');
+    await user.selectOptions(screen.getByLabelText('Task thinking strength'), 'low');
+    await user.click(screen.getByTestId('modal-ok'));
+
+    await waitFor(() => expect(ipcBridge.cron.updateJob.invoke).toHaveBeenCalledTimes(1));
+    const [{ updates }] = vi.mocked(ipcBridge.cron.updateJob.invoke).mock.calls[0];
+    expect(updates.metadata.agent_config).toMatchObject({
+      model_id: 'gpt-6.1-sol',
+      config_options: { reasoning_effort: 'low' },
+    });
+  });
+
+  it('preserves the existing defaults when model discovery has no available choices', async () => {
+    const user = userEvent.setup();
+    currentModelInfo = null;
+    currentThoughtLevelOption = null;
+    render(<CreateTaskDialog visible onClose={() => {}} editJob={job()} />);
+
+    expect(await screen.findByText('问好助手')).toBeInTheDocument();
+    expect(screen.queryByTestId('guid-model-selector')).not.toBeInTheDocument();
+    await user.click(screen.getByTestId('modal-ok'));
+
+    await waitFor(() =>
+      expect(ipcBridge.cron.updateJob.invoke).toHaveBeenCalledWith(
+        expect.objectContaining({
+          updates: expect.objectContaining({
+            metadata: expect.objectContaining({
+              agent_config: expect.objectContaining({ model_id: undefined, config_options: undefined }),
+            }),
+          }),
+        })
+      )
+    );
+  });
+
+  it('allows returning to the assistant default after selecting a task model', async () => {
+    const user = userEvent.setup();
+    render(<CreateTaskDialog visible onClose={() => {}} editJob={job()} />);
+
+    const modelSelect = await screen.findByLabelText('Task model');
+    await user.selectOptions(modelSelect, 'gpt-6.1-sol');
+    await user.selectOptions(modelSelect, '');
+    await user.click(screen.getByTestId('modal-ok'));
+
+    await waitFor(() => expect(ipcBridge.cron.updateJob.invoke).toHaveBeenCalledTimes(1));
+    const [{ updates }] = vi.mocked(ipcBridge.cron.updateJob.invoke).mock.calls[0];
+    expect(updates.metadata.agent_config?.model_id).toBeUndefined();
+  });
+
+  it('restores saved task choices and preserves unrelated runtime options', async () => {
+    const user = userEvent.setup();
+    const editJob = job();
+    editJob.metadata.agent_config = {
+      ...editJob.metadata.agent_config!,
+      model_id: 'gpt-5.6-terra',
+      config_options: { reasoning_effort: 'low', custom_option: 'keep' },
+    };
+    render(<CreateTaskDialog visible onClose={() => {}} editJob={editJob} />);
+
+    expect(await screen.findByLabelText('Task model')).toHaveValue('gpt-5.6-terra');
+    expect(screen.getByLabelText('Task thinking strength')).toHaveValue('low');
+    await user.click(screen.getByTestId('modal-ok'));
+
+    await waitFor(() =>
+      expect(ipcBridge.cron.updateJob.invoke).toHaveBeenCalledWith(
+        expect.objectContaining({
+          updates: expect.objectContaining({
+            metadata: expect.objectContaining({
+              agent_config: expect.objectContaining({
+                model_id: 'gpt-5.6-terra',
+                config_options: { reasoning_effort: 'low', custom_option: 'keep' },
+              }),
+            }),
+          }),
+        })
+      )
+    );
+  });
+
+  it('clears the previous assistant model and reasoning options when changing assistants', async () => {
+    const user = userEvent.setup();
+    currentAssistants = [
+      ...assistants(),
+      { ...assistants()[0], id: 'assistant-2', name: '第二助手', agent_id: 'agent-codex-2' },
+    ];
+    const editJob = job();
+    editJob.metadata.agent_config = {
+      ...editJob.metadata.agent_config!,
+      model_id: 'gpt-5.6-terra',
+      config_options: { reasoning_effort: 'low', custom_option: 'old-assistant-only' },
+    };
+    render(<CreateTaskDialog visible onClose={() => {}} editJob={editJob} />);
+
+    await user.click(await screen.findByTestId('cron-assistant-select'));
+    fireEvent.click(await screen.findByText('第二助手'));
+
+    expect(screen.getByLabelText('Task model')).toHaveValue('');
+    expect(screen.getByLabelText('Task thinking strength')).toHaveValue('high');
+    await user.click(screen.getByTestId('modal-ok'));
+
+    await waitFor(() =>
+      expect(ipcBridge.cron.updateJob.invoke).toHaveBeenCalledWith(
+        expect.objectContaining({
+          updates: expect.objectContaining({
+            metadata: expect.objectContaining({
+              agent_config: expect.objectContaining({
+                assistant_id: 'assistant-2',
+                model_id: undefined,
+                config_options: { reasoning_effort: 'high' },
+              }),
+            }),
+          }),
+        })
+      )
+    );
   });
 
   it('does not infer assistant identity from legacy backend fields after migration ownership moved server-side', async () => {
@@ -390,11 +614,17 @@ describe('CreateTaskDialog', () => {
     fireEvent.click(assistantOption);
     await user.click(screen.getByTestId('modal-ok'));
 
-    await waitFor(() => expect(resolveCronAgentConfig).toHaveBeenCalledTimes(1));
-    expect(vi.mocked(resolveCronAgentConfig).mock.calls[0][0]).toMatchObject({
-      agentValue: 'assistant-1',
-    });
-    await waitFor(() => expect(ipcBridge.cron.addJob.invoke).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(ipcBridge.cron.addJob.invoke).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agent_config: expect.objectContaining({
+            assistant_id: 'assistant-1',
+            model_id: undefined,
+            config_options: { reasoning_effort: 'high' },
+          }),
+        })
+      )
+    );
   });
 });
 

@@ -194,8 +194,8 @@ const AssistantEditorSections: React.FC<AssistantEditorSectionsProps> = ({ edito
     [currentAgentRuntimeCatalog, localeKey, t]
   );
   const thoughtLevelOption = useMemo(
-    () => buildAgentRuntimeThoughtLevelOption(currentAgentRuntimeCatalog),
-    [currentAgentRuntimeCatalog]
+    () => buildAgentRuntimeThoughtLevelOption(currentAgentRuntimeCatalog, editAgentRuntimeKey),
+    [currentAgentRuntimeCatalog, editAgentRuntimeKey]
   );
   const thoughtLevelOptions = thoughtLevelOption?.options ?? [];
   const recommendedPromptItems = useMemo(

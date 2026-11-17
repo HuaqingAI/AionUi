@@ -114,21 +114,24 @@ describe('GuidModelSelector', () => {
       { id: 'deepseek-v4-pro', label: 'HTH/DEEPSEEK-V4-PRO x8.6' },
     ],
   };
-  const initialCodexThoughtLevelOption = buildAgentRuntimeThoughtLevelOption({
-    config_options: [
-      {
-        id: 'reasoning_effort',
-        category: 'thought_level',
-        type: 'select',
-        current_value: 'high',
-        options: [
-          { value: 'low', name: 'low' },
-          { value: 'medium', name: 'medium' },
-          { value: 'high', name: 'high' },
-        ],
-      },
-    ],
-  });
+  const initialCodexThoughtLevelOption = buildAgentRuntimeThoughtLevelOption(
+    {
+      config_options: [
+        {
+          id: 'reasoning_effort',
+          category: 'thought_level',
+          type: 'select',
+          current_value: 'high',
+          options: [
+            { value: 'low', name: 'low' },
+            { value: 'medium', name: 'medium' },
+            { value: 'high', name: 'high' },
+          ],
+        },
+      ],
+    },
+    'codex'
+  );
   const thoughtLevelOption = {
     id: 'reasoning_effort',
     category: 'thought_level',
@@ -139,6 +142,81 @@ describe('GuidModelSelector', () => {
       { value: 'high', label: 'High' },
     ],
   };
+
+  it.each([
+    { allowDefaultModel: false, label: 'HTH/GPT-5.6-TERRA x18.7' },
+    { allowDefaultModel: true, label: 'Default' },
+  ])(
+    'displays $label for an unset ACP model when allowDefaultModel=$allowDefaultModel',
+    ({ allowDefaultModel, label }) => {
+      const setSelectedAcpModel = vi.fn();
+      render(
+        <GuidModelSelector
+          isGeminiMode={false}
+          modelList={[]}
+          current_model={undefined}
+          setCurrentModel={vi.fn()}
+          currentAcpCachedModelInfo={{
+            ...initialCodexModelInfo,
+            current_model_id: 'gpt-5.6-terra',
+            current_model_label: 'HTH/GPT-5.6-TERRA x18.7',
+          }}
+          selectedAcpModel={null}
+          setSelectedAcpModel={setSelectedAcpModel}
+          allowDefaultModel={allowDefaultModel}
+        />
+      );
+
+      expect(screen.getByRole('button')).toHaveTextContent(label);
+      expect(setSelectedAcpModel).not.toHaveBeenCalled();
+    }
+  );
+
+  it('clears an explicit ACP model through the default option while keeping the thought level', () => {
+    const Selector = () => {
+      const [selectedModel, setSelectedModel] = React.useState<string | null>('gpt-5.6-terra');
+      return (
+        <GuidModelSelector
+          isGeminiMode={false}
+          modelList={[]}
+          current_model={undefined}
+          setCurrentModel={vi.fn()}
+          currentAcpCachedModelInfo={initialCodexModelInfo}
+          selectedAcpModel={selectedModel}
+          setSelectedAcpModel={setSelectedModel}
+          allowDefaultModel
+          thoughtLevelOption={thoughtLevelOption}
+        />
+      );
+    };
+    render(<Selector />);
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Default' }));
+
+    expect(screen.getByRole('button')).toHaveTextContent('Default · Medium');
+    expect(screen.getAllByTestId('submenu-title')[0]).toHaveTextContent('ModelDefault');
+  });
+
+  it('displays a saved task model even when it is absent from the latest runtime choices', () => {
+    render(
+      <GuidModelSelector
+        isGeminiMode={false}
+        modelList={[]}
+        current_model={undefined}
+        setCurrentModel={vi.fn()}
+        currentAcpCachedModelInfo={{
+          ...initialCodexModelInfo,
+          current_model_id: 'gpt-5.6-terra',
+          current_model_label: 'HTH/GPT-5.6-TERRA x18.7',
+        }}
+        selectedAcpModel='previous-task-model'
+        setSelectedAcpModel={vi.fn()}
+        allowDefaultModel
+      />
+    );
+
+    expect(screen.getByRole('button')).toHaveTextContent('previous-task-model');
+  });
 
   it('shows model and thought menus before the first Codex model selection', () => {
     render(
@@ -157,7 +235,7 @@ describe('GuidModelSelector', () => {
 
     expect(screen.getAllByTestId('submenu-title').map((title) => title.textContent)).toEqual([
       'ModelDefault',
-      'Thinking Levelhigh',
+      'Thinking LevelHigh',
     ]);
     const [modelBody, thoughtBody] = screen.getAllByTestId('submenu-body');
     expect(
@@ -169,7 +247,7 @@ describe('GuidModelSelector', () => {
       within(thoughtBody)
         .getAllByRole('menuitem')
         .map((item) => item.textContent)
-    ).toEqual(['low', 'medium', '\u2713high']);
+    ).toEqual(['Low', 'Medium', '\u2713High']);
   });
 
   it('passes the first Codex model and thought choices through unchanged', () => {
@@ -192,7 +270,7 @@ describe('GuidModelSelector', () => {
     expect(setSelectedAcpModel).not.toHaveBeenCalled();
     const [modelBody, thoughtBody] = screen.getAllByTestId('submenu-body');
     fireEvent.click(within(modelBody).getByText('HTH/DEEPSEEK-V4-PRO x8.6'));
-    fireEvent.click(within(thoughtBody).getByText('low'));
+    fireEvent.click(within(thoughtBody).getByText('Low'));
 
     expect(setSelectedAcpModel).toHaveBeenCalledExactlyOnceWith('deepseek-v4-pro');
     expect(onThoughtLevelSelect).toHaveBeenCalledExactlyOnceWith('low');
@@ -318,6 +396,7 @@ describe('GuidModelSelector', () => {
         currentAcpCachedModelInfo={null}
         selectedAcpModel={null}
         setSelectedAcpModel={vi.fn()}
+        allowDefaultModel
         thoughtLevelOption={thoughtLevelOption}
         onThoughtLevelSelect={vi.fn()}
       />
@@ -326,5 +405,6 @@ describe('GuidModelSelector', () => {
     expect(screen.getAllByText('gpt-5.3-codex').length).toBeGreaterThan(0);
     expect(screen.queryByText('Thinking Level')).not.toBeInTheDocument();
     expect(screen.queryByText('Medium')).not.toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: 'Default' })).not.toBeInTheDocument();
   });
 });

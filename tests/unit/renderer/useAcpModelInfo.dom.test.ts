@@ -6,29 +6,45 @@
 
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { createElement, type PropsWithChildren } from 'react';
-import { SWRConfig } from 'swr';
+import { SWRConfig, useSWRConfig } from 'swr';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { IResponseMessage } from '@/common/adapter/ipcBridge';
+import type { IConversationListChangedEvent, IResponseMessage } from '@/common/adapter/ipcBridge';
 import type { AcpConfigOptionDto, AcpModelInfo } from '@/common/types/platform/acpTypes';
 import { useAcpModelInfo } from '@/renderer/hooks/agent/useAcpModelInfo';
+import { resetAcpConfigOptionsStateForTests, useAcpConfigOptions } from '@/renderer/hooks/agent/useAcpConfigOptions';
 import { resetEnsureConversationRuntimeStateForTests } from '@/renderer/pages/conversation/utils/ensureConversationRuntime';
+import { setAgentModelCatalogScope } from '@/renderer/services/runtime/agentModelCatalog';
 
 const {
   ensureRuntimeInvokeMock,
+  conversationGetInvokeMock,
   modelPricingDescriptionsInvokeMock,
   setConfigOptionInvokeMock,
   responseStreamHandlers,
+  conversationListChangedHandlers,
 } = vi.hoisted(() => ({
   ensureRuntimeInvokeMock: vi.fn(),
+  conversationGetInvokeMock: vi.fn(),
   modelPricingDescriptionsInvokeMock: vi.fn(),
   setConfigOptionInvokeMock: vi.fn(),
   responseStreamHandlers: [] as Array<(message: IResponseMessage) => void>,
+  conversationListChangedHandlers: [] as Array<(message: IConversationListChangedEvent) => void>,
 }));
 
 vi.mock('@/common', () => ({
   ipcBridge: {
     conversation: {
       ensureRuntime: { invoke: ensureRuntimeInvokeMock },
+      get: { invoke: conversationGetInvokeMock },
+      listChanged: {
+        on: vi.fn().mockImplementation((handler: (message: IConversationListChangedEvent) => void) => {
+          conversationListChangedHandlers.push(handler);
+          return () => {
+            const index = conversationListChangedHandlers.indexOf(handler);
+            if (index >= 0) conversationListChangedHandlers.splice(index, 1);
+          };
+        }),
+      },
     },
     acpConversation: {
       setConfigOption: { invoke: setConfigOptionInvokeMock },
@@ -81,6 +97,37 @@ const buildLegacyModelInfo = (overrides: Partial<AcpModelInfo> = {}): AcpModelIn
   ...overrides,
 });
 
+const buildScheduledConfigOptions = (
+  backend: 'codex' | 'opencode',
+  model: string,
+  effort: string
+): AcpConfigOptionDto[] => {
+  const prefix = backend === 'opencode' ? 'hth/' : '';
+  return [
+    {
+      id: 'model',
+      category: 'model',
+      type: 'select',
+      current_value: prefix + model,
+      options: [
+        { value: prefix + 'gpt-6.1-sol', name: 'GPT-6.1-SOL' },
+        { value: prefix + 'deepseek-v4-pro', name: 'DEEPSEEK-V4-PRO' },
+      ],
+    },
+    {
+      id: 'reasoning_effort',
+      category: 'thought_level',
+      type: 'select',
+      current_value: effort,
+      options: [
+        { value: 'medium', name: 'Medium' },
+        { value: 'high', name: 'High' },
+        { value: 'max', name: 'Max' },
+      ],
+    },
+  ];
+};
+
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
   let reject!: (reason?: unknown) => void;
@@ -116,14 +163,18 @@ const createSwrWrapper = () => {
   };
 };
 
-const renderUseAcpModelInfo = (params: Parameters<typeof useAcpModelInfo>[0]) =>
-  renderHook(() => useAcpModelInfo(params), { wrapper: createSwrWrapper() });
+const renderUseAcpModelInfo = (params: Parameters<typeof useAcpModelInfo>[0], wrapper = createSwrWrapper()) =>
+  renderHook(() => useAcpModelInfo(params), { wrapper });
 
 describe('useAcpModelInfo', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     responseStreamHandlers.length = 0;
+    conversationListChangedHandlers.length = 0;
     resetEnsureConversationRuntimeStateForTests();
+    resetAcpConfigOptionsStateForTests();
+    setAgentModelCatalogScope(null);
+    conversationGetInvokeMock.mockReset();
     ensureRuntimeInvokeMock.mockReset();
     modelPricingDescriptionsInvokeMock.mockReset();
     setConfigOptionInvokeMock.mockReset();
@@ -402,6 +453,355 @@ describe('useAcpModelInfo', () => {
       await secondLoad.promise;
     });
     await waitFor(() => expect(result.current.isRuntimeReady).toBe(true));
+  });
+
+  it('updates ordinary Codex effort from actual confirmations without reconnecting or replaying a filled snapshot', async () => {
+    setAgentModelCatalogScope('ordinary-codex');
+    const nativeOptions = buildScheduledConfigOptions('codex', 'gpt-6.1-sol', '');
+    const updatedMetadata = deferred<unknown>();
+    const conversation = (thoughtLevel: string) => ({
+      id: 'conv-1',
+      extra: {
+        thought_level: 'high',
+        current_model_id: 'gpt-6.1-sol',
+        aionui_codex_runtime: {
+          version: 1,
+          confirmed: { backend: 'codex', model: 'gpt-6.1-sol', thoughtLevel },
+        },
+      },
+    });
+    ensureRuntimeInvokeMock.mockResolvedValue({ recovered: false, config_options: nativeOptions, runtime: null });
+    conversationGetInvokeMock
+      .mockResolvedValueOnce(conversation('medium'))
+      .mockReturnValueOnce(updatedMetadata.promise)
+      .mockResolvedValue(conversation('high'));
+    const { result } = renderUseAcpModelInfo({ conversation_id: 'conv-1', backend: 'codex' });
+
+    await waitFor(() => expect(result.current.thoughtLevel?.currentValue).toBe('medium'));
+    expect(result.current.thoughtLevel?.options.find((option) => option.value === 'medium')?.label).toBe('Medium');
+    act(() => {
+      for (const handler of conversationListChangedHandlers) {
+        handler({ conversation_id: 'conv-1', action: 'updated' });
+      }
+    });
+    await waitFor(() => expect(conversationGetInvokeMock).toHaveBeenCalledTimes(2));
+    act(() => {
+      emitStream({
+        type: 'acp_config_option',
+        conversation_id: 'conv-1',
+        data: { config_options: nativeOptions },
+      } as unknown as IResponseMessage);
+    });
+    await act(async () => {
+      updatedMetadata.resolve(conversation('high'));
+      await updatedMetadata.promise;
+    });
+    await waitFor(() => expect(result.current.thoughtLevel?.currentValue).toBe('high'));
+
+    const nativeRefresh = deferred<unknown>();
+    ensureRuntimeInvokeMock.mockReturnValue(nativeRefresh.promise);
+    act(() => {
+      emitStream({
+        type: 'acp_config_option',
+        conversation_id: 'conv-1',
+        data: { config_options: buildScheduledConfigOptions('codex', 'gpt-6.1-sol', 'medium') },
+      } as unknown as IResponseMessage);
+      for (const handler of conversationListChangedHandlers) {
+        handler({ conversation_id: 'conv-1', action: 'updated' });
+      }
+    });
+    await waitFor(() => expect(ensureRuntimeInvokeMock).toHaveBeenCalledTimes(3));
+    await act(async () => {
+      nativeRefresh.resolve({
+        recovered: false,
+        config_options: buildScheduledConfigOptions('codex', 'gpt-6.1-sol', 'medium'),
+        runtime: null,
+      });
+      await nativeRefresh.promise;
+    });
+    expect(result.current.thoughtLevel?.currentValue).toBe('medium');
+    expect(conversationGetInvokeMock).toHaveBeenCalledTimes(2);
+    expect(setConfigOptionInvokeMock).not.toHaveBeenCalled();
+  });
+
+  it.each(['before', 'after'] as const)(
+    'keeps confirmed model and effort when a second selector mounts %s the stream update and the old HTTP load resolves',
+    async (mountTiming) => {
+      const oldSnapshot = deferred<{ recovered: boolean; config_options: AcpConfigOptionDto[]; runtime: null }>();
+      ensureRuntimeInvokeMock.mockReturnValue(oldSnapshot.promise);
+      const wrapper = createSwrWrapper();
+      const params = { conversation_id: 'conv-1', backend: 'opencode' };
+      const first = renderUseAcpModelInfo(params, wrapper);
+      let second = mountTiming === 'before' ? renderUseAcpModelInfo(params, wrapper) : undefined;
+      await waitFor(() => expect(ensureRuntimeInvokeMock).toHaveBeenCalledTimes(1));
+
+      act(() => {
+        emitStream({
+          type: 'acp_config_option',
+          conversation_id: 'conv-1',
+          data: { config_options: buildScheduledConfigOptions('opencode', 'deepseek-v4-pro', 'max') },
+        } as unknown as IResponseMessage);
+      });
+      second ??= renderUseAcpModelInfo(params, wrapper);
+      await waitFor(() => {
+        expect(first.result.current.model_info?.current_model_id).toBe('hth/deepseek-v4-pro');
+        expect(first.result.current.thoughtLevel?.currentValue).toBe('max');
+        expect(second.result.current.model_info?.current_model_id).toBe('hth/deepseek-v4-pro');
+        expect(second.result.current.thoughtLevel?.currentValue).toBe('max');
+      });
+
+      await act(async () => {
+        oldSnapshot.resolve({
+          recovered: true,
+          config_options: buildScheduledConfigOptions('opencode', 'gpt-6.1-sol', 'high'),
+          runtime: null,
+        });
+        await oldSnapshot.promise;
+      });
+      await waitFor(() => expect(first.result.current.isRuntimeReady).toBe(true));
+      expect(first.result.current.model_info?.current_model_id).toBe('hth/deepseek-v4-pro');
+      expect(first.result.current.thoughtLevel?.currentValue).toBe('max');
+      expect(second.result.current.model_info?.current_model_id).toBe('hth/deepseek-v4-pro');
+      expect(second.result.current.thoughtLevel?.currentValue).toBe('max');
+      expect(ensureRuntimeInvokeMock).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it('keeps confirmed Codex medium reasoning when an earlier HTTP load returns no options', async () => {
+    const oldSnapshot = deferred<{ recovered: boolean; config_options: AcpConfigOptionDto[]; runtime: null }>();
+    ensureRuntimeInvokeMock.mockReturnValue(oldSnapshot.promise);
+    const { result } = renderUseAcpModelInfo({ conversation_id: 'conv-1', backend: 'codex' });
+    await waitFor(() => expect(ensureRuntimeInvokeMock).toHaveBeenCalledTimes(1));
+    act(() => {
+      emitStream({
+        type: 'acp_config_option',
+        conversation_id: 'conv-1',
+        data: { config_options: buildScheduledConfigOptions('codex', 'gpt-6.1-sol', 'medium') },
+      } as unknown as IResponseMessage);
+    });
+    await waitFor(() => expect(result.current.thoughtLevel?.currentValue).toBe('medium'));
+
+    await act(async () => {
+      oldSnapshot.resolve({ recovered: true, config_options: [], runtime: null });
+      await oldSnapshot.promise;
+    });
+    await waitFor(() => expect(result.current.isRuntimeReady).toBe(true));
+    expect(result.current.model_info?.current_model_id).toBe('gpt-6.1-sol');
+    expect(result.current.thoughtLevel?.currentValue).toBe('medium');
+  });
+
+  it.each([
+    { backend: 'codex' as const, model: 'gpt-6.1-sol', effort: 'medium' },
+    { backend: 'opencode' as const, model: 'deepseek-v4-pro', effort: 'max' },
+  ])('shows the confirmed $backend HTTP settings on the first mount without reconnecting', async (settings) => {
+    ensureRuntimeInvokeMock.mockResolvedValue({
+      recovered: false,
+      config_options: buildScheduledConfigOptions(settings.backend, settings.model, settings.effort),
+      runtime: null,
+    });
+    const { result } = renderUseAcpModelInfo({ conversation_id: 'conv-1', backend: settings.backend });
+
+    await waitFor(() => expect(result.current.isRuntimeReady).toBe(true));
+    expect(result.current.model_info?.current_model_id).toBe(
+      settings.backend === 'opencode' ? 'hth/' + settings.model : settings.model
+    );
+    expect(result.current.thoughtLevel?.currentValue).toBe(settings.effort);
+    expect(ensureRuntimeInvokeMock).toHaveBeenCalledTimes(1);
+    expect(setConfigOptionInvokeMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { streamTiming: 'before', initialEmpty: false },
+    { streamTiming: 'after', initialEmpty: false },
+    { streamTiming: 'after', initialEmpty: true },
+  ])(
+    'shows confirmed Codex medium on first open with stream $streamTiming HTTP and initialEmpty=$initialEmpty',
+    async ({ streamTiming, initialEmpty }) => {
+      setAgentModelCatalogScope('offline-confirmed-codex');
+      const nativeOptions = buildScheduledConfigOptions('codex', 'gpt-6.1-sol', '');
+      const metadata = deferred<unknown>();
+      ensureRuntimeInvokeMock.mockResolvedValue({
+        recovered: false,
+        config_options: initialEmpty ? [] : nativeOptions,
+        runtime: null,
+      });
+      conversationGetInvokeMock.mockReturnValue(metadata.promise);
+      const { result } = renderUseAcpModelInfo({ conversation_id: 'conv-1', backend: 'codex' });
+      await waitFor(() => expect(conversationGetInvokeMock).toHaveBeenCalledTimes(1));
+      const emitNativeSnapshot = () =>
+        emitStream({
+          type: 'acp_config_option',
+          conversation_id: 'conv-1',
+          data: { config_options: nativeOptions },
+        } as unknown as IResponseMessage);
+      if (streamTiming === 'before') act(emitNativeSnapshot);
+      await act(async () => {
+        metadata.resolve({
+          id: 'conv-1',
+          extra: {
+            aionui_cron_runtime: {
+              version: 1,
+              runtime: { backend: 'codex', model: 'gpt-6.1-sol', thoughtLevel: 'medium' },
+              confirmed: { backend: 'codex', model: 'gpt-6.1-sol', thoughtLevel: 'medium' },
+            },
+          },
+        });
+        await metadata.promise;
+      });
+      await waitFor(() => expect(result.current.isRuntimeReady).toBe(true));
+      if (streamTiming === 'after') act(emitNativeSnapshot);
+      await waitFor(() => expect(result.current.thoughtLevel?.currentValue).toBe('medium'));
+
+      act(() =>
+        emitStream({
+          type: 'acp_config_option',
+          conversation_id: 'conv-1',
+          data: { config_options: buildScheduledConfigOptions('codex', 'gpt-6.1-sol', 'high') },
+        } as unknown as IResponseMessage)
+      );
+      await waitFor(() => expect(result.current.thoughtLevel?.currentValue).toBe('high'));
+      expect(ensureRuntimeInvokeMock).toHaveBeenCalledTimes(1);
+      expect(setConfigOptionInvokeMock).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each(['before', 'after'] as const)(
+    'refreshes confirmed Codex effort when persistence finishes %s an older metadata read',
+    async (eventTiming) => {
+      setAgentModelCatalogScope('offline-confirmed-codex');
+      const nativeOptions = buildScheduledConfigOptions('codex', 'gpt-6.1-sol', '');
+      const oldMetadata = deferred<unknown>();
+      const runtime = { backend: 'codex', model: 'gpt-6.1-sol', thoughtLevel: 'medium' };
+      ensureRuntimeInvokeMock
+        .mockResolvedValueOnce({ recovered: false, config_options: [], runtime: null })
+        .mockResolvedValue({ recovered: false, config_options: nativeOptions, runtime: null });
+      conversationGetInvokeMock.mockReturnValueOnce(oldMetadata.promise).mockResolvedValue({
+        id: 'conv-1',
+        extra: { aionui_cron_runtime: { version: 1, runtime, confirmed: runtime } },
+      });
+      const { result } = renderUseAcpModelInfo({ conversation_id: 'conv-1', backend: 'codex' });
+      await waitFor(() => expect(conversationGetInvokeMock).toHaveBeenCalledTimes(1));
+      expect(conversationListChangedHandlers).toHaveLength(1);
+      act(() => {
+        emitStream({
+          type: 'acp_config_option',
+          conversation_id: 'conv-1',
+          data: { config_options: nativeOptions },
+        } as unknown as IResponseMessage);
+      });
+      await waitFor(() => expect(result.current.model_info?.current_model_id).toBe('gpt-6.1-sol'));
+      expect(result.current.thoughtLevel?.currentValue).toBe('');
+      if (eventTiming === 'before') {
+        act(() => {
+          for (const handler of conversationListChangedHandlers) {
+            handler({ conversation_id: 'conv-1', action: 'updated', source: 'aionui' });
+          }
+        });
+        expect(ensureRuntimeInvokeMock).toHaveBeenCalledTimes(1);
+      }
+      await act(async () => {
+        oldMetadata.resolve({ id: 'conv-1', extra: { aionui_cron_runtime: { version: 1, runtime } } });
+        await oldMetadata.promise;
+      });
+      if (eventTiming === 'after') {
+        await waitFor(() => expect(result.current.isRuntimeReady).toBe(true));
+        expect(result.current.thoughtLevel?.currentValue).toBe('');
+        await act(async () => {
+          for (const handler of conversationListChangedHandlers) {
+            handler({ conversation_id: 'another-conversation', action: 'updated', source: 'aionui' });
+            handler({ conversation_id: 'conv-1', action: 'created', source: 'aionui' });
+            handler({ conversation_id: 'conv-1', action: 'deleted', source: 'aionui' });
+          }
+          await Promise.resolve();
+        });
+        expect(ensureRuntimeInvokeMock).toHaveBeenCalledTimes(1);
+        expect(conversationGetInvokeMock).toHaveBeenCalledTimes(1);
+        act(() => {
+          for (const handler of conversationListChangedHandlers) {
+            handler({ conversation_id: 'conv-1', action: 'updated', source: 'aionui' });
+          }
+        });
+      }
+
+      await waitFor(() => expect(result.current.thoughtLevel?.currentValue).toBe('medium'));
+      expect(result.current.model_info?.current_model_id).toBe('gpt-6.1-sol');
+      expect(ensureRuntimeInvokeMock).toHaveBeenCalledTimes(2);
+      expect(conversationGetInvokeMock).toHaveBeenCalledTimes(2);
+      expect(setConfigOptionInvokeMock).not.toHaveBeenCalled();
+    }
+  );
+
+  it('keeps a confirmed set response when an older reload finishes later', async () => {
+    const initial = buildScheduledConfigOptions('opencode', 'gpt-6.1-sol', 'high');
+    const confirmed = buildScheduledConfigOptions('opencode', 'deepseek-v4-pro', 'max');
+    const oldLoad = deferred<AcpConfigOptionDto[]>();
+    const setting = deferred<{ confirmation: 'observed'; config_options: AcpConfigOptionDto[] }>();
+    const load = vi.fn().mockResolvedValueOnce(initial).mockResolvedValueOnce(initial).mockReturnValue(oldLoad.promise);
+    setConfigOptionInvokeMock.mockReturnValue(setting.promise);
+    const params = { conversation_id: 'conv-1', backend: 'opencode', configOptionsPort: { load } };
+    const { result } = renderHook(() => ({ ...useAcpModelInfo(params), reload: useAcpConfigOptions(params).reload }), {
+      wrapper: createSwrWrapper(),
+    });
+    await waitFor(() => expect(result.current.isRuntimeReady).toBe(true));
+    let setPromise!: Promise<AcpConfigOptionDto[]>;
+    act(() => {
+      setPromise = result.current.setConfigOption('reasoning_effort', 'max');
+    });
+    await waitFor(() => expect(setConfigOptionInvokeMock).toHaveBeenCalledTimes(1));
+    let reloadPromise!: Promise<unknown>;
+    act(() => {
+      reloadPromise = result.current.reload();
+    });
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(3));
+
+    await act(async () => {
+      setting.resolve({ confirmation: 'observed', config_options: confirmed });
+      await setPromise;
+    });
+    expect(result.current.model_info?.current_model_id).toBe('hth/deepseek-v4-pro');
+    expect(result.current.thoughtLevel?.currentValue).toBe('max');
+    await act(async () => {
+      oldLoad.resolve(initial);
+      await reloadPromise;
+    });
+    expect(result.current.model_info?.current_model_id).toBe('hth/deepseek-v4-pro');
+    expect(result.current.thoughtLevel?.currentValue).toBe('max');
+  });
+
+  it('keeps stream confirmation when a stale SWR revalidation finishes later', async () => {
+    const oldLoad = deferred<AcpConfigOptionDto[]>();
+    const load = vi
+      .fn()
+      .mockResolvedValueOnce(buildScheduledConfigOptions('opencode', 'gpt-6.1-sol', 'high'))
+      .mockReturnValue(oldLoad.promise);
+    const params = { conversation_id: 'conv-1', backend: 'opencode', configOptionsPort: { load } };
+    const { result } = renderHook(
+      () => ({
+        info: useAcpModelInfo(params),
+        revalidate: useSWRConfig().mutate,
+      }),
+      { wrapper: createSwrWrapper() }
+    );
+    await waitFor(() => expect(result.current.info.isRuntimeReady).toBe(true));
+    let revalidation!: Promise<unknown>;
+    act(() => {
+      revalidation = result.current.revalidate(['acp-config-options', 'conv-1']);
+    });
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+    act(() => {
+      emitStream({
+        type: 'acp_config_option',
+        conversation_id: 'conv-1',
+        data: { config_options: buildScheduledConfigOptions('opencode', 'deepseek-v4-pro', 'max') },
+      } as unknown as IResponseMessage);
+    });
+    await waitFor(() => expect(result.current.info.thoughtLevel?.currentValue).toBe('max'));
+    await act(async () => {
+      oldLoad.resolve(buildScheduledConfigOptions('opencode', 'gpt-6.1-sol', 'high'));
+      await revalidation;
+    });
+    expect(result.current.info.model_info?.current_model_id).toBe('hth/deepseek-v4-pro');
+    expect(result.current.info.thoughtLevel?.currentValue).toBe('max');
   });
 
   it('preserves model option descriptions from config options', async () => {

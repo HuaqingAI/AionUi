@@ -9,6 +9,7 @@ import fs from 'fs/promises';
 import net from 'net';
 import os from 'os';
 import path from 'path';
+import type { CronRuntimeConfirmation, CronRuntimeOverrides } from './cronRuntimeOverrides';
 
 type WorkspacePreparationRequest = {
   conversationId: string;
@@ -23,9 +24,15 @@ export class HTHWorkspacePreparationServer {
   private directory?: string;
   private starting?: Promise<PreparationConnection>;
   private readonly sockets = new Set<net.Socket>();
-  private readonly pendingByWorkspace = new Map<string, Promise<void>>();
+  private readonly pendingByWorkspace = new Map<string, Promise<void | CronRuntimeOverrides>>();
 
-  constructor(private readonly prepare: (request: WorkspacePreparationRequest) => Promise<void>) {}
+  constructor(
+    private readonly prepare: (request: WorkspacePreparationRequest) => Promise<void | CronRuntimeOverrides>,
+    private readonly confirmRuntime?: (
+      request: WorkspacePreparationRequest,
+      confirmation: CronRuntimeConfirmation
+    ) => Promise<void>
+  ) {}
 
   start(): Promise<PreparationConnection> {
     this.starting ??= this.listen().catch((error: unknown) => {
@@ -118,14 +125,48 @@ export class HTHWorkspacePreparationServer {
         return;
       }
       const validated = { conversationId: request.conversationId, workspace: request.workspace };
+      let confirmation: CronRuntimeConfirmation | undefined;
+      if ('confirmation' in request) {
+        const value = request.confirmation;
+        if (
+          !value ||
+          typeof value !== 'object' ||
+          !('backend' in value) ||
+          value.backend !== 'codex' ||
+          !('model' in value) ||
+          typeof value.model !== 'string' ||
+          !value.model.trim() ||
+          value.model.length > 500 ||
+          [...value.model].some((character) => character.charCodeAt(0) < 32) ||
+          ('thoughtLevel' in value &&
+            (typeof value.thoughtLevel !== 'string' ||
+              !value.thoughtLevel.trim() ||
+              value.thoughtLevel.length > 500 ||
+              [...value.thoughtLevel].some((character) => character.charCodeAt(0) < 32))) ||
+          !this.confirmRuntime
+        ) {
+          socket.end('{"ok":false}\n');
+          return;
+        }
+        confirmation = {
+          backend: 'codex',
+          model: value.model,
+          ...('thoughtLevel' in value && { thoughtLevel: value.thoughtLevel as string }),
+        };
+      }
       const key = process.platform === 'win32' ? path.resolve(validated.workspace).toLowerCase() : validated.workspace;
       // Conversations may share a workspace; serialize preparation without skipping identity checks.
       const previous = this.pendingByWorkspace.get(key) ?? Promise.resolve();
-      const preparation = previous.catch(() => {}).then(() => this.prepare(validated));
+      const preparation = previous
+        .catch(() => {})
+        .then(async () => {
+          if (!confirmation) return this.prepare(validated);
+          await this.confirmRuntime!(validated, confirmation);
+        });
       this.pendingByWorkspace.set(key, preparation);
       void preparation
-        .then(() => {
-          socket.end('{"ok":true}\n');
+        .then((runtime) => {
+          socket.end(JSON.stringify({ ok: true, ...(runtime && { runtime }) }) + '\n');
         })
         .catch(() => {
           console.warn('[HTHWorkspacePreparation] Project preparation failed', {

@@ -4,12 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {
-  assistantRuntimeKey,
-  isAionrsAssistant,
-  isHTHSyncedAssistant,
-  type Assistant,
-} from '@/common/types/agent/assistantTypes';
+import { assistantRuntimeKey, isAionrsAssistant, type Assistant } from '@/common/types/agent/assistantTypes';
 import { configService } from '@/common/config/configService';
 import { HTH_DEFAULT_MODEL } from '@/common/config/constants';
 import type { AcpModelInfo } from '../types';
@@ -18,19 +13,12 @@ import {
   buildAgentRuntimeModeState,
   buildAgentRuntimeModelInfo,
   buildAgentRuntimeSlashCommands,
-  buildAgentRuntimeThoughtLevelOption,
   type AgentRuntimeCatalog,
   type AgentRuntimeDerivedOption,
 } from '@/renderer/utils/model/agentRuntimeCatalog';
 import type { SlashCommandItem } from '@/common/chat/slash/types';
-import { useManagedAgentRuntimeCatalog } from '@/renderer/hooks/agent/useManagedAgents';
-import { useHthModelPricingDescriptions } from '@/renderer/hooks/agent/useHthModelPricingDescriptions';
-import {
-  getAgentModelCatalogSnapshot,
-  reconcileAgentModelCatalog,
-  subscribeAgentModelCatalog,
-} from '@/renderer/services/runtime/agentModelCatalog';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useAssistantRuntimeCatalog } from '@/renderer/hooks/assistant/useAssistantRuntimeCatalog';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useCustomAgentsLoader } from './useCustomAgentsLoader';
 import { resolveGuidThoughtLevelDefault } from '../utils/assistantDefaults';
 
@@ -40,6 +28,8 @@ export {
   buildAgentRuntimeSlashCommands,
   type AgentRuntimeCatalog,
 };
+
+export { buildAssistantModelInfo } from '@/renderer/hooks/assistant/useAssistantRuntimeCatalog';
 
 export type GuidAssistantSelectionResult = {
   selectedAssistantId: string | null;
@@ -67,18 +57,6 @@ export type GuidAssistantSelectionResult = {
 export function resolveInitialAssistantModel(models: string[]): string | null {
   if (models.length > 0) {
     return models[0];
-  }
-
-  return null;
-}
-
-export function buildAssistantModelInfo(models: string[]): AcpModelInfo | null {
-  if (models.length > 0) {
-    return {
-      current_model_id: models[0],
-      current_model_label: models[0],
-      available_models: models.map((model) => ({ id: model, label: model })),
-    } satisfies AcpModelInfo;
   }
 
   return null;
@@ -139,8 +117,6 @@ export const useGuidAssistantSelection = ({
   const [selectedAcpModel, _setSelectedAcpModel] = useState<string | null>(null);
   const [selectedThoughtLevelValue, _setSelectedThoughtLevelValue] = useState<string>('');
   const { assistants } = useCustomAgentsLoader();
-  const managedAgentRuntimeCatalog = useManagedAgentRuntimeCatalog();
-  const modelCatalog = useSyncExternalStore(subscribeAgentModelCatalog, getAgentModelCatalogSnapshot);
 
   const setSelectedMode = useCallback(
     (mode: React.SetStateAction<string>, _options?: { persistPreference?: boolean }) => {
@@ -228,75 +204,13 @@ export const useGuidAssistantSelection = ({
   const selectedAssistantId = selectedAssistant?.id ?? null;
   const selectedAssistantBackend = assistantRuntimeKey(selectedAssistant);
   const selectedAssistantModels = selectedAssistant?.models ?? [];
-  const selectedManagedAgentRuntimeCatalog = useMemo(
-    () =>
-      selectedAssistant?.agent_id
-        ? managedAgentRuntimeCatalog.find((agent) => agent.id === selectedAssistant.agent_id)
-        : undefined,
-    [managedAgentRuntimeCatalog, selectedAssistant?.agent_id]
-  );
-  const managedModelInfo = useMemo(
-    () => buildAgentRuntimeModelInfo(selectedManagedAgentRuntimeCatalog, selectedAssistantBackend),
-    [selectedManagedAgentRuntimeCatalog, selectedAssistantBackend]
-  );
-  useEffect(() => {
-    if (selectedAssistant?.agent_id && ['opencode', 'codex'].includes(selectedAssistantBackend) && managedModelInfo) {
-      reconcileAgentModelCatalog(selectedAssistant.agent_id, managedModelInfo);
-    }
-  }, [selectedAssistant?.agent_id, selectedAssistantBackend, managedModelInfo, modelCatalog.scope]);
-  const selectedAgentRuntimeModelInfo = useMemo<AcpModelInfo | null>(() => {
-    const observed = selectedAssistant?.agent_id ? modelCatalog.observed[selectedAssistant.agent_id] : undefined;
-    const runtime = observed ?? managedModelInfo;
-    if (runtime) return runtime;
-    if (!selectedAssistant?.agent_id || !['opencode', 'codex'].includes(selectedAssistantBackend)) return null;
-    if (selectedAssistantModels.length > 0 || selectedAssistant.agent?.source === 'custom') return null;
-    if (modelCatalog.initialModelIds.length === 0) return null;
-    return {
-      current_model_id: null,
-      current_model_label: null,
-      available_models: modelCatalog.initialModelIds.map((id) => ({
-        id: selectedAssistantBackend === 'opencode' ? `hth/${id}` : id,
-        label: modelCatalog.initialModelLabels[id] ?? `HTH/${id.toUpperCase()}`,
-      })),
-    } satisfies AcpModelInfo;
-  }, [modelCatalog, selectedAssistant, selectedAssistantModels, selectedAssistantBackend, managedModelInfo]);
-  const currentAgentAvailableCommands = useMemo(
-    () => buildAgentRuntimeSlashCommands(selectedManagedAgentRuntimeCatalog),
-    [selectedManagedAgentRuntimeCatalog]
-  );
-  const selectedAgentRuntimeModeState = useMemo(
-    () => buildAgentRuntimeModeState(selectedManagedAgentRuntimeCatalog),
-    [selectedManagedAgentRuntimeCatalog]
-  );
-  const selectedAgentRuntimeThoughtLevelOption = useMemo(() => {
-    const runtime = buildAgentRuntimeThoughtLevelOption(selectedManagedAgentRuntimeCatalog);
-    const managedOpenCode = selectedAssistantBackend === 'opencode' && isHTHSyncedAssistant(selectedAssistant);
-    if (runtime && (runtime.options.length > 0 || !managedOpenCode)) return runtime;
-    if (
-      !['codex', 'opencode'].includes(selectedAssistantBackend) ||
-      !selectedAssistant?.agent_id ||
-      selectedAssistant.agent?.source === 'custom' ||
-      selectedAssistantModels.length > 0 ||
-      modelCatalog.initialModelIds.length === 0 ||
-      (!managedOpenCode && (modelCatalog.observed[selectedAssistant.agent_id] || managedModelInfo))
-    ) {
-      return null;
-    }
-    // Managed OpenCode templates advertise these levels even if Core still has an older model-only catalog.
-    return buildAgentRuntimeThoughtLevelOption({
-      config_options:
-        selectedAssistantBackend === 'opencode'
-          ? modelCatalog.initialOpenCodeConfigOptions
-          : modelCatalog.initialCodexConfigOptions,
-    });
-  }, [
-    selectedManagedAgentRuntimeCatalog,
-    selectedAssistantBackend,
-    selectedAssistant,
-    selectedAssistantModels,
-    modelCatalog,
-    managedModelInfo,
-  ]);
+  const {
+    modelInfo: currentAcpCachedModelInfo,
+    runtimeModelInfo: selectedAgentRuntimeModelInfo,
+    thoughtLevelOption: selectedAgentRuntimeThoughtLevelOption,
+    modeState: selectedAgentRuntimeModeState,
+    availableCommands: currentAgentAvailableCommands,
+  } = useAssistantRuntimeCatalog(selectedAssistant);
   const currentThoughtLevelOption = useMemo<AgentRuntimeDerivedOption | null>(() => {
     if (!selectedAgentRuntimeThoughtLevelOption) return null;
     return {
@@ -305,16 +219,6 @@ export const useGuidAssistantSelection = ({
     };
   }, [selectedAgentRuntimeThoughtLevelOption, selectedThoughtLevelValue]);
   const currentAgentModeOptions = selectedAgentRuntimeModeState.options;
-
-  const pricingModelIds = useMemo(() => {
-    const models = selectedAgentRuntimeModelInfo?.available_models ?? selectedAssistantModels.map((id) => ({ id }));
-    if (selectedAssistantBackend === 'codex') return models.map((model) => model.id);
-    if (selectedAssistantBackend !== 'opencode') return [];
-    return models
-      .filter((model) => model.id.toLowerCase().startsWith('hth/'))
-      .map((model) => model.id.slice('hth/'.length));
-  }, [selectedAgentRuntimeModelInfo?.available_models, selectedAssistantBackend, selectedAssistantModels]);
-  const hthPricingDescriptions = useHthModelPricingDescriptions(pricingModelIds);
 
   const selectedAssistantAvailable = useMemo(() => {
     return selectedAssistant?.agent_status === 'online';
@@ -393,26 +297,6 @@ export const useGuidAssistantSelection = ({
       return fallbackThoughtLevel;
     });
   }, [selectedAgentRuntimeThoughtLevelOption, selectedAssistant, selectedAssistantId]);
-
-  const currentAcpCachedModelInfo = useMemo(() => {
-    const modelInfo = selectedAgentRuntimeModelInfo ?? buildAssistantModelInfo(selectedAssistantModels);
-    if (!modelInfo) return null;
-
-    return {
-      ...modelInfo,
-      available_models: modelInfo.available_models.map((model) => {
-        if (model.description) return model;
-        const pricingModelId = model.id.toLowerCase().startsWith('hth/')
-          ? model.id.slice('hth/'.length)
-          : selectedAssistantBackend === 'codex'
-            ? model.id
-            : null;
-        if (!pricingModelId) return model;
-        const description = hthPricingDescriptions[pricingModelId];
-        return description ? Object.assign({}, model, { description }) : model;
-      }),
-    };
-  }, [hthPricingDescriptions, selectedAssistantBackend, selectedAssistantModels, selectedAgentRuntimeModelInfo]);
 
   const defaultAssistantId = useMemo(() => pickDefaultAssistantSelectionKey(assistants), [assistants]);
 

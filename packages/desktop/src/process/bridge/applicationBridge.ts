@@ -341,14 +341,33 @@ export function initApplicationBridge(): void {
     undefined,
     coreIdentityService.fetch.bind(coreIdentityService)
   );
-  workspacePreparationServer = new HTHWorkspacePreparationServer(async (request) => {
-    // Core can recover overdue cron jobs while its router is still starting.
-    await workspacePreparationBackendReady;
-    const access = await hthAuthService.getAccess();
-    if (!access) throw new Error('HTH login is required for workspace preparation');
-    await coreIdentityService.establish(access);
-    await hthConfigSyncService.prepareConversationWorkspace(request);
-  });
+  workspacePreparationServer = new HTHWorkspacePreparationServer(
+    async (request) => {
+      // Core can recover overdue cron jobs while its router is still starting.
+      await workspacePreparationBackendReady;
+      const access = await hthAuthService.getAccess();
+      if (!access) throw new Error('HTH login is required for workspace preparation');
+      await coreIdentityService.establish(access);
+      const runtime = await hthConfigSyncService.prepareConversationWorkspace(request);
+      if (!runtime) return;
+      const browser = browserControlService.getSessionMcpServer();
+      if (!browser || browser.transport.type !== 'stdio') {
+        return runtime.model || runtime.thoughtLevel || runtime.observeOnly || runtime.suppressSkillSuggestion
+          ? runtime
+          : undefined;
+      }
+      return {
+        ...runtime,
+        browserMcp: { command: browser.transport.command, args: browser.transport.args ?? [] },
+      };
+    },
+    async (request, confirmation) => {
+      const access = await hthAuthService.getAccess();
+      if (!access) throw new Error('HTH login is required for runtime confirmation');
+      await coreIdentityService.establish(access);
+      await hthConfigSyncService.confirmConversationWorkspaceRuntime(request, confirmation);
+    }
+  );
   app.once('before-quit', () => {
     delete process.env.AIONUI_WORKSPACE_PREPARATION_PIPE;
     delete process.env.AIONUI_WORKSPACE_PREPARATION_TOKEN;

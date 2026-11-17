@@ -32,6 +32,11 @@ export type AgentRuntimeDerivedOption = {
   options: AgentRuntimeSelectOption[];
 };
 
+/** Capitalize raw effort ids for display, preserving the agent's descriptive labels. */
+export function formatThoughtLevelLabel(value: string, label: string, backend?: string): string {
+  return backend === 'codex' && label === value ? label.charAt(0).toUpperCase() + label.slice(1) : label;
+}
+
 type RuntimeModelCandidate = {
   id?: string | null;
   value?: string | null;
@@ -134,7 +139,8 @@ function getConfigOptionCurrentValue(option: AcpSessionConfigOption): string | u
 function buildSelectOptionFromConfigOptions(
   configOptions: AcpSessionConfigOption[],
   category: string,
-  fallbackIds: string[] = []
+  fallbackIds: string[] = [],
+  backend?: string
 ): AgentRuntimeDerivedOption | null {
   const option =
     configOptions.find((item) => item.category === category) ||
@@ -145,7 +151,10 @@ function buildSelectOptionFromConfigOptions(
     .filter((item) => typeof item.value === 'string' && item.value.trim())
     .map((item) => ({
       value: item.value,
-      label: item.label || item.name || item.value,
+      label:
+        category === 'thought_level'
+          ? formatThoughtLevelLabel(item.value, item.label || item.name || item.value, backend)
+          : item.label || item.name || item.value,
       description: item.description || undefined,
     }));
 
@@ -270,13 +279,16 @@ export function buildAgentRuntimeModeState(agent: AgentRuntimeCatalog | null | u
 }
 
 export function buildAgentRuntimeThoughtLevelOption(
-  agent: AgentRuntimeCatalog | null | undefined
+  agent: AgentRuntimeCatalog | null | undefined,
+  backend?: string
 ): AgentRuntimeDerivedOption | null {
   if (!agent) return null;
-  return buildSelectOptionFromConfigOptions(normalizeConfigOptions(agent.config_options), 'thought_level', [
+  return buildSelectOptionFromConfigOptions(
+    normalizeConfigOptions(agent.config_options),
     'thought_level',
-    'reasoning_effort',
-  ]);
+    ['thought_level', 'reasoning_effort'],
+    backend
+  );
 }
 
 export function buildAgentRuntimeSlashCommands(agent: AgentRuntimeCatalog | null | undefined): SlashCommandItem[] {

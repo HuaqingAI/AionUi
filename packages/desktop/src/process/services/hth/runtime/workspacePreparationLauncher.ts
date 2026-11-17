@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { CRON_RUNTIME_PROXY_SOURCE } from './cronRuntimeProxy';
+
 type WorkspacePreparationLauncherOptions = {
   targetPath: string;
   nodeExecutable: string;
@@ -25,13 +27,15 @@ const MAX_MESSAGE_BYTES = 64 * 1024;
 const targetPath = ${JSON.stringify(targetPath)};
 const nodeExecutable = ${JSON.stringify(nodeExecutable)};
 const nodeScript = ${JSON.stringify(nodeScript)};
+${CRON_RUNTIME_PROXY_SOURCE}
 
-function prepareWorkspace(conversationId, pipePath) {
+function prepareWorkspace(conversationId, pipePath, confirmation) {
   return new Promise((resolve) => {
     const request = JSON.stringify({
       token: process.env.AIONUI_WORKSPACE_PREPARATION_TOKEN || '',
       conversationId,
       workspace: process.cwd(),
+      ...(confirmation ? { confirmation } : {}),
     }) + '\\n';
     if (Buffer.byteLength(request, 'utf8') > MAX_MESSAGE_BYTES) {
       resolve('Workspace preparation request is too large.');
@@ -86,7 +90,24 @@ function prepareWorkspace(conversationId, pipePath) {
         finish('Workspace preparation returned an invalid response.');
         return;
       }
-      finish(message.ok ? null : 'Workspace preparation was rejected.');
+      const runtime = message.runtime;
+      if (runtime !== undefined && (!runtime || typeof runtime !== 'object' || Array.isArray(runtime) ||
+          !['codex', 'opencode'].includes(runtime.backend) ||
+          ![runtime.model, runtime.thoughtLevel].every((value) => value === undefined ||
+            (typeof value === 'string' && value.length > 0 && value.length <= 500 && !/[\\u0000-\\u001f]/.test(value))) ||
+          (runtime.observeOnly !== undefined && (runtime.observeOnly !== true || runtime.backend !== 'codex')) ||
+          (runtime.browserMcp !== undefined && (!runtime.browserMcp || typeof runtime.browserMcp !== 'object' ||
+            Array.isArray(runtime.browserMcp) || Object.keys(runtime.browserMcp).some((key) => !['command', 'args'].includes(key)) ||
+            typeof runtime.browserMcp.command !== 'string' || !runtime.browserMcp.command.trim() ||
+            runtime.browserMcp.command.length > 32768 || runtime.browserMcp.command.includes('\\0') ||
+            !Array.isArray(runtime.browserMcp.args) || !runtime.browserMcp.args.every((value) =>
+              typeof value === 'string' && value.length <= 32768 && !value.includes('\\0')))) ||
+          (runtime.suppressSkillSuggestion !== undefined && runtime.suppressSkillSuggestion !== true) ||
+          (!runtime.model && !runtime.thoughtLevel && !runtime.observeOnly && !runtime.browserMcp && !runtime.suppressSkillSuggestion))) {
+        finish('Workspace preparation returned an invalid response.');
+        return;
+      }
+      finish(message.ok ? (runtime ? { runtime } : null) : 'Workspace preparation was rejected.');
     });
     socket.once('error', () => finish('Workspace preparation connection failed.'));
     socket.once('end', () => finish('Workspace preparation disconnected.'));
@@ -94,17 +115,19 @@ function prepareWorkspace(conversationId, pipePath) {
   });
 }
 
-function startCommand() {
+function startCommand(runtime, reportRuntimeConfirmation) {
   const env = { ...process.env };
   for (const key of Object.keys(env)) {
     const name = process.platform === 'win32' ? key.toUpperCase() : key;
     if (name === 'AIONUI_WORKSPACE_PREPARATION_PIPE' || name === 'AIONUI_WORKSPACE_PREPARATION_TOKEN') delete env[key];
   }
   let child;
+  const args = process.argv.slice(2);
+  const proxy = runtime && args.includes(runtime.backend === 'codex' ? 'app-server' : 'acp');
   try {
-    child = spawn(nodeScript ? nodeExecutable : targetPath, nodeScript ? [targetPath, ...process.argv.slice(2)] : process.argv.slice(2), {
+    child = spawn(nodeScript ? nodeExecutable : targetPath, nodeScript ? [targetPath, ...args] : args, {
       shell: false,
-      stdio: 'inherit',
+      stdio: proxy ? ['pipe', 'pipe', 'inherit'] : 'inherit',
       windowsHide: true,
       env,
     });
@@ -113,6 +136,7 @@ function startCommand() {
     process.exitCode = 1;
     return;
   }
+  if (proxy) startCronRuntimeProxy(child, runtime, reportRuntimeConfirmation);
 
   const signalHandlers = new Map();
   const signals = process.platform === 'win32' ? ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGBREAK'] : ['SIGINT', 'SIGTERM', 'SIGHUP'];
@@ -154,15 +178,23 @@ function startCommand() {
 async function main() {
   const conversationId = process.env.AIONUI_CONVERSATION_ID;
   const pipePath = process.env.AIONUI_WORKSPACE_PREPARATION_PIPE;
+  let runtime;
   if (conversationId && pipePath) {
-    const error = await prepareWorkspace(conversationId, pipePath);
-    if (error) {
-      process.stderr.write(error + '\\n');
+    const preparation = await prepareWorkspace(conversationId, pipePath);
+    if (typeof preparation === 'string') {
+      process.stderr.write(preparation + '\\n');
       process.exitCode = 1;
       return;
     }
+    runtime = preparation && preparation.runtime;
   }
-  startCommand();
+  const reportRuntimeConfirmation = runtime && runtime.backend === 'codex' && conversationId && pipePath
+    ? async (confirmation) => {
+        const result = await prepareWorkspace(conversationId, pipePath, confirmation);
+        if (typeof result === 'string') throw new Error(result);
+      }
+    : undefined;
+  startCommand(runtime, reportRuntimeConfirmation);
 }
 
 main().catch(() => {

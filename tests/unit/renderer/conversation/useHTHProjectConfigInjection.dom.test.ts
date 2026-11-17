@@ -36,7 +36,11 @@ describe('useHTHProjectConfigInjection', () => {
     resetHTHProjectConfigInjectionStateForTests();
     resetEnsureConversationRuntimeStateForTests();
     ensureRuntimeInvokeMock.mockReset();
-    ensureRuntimeInvokeMock.mockResolvedValue({ runtime: { state: 'idle' } });
+    ensureRuntimeInvokeMock.mockResolvedValue({
+      recovered: false,
+      config_options: [],
+      runtime: { state: 'idle' },
+    });
     injectProjectConfigInvokeMock.mockReset();
     injectProjectConfigInvokeMock.mockResolvedValue({ injected: true, files: ['opencode.jsonc'] });
   });
