@@ -7,10 +7,14 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IMcpServer } from '@/common/config/storage';
+import type { AcpConfigOptionDto } from '@/common/types/platform/acpTypes';
 import { resetHTHProjectConfigInjectionStateForTests } from '@/renderer/pages/conversation/hooks/useHTHProjectConfigInjection';
+import { resetEnsureConversationRuntimeStateForTests } from '@/renderer/pages/conversation/utils/ensureConversationRuntime';
 import { useGuidSend, type GuidSendDeps } from '@/renderer/pages/guid/hooks/useGuidSend';
 
 const createConversationInvokeMock = vi.fn();
+const ensureRuntimeInvokeMock = vi.fn();
+const setConfigOptionInvokeMock = vi.fn();
 const injectProjectConfigInvokeMock = vi.fn();
 const getConversationOrNullMock = vi.fn();
 const swrMutateMock = vi.fn();
@@ -20,6 +24,14 @@ vi.mock('@/common', () => ({
     conversation: {
       create: {
         invoke: (...args: unknown[]) => createConversationInvokeMock(...args),
+      },
+      ensureRuntime: {
+        invoke: (...args: unknown[]) => ensureRuntimeInvokeMock(...args),
+      },
+    },
+    acpConversation: {
+      setConfigOption: {
+        invoke: (...args: unknown[]) => setConfigOptionInvokeMock(...args),
       },
     },
     hth: {
@@ -86,11 +98,37 @@ const createDeps = (): GuidSendDeps => ({
   localeKey: 'zh-CN',
 });
 
+const openCodeConfigOptions = (effort: string): AcpConfigOptionDto[] => [
+  {
+    id: 'model',
+    category: 'model',
+    type: 'select',
+    current_value: 'hth/gpt-6.1-sol',
+    options: [{ value: 'hth/gpt-6.1-sol', name: 'GPT' }],
+  },
+  {
+    id: 'effort',
+    category: 'thought_level',
+    type: 'select',
+    current_value: effort,
+    options: ['low', 'medium', 'high', 'max'].map((value) => ({ value, name: value })),
+  },
+];
+
 describe('useGuidSend', () => {
   beforeEach(() => {
+    sessionStorage.clear();
     resetHTHProjectConfigInjectionStateForTests();
+    resetEnsureConversationRuntimeStateForTests();
     createConversationInvokeMock.mockReset();
     createConversationInvokeMock.mockResolvedValue({ id: 'conv-1' });
+    ensureRuntimeInvokeMock.mockReset();
+    ensureRuntimeInvokeMock.mockResolvedValue({ config_options: openCodeConfigOptions('high') });
+    setConfigOptionInvokeMock.mockReset();
+    setConfigOptionInvokeMock.mockResolvedValue({
+      confirmation: 'observed',
+      config_options: openCodeConfigOptions('max'),
+    });
     injectProjectConfigInvokeMock.mockReset();
     injectProjectConfigInvokeMock.mockResolvedValue({ injected: false, files: [], reason: 'workspaceMissing' });
     getConversationOrNullMock.mockReset();
@@ -117,6 +155,132 @@ describe('useGuidSend', () => {
       });
     }
   );
+
+  it('confirms OpenCode Max on the started model before queuing the first message or navigating', async () => {
+    const deps = createDeps();
+    deps.selectedAssistantBackend = 'opencode';
+    deps.selectedAcpModel = 'hth/gpt-6.1-sol';
+    deps.selectedThoughtLevelValue = 'max';
+    // Startup can discard Max against the original model's choices before switching models.
+    ensureRuntimeInvokeMock.mockResolvedValue({ config_options: openCodeConfigOptions('low') });
+    let confirm!: (value: unknown) => void;
+    setConfigOptionInvokeMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          confirm = resolve;
+        })
+    );
+    const { result } = renderHook(() => useGuidSend(deps));
+    let sending!: Promise<void>;
+
+    await act(async () => {
+      sending = result.current.handleSend();
+    });
+
+    expect(setConfigOptionInvokeMock).toHaveBeenCalledExactlyOnceWith({
+      conversation_id: 'conv-1',
+      option_id: 'effort',
+      value: 'max',
+    });
+    expect(sessionStorage.getItem('acp_initial_message_conv-1')).toBeNull();
+    expect(deps.navigate).not.toHaveBeenCalled();
+
+    await act(async () => {
+      confirm({ confirmation: 'observed', config_options: openCodeConfigOptions('max') });
+      await sending;
+    });
+
+    expect(sessionStorage.getItem('acp_initial_message_conv-1')).toBe(JSON.stringify({ input: 'hello' }));
+    expect(deps.navigate).toHaveBeenCalledWith('/conversation/conv-1');
+  });
+
+  it.each(['low', 'medium', 'high', 'max'])(
+    'preserves an already applied OpenCode %s without another config write',
+    async (effort) => {
+      const deps = createDeps();
+      deps.selectedAssistantBackend = 'opencode';
+      deps.selectedAcpModel = 'hth/gpt-6.1-sol';
+      deps.selectedThoughtLevelValue = effort;
+      ensureRuntimeInvokeMock.mockResolvedValue({ config_options: openCodeConfigOptions(effort) });
+      const { result } = renderHook(() => useGuidSend(deps));
+
+      await act(async () => {
+        await result.current.handleSend();
+      });
+
+      expect(ensureRuntimeInvokeMock).toHaveBeenCalledExactlyOnceWith({ conversation_id: 'conv-1' });
+      expect(setConfigOptionInvokeMock).not.toHaveBeenCalled();
+      expect(deps.navigate).toHaveBeenCalledWith('/conversation/conv-1');
+    }
+  );
+
+  it.each([
+    { confirmation: 'command_ack', config_options: null },
+    { confirmation: 'pending_next_turn', config_options: openCodeConfigOptions('low') },
+    { confirmation: 'observed', config_options: openCodeConfigOptions('low') },
+  ])('does not queue a message when OpenCode Max is unconfirmed: %j', async (response) => {
+    const deps = createDeps();
+    deps.selectedAssistantBackend = 'opencode';
+    deps.selectedAcpModel = 'hth/gpt-6.1-sol';
+    deps.selectedThoughtLevelValue = 'max';
+    setConfigOptionInvokeMock.mockResolvedValue(response);
+    const { result } = renderHook(() => useGuidSend(deps));
+
+    await expect(result.current.handleSend()).rejects.toThrow('agent.thoughtLevel.switchFailed');
+
+    expect(sessionStorage.getItem('acp_initial_message_conv-1')).toBeNull();
+    expect(deps.navigate).not.toHaveBeenCalled();
+  });
+
+  it.each(['model', 'effort'])(
+    'rejects a started OpenCode runtime with an unavailable selected %s',
+    async (mismatch) => {
+      const deps = createDeps();
+      deps.selectedAssistantBackend = 'opencode';
+      deps.selectedAcpModel = 'hth/gpt-6.1-sol';
+      deps.selectedThoughtLevelValue = 'max';
+      const options = openCodeConfigOptions('low');
+      if (mismatch === 'model') options[0].current_value = 'hth/other-model';
+      else options[1].options = [{ value: 'low', name: 'Low' }];
+      ensureRuntimeInvokeMock.mockResolvedValue({ config_options: options });
+      const { result } = renderHook(() => useGuidSend(deps));
+
+      await expect(result.current.handleSend()).rejects.toThrow(
+        mismatch === 'model' ? 'agent.model.switchFailed' : 'agent.thoughtLevel.switchFailed'
+      );
+
+      expect(setConfigOptionInvokeMock).not.toHaveBeenCalled();
+      expect(deps.navigate).not.toHaveBeenCalled();
+    }
+  );
+
+  it('does not queue a first message when the OpenCode effort update fails', async () => {
+    const deps = createDeps();
+    deps.selectedAssistantBackend = 'opencode';
+    deps.selectedAcpModel = 'hth/gpt-6.1-sol';
+    deps.selectedThoughtLevelValue = 'max';
+    setConfigOptionInvokeMock.mockRejectedValue(new Error('confirmation_timeout'));
+    const { result } = renderHook(() => useGuidSend(deps));
+
+    await expect(result.current.handleSend()).rejects.toThrow('confirmation_timeout');
+
+    expect(sessionStorage.getItem('acp_initial_message_conv-1')).toBeNull();
+    expect(deps.navigate).not.toHaveBeenCalled();
+  });
+
+  it('starts an OpenCode conversation with no explicit thought selection without preparing its runtime early', async () => {
+    const deps = createDeps();
+    deps.selectedAssistantBackend = 'opencode';
+    const { result } = renderHook(() => useGuidSend(deps));
+
+    await act(async () => {
+      await result.current.handleSend();
+    });
+
+    expect(ensureRuntimeInvokeMock).not.toHaveBeenCalled();
+    expect(setConfigOptionInvokeMock).not.toHaveBeenCalled();
+    expect(deps.navigate).toHaveBeenCalledWith('/conversation/conv-1');
+  });
 
   it('passes selected mode into assistant conversation overrides when creating a preset ACP conversation', async () => {
     const deps = createDeps();
