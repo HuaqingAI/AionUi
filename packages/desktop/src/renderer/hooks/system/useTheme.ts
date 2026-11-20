@@ -13,7 +13,7 @@ import { startSystemThemeWatcher } from '@/renderer/utils/theme/systemThemeWatch
 import { BUILTIN_THEMES } from '@renderer/theme/builtinThemes';
 import { LIGHT_THEME_ID } from '@/common/theme/constants';
 import type { Theme } from '@/common/theme/types';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 const APPEARANCE_CACHE_KEY = '__aionui_theme';
 
@@ -29,27 +29,15 @@ function getPersistedActiveId(): string {
   return (configService.get('theme.activeId') as string) || LIGHT_THEME_ID;
 }
 
-async function initActiveTheme(): Promise<Theme> {
+function readCachedTheme(): Theme {
+  let activeId = LIGHT_THEME_ID;
   try {
-    await configService.whenReady();
-    const activeId = getPersistedActiveId();
-    const userThemes = (configService.get('theme.userThemes') as Theme[]) ?? [];
-    const resolved = resolveActiveTheme(activeId, [...BUILTIN_THEMES, ...userThemes], getSystemPrefersDark());
-    applyTheme(resolved);
-    cacheAppearance(resolved);
-    // Seed the main-process relay so other surfaces (markdown shadow DOM, pet windows) can pull it.
-    void seedElectronTheme(resolved).catch(() => {});
-    return resolved;
-  } catch (e) {
-    console.error('init theme failed', e);
-    const fallback = resolveActiveTheme(LIGHT_THEME_ID, BUILTIN_THEMES);
-    applyTheme(fallback);
-    return fallback;
+    activeId = localStorage.getItem(APPEARANCE_CACHE_KEY) || LIGHT_THEME_ID;
+  } catch {
+    /* noop */
   }
+  return resolveActiveTheme(activeId, BUILTIN_THEMES);
 }
-
-let initialPromise: Promise<Theme> | null = null;
-if (typeof window !== 'undefined') initialPromise = initActiveTheme();
 
 /**
  * Returns [resolvedActiveTheme, selectThemeById, rawActiveId]. `rawActiveId` may be the
@@ -57,19 +45,37 @@ if (typeof window !== 'undefined') initialPromise = initActiveTheme();
  * highlights cards by `rawActiveId`.
  */
 const useTheme = (): [Theme | null, (activeId: string) => Promise<void>, string | null] => {
-  const [active, setActive] = useState<Theme | null>(null);
+  const [active, setActive] = useState<Theme | null>(readCachedTheme);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const selectingTheme = useRef(false);
 
   useEffect(() => {
     let mounted = true;
-    initialPromise
-      ?.then((t) => {
-        if (mounted) {
-          setActive(t);
-          setActiveId(getPersistedActiveId());
-        }
-      })
-      .catch((e) => console.error('init theme failed', e));
+    const restoreTheme = () => {
+      if (!mounted || selectingTheme.current) return;
+      const selectedId = getPersistedActiveId();
+      const userThemes = configService.get('theme.userThemes') ?? [];
+      const resolved = resolveActiveTheme(selectedId, [...BUILTIN_THEMES, ...userThemes], getSystemPrefersDark());
+      applyTheme(resolved);
+      setActive(resolved);
+      setActiveId(selectedId);
+      cacheAppearance(resolved);
+      // Seed other Electron surfaces without writing the preference back.
+      void seedElectronTheme(resolved).catch(() => {});
+    };
+    const offActiveId = configService.subscribe('theme.activeId', restoreTheme);
+    const offUserThemes = configService.subscribe('theme.userThemes', restoreTheme);
+    void configService
+      .whenReady()
+      .then(restoreTheme)
+      .catch((error) => {
+        console.error('init theme failed', error);
+        if (!mounted) return;
+        const fallback = readCachedTheme();
+        applyTheme(fallback);
+        setActive(fallback);
+        setActiveId(fallback.id);
+      });
     const off = ipcBridge.theme.changed.on((t: Theme) => {
       applyTheme(t);
       if (mounted) {
@@ -82,16 +88,25 @@ const useTheme = (): [Theme | null, (activeId: string) => Promise<void>, string 
     const offSystemWatch = startSystemThemeWatcher();
     return () => {
       mounted = false;
+      offActiveId();
+      offUserThemes();
       off?.();
       offSystemWatch();
     };
   }, []);
 
   const select = useCallback(async (selectedId: string) => {
-    const resolved = await setActiveTheme(selectedId);
-    setActive(resolved);
-    setActiveId(selectedId);
-    cacheAppearance(resolved);
+    // setActiveTheme publishes only after persistence succeeds. Its optimistic
+    // config notification must not broadcast the selection ahead of that write.
+    selectingTheme.current = true;
+    try {
+      const resolved = await setActiveTheme(selectedId);
+      setActive(resolved);
+      setActiveId(selectedId);
+      cacheAppearance(resolved);
+    } finally {
+      selectingTheme.current = false;
+    }
   }, []);
 
   return [active, select, activeId];

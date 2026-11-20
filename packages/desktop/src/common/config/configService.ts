@@ -64,6 +64,11 @@ class ConfigServiceImpl {
         }
       }
       this.initialized = true;
+      // A retry after authentication can hydrate settings while consumers are
+      // already mounted. Notify only after the complete snapshot is available.
+      for (const key of this.subscribers.keys()) {
+        this.notify(key as ConfigKey, this.cache.get(key));
+      }
     })();
     this.initPromise.catch(() => {
       // Allow a future caller to retry after a transient failure

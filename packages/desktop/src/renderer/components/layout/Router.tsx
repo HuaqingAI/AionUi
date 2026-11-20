@@ -2,6 +2,7 @@ import React, { Suspense } from 'react';
 import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { ipcBridge } from '@/common';
 import { getBaseUrl } from '@/common/adapter/httpBridge';
+import { bootstrapRendererConfig } from '@renderer/services/bootstrapRenderer';
 import type { HTHAuthStatus } from '@/common/types/hth';
 import {
   getAgentModelCatalogSnapshot,
@@ -95,7 +96,10 @@ const ProtectedLayout: React.FC<{ layout: React.ReactElement }> = ({ layout }) =
     let disposed = false;
     ipcBridge.hth.authStatus
       .invoke()
-      .then((authStatus) => {
+      .then(async (authStatus) => {
+        // authStatus establishes the desktop Core identity. The earlier
+        // renderer bootstrap may have failed before that identity was ready.
+        if (authStatus.loggedIn) await bootstrapRendererConfig();
         if (!disposed) {
           setHTHAssistantSyncScope(authStatus);
           setHTHAuthStatus(authStatus);
