@@ -6,7 +6,8 @@
 
 import React, { type PropsWithChildren } from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ipcBridge } from '@/common';
 import type { IMessageAcpToolCall, IMessageText, IMessageToolGroup, TMessage } from '@/common/chat/chatLib';
 import type { MessageFileChangesProps } from '@/renderer/pages/conversation/Messages/MessageFileChanges';
 import {
@@ -22,10 +23,17 @@ import type { ConversationTurnSnapshot } from '@/renderer/services/runtime/conve
 import zhMessages from '@/renderer/services/i18n/locales/zh-CN/messages.json';
 import { CHAT_MESSAGE_JUMP_EVENT } from '@/renderer/utils/chat/chatMinimapEvents';
 
-const { parseDiffMock, useTeamPermissionMock, scrollElementIntoViewMock, loadMessagePageMock } = vi.hoisted(() => ({
+const {
+  parseDiffMock,
+  useTeamPermissionMock,
+  scrollElementIntoViewMock,
+  preserveScrollAnchorMock,
+  loadMessagePageMock,
+} = vi.hoisted(() => ({
   parseDiffMock: vi.fn(),
   useTeamPermissionMock: vi.fn(),
   scrollElementIntoViewMock: vi.fn(),
+  preserveScrollAnchorMock: vi.fn(),
   loadMessagePageMock: vi.fn(),
 }));
 let mockLocationState: { targetMessageId?: string } = {};
@@ -101,6 +109,7 @@ vi.mock('@/renderer/pages/conversation/Messages/useAutoScroll', () => ({
     showScrollButton: false,
     scrollToBottom: () => {},
     scrollElementIntoView: scrollElementIntoViewMock,
+    preserveScrollAnchor: preserveScrollAnchorMock,
     hideScrollButton: () => {},
   }),
 }));
@@ -318,6 +327,7 @@ describe('MessageList', () => {
       backendTurnIds: new Map(),
     };
     scrollElementIntoViewMock.mockReset();
+    preserveScrollAnchorMock.mockReset();
     loadMessagePageMock.mockReset();
     parseDiffMock.mockReset();
     parseDiffMock.mockReturnValue({
@@ -734,6 +744,381 @@ describe('MessageList', () => {
       expect(screen.getAllByRole('button', { name: /messages.turnProcess.title/ })).toHaveLength(1);
     }
   );
+
+  describe('history viewport backfill', () => {
+    let viewportHeight: number;
+    let contentHeight: () => number;
+    const resizeCallbacks = new Set<ResizeObserverCallback>();
+
+    function historyText(id: string, content: string, createdAt: number, position: 'left' | 'right' = 'left') {
+      return {
+        ...createTextMessage(),
+        id,
+        msg_id: id,
+        position,
+        content: { content },
+        created_at: createdAt,
+      };
+    }
+
+    async function notifyResize() {
+      await act(async () => {
+        for (const callback of resizeCallbacks) callback([], {} as ResizeObserver);
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      });
+    }
+
+    beforeEach(() => {
+      viewportHeight = 600;
+      contentHeight = () => 200;
+      resizeCallbacks.clear();
+      vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) {
+        return this.dataset.testid === 'message-list-scroller' ? viewportHeight : 0;
+      });
+      vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function (this: HTMLElement) {
+        return ['message-list-scroller', 'message-list-content'].includes(this.dataset.testid ?? '')
+          ? contentHeight()
+          : 0;
+      });
+      vi.stubGlobal(
+        'ResizeObserver',
+        class {
+          constructor(private readonly callback: ResizeObserverCallback) {
+            resizeCallbacks.add(callback);
+          }
+          observe() {}
+          unobserve() {}
+          disconnect() {
+            resizeCallbacks.delete(this.callback);
+          }
+        }
+      );
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+      vi.unstubAllGlobals();
+    });
+
+    it('restores earlier questions when the latest 50 messages belong to a collapsed final turn', async () => {
+      const process: TMessage[] = Array.from({ length: 49 }, (_, index) =>
+        index % 2 === 0
+          ? {
+              ...createAcpToolCall({ id: `latest-tool-${index}` }),
+              turn_id: 'latest-turn',
+              created_at: index + 5,
+            }
+          : {
+              id: `latest-thought-${index}`,
+              msg_id: `latest-thought-${index}`,
+              conversation_id: 'conversation-1',
+              type: 'thinking',
+              position: 'left',
+              turn_id: 'latest-turn',
+              content: { content: 'working', status: 'done' },
+              created_at: index + 5,
+            }
+      );
+      const answer = { ...historyText('latest-answer', 'latest answer', 54), turn_id: 'latest-turn' };
+      loadMessagePageMock.mockResolvedValueOnce({
+        items: [
+          historyText('earlier-question', 'earlier question', 1, 'right'),
+          historyText('earlier-answer', 'earlier answer', 2),
+          { ...historyText('latest-question', 'latest question', 3, 'right'), turn_id: 'latest-turn' },
+          { ...createAcpToolCall({ id: 'first-tool' }), turn_id: 'latest-turn', created_at: 4 },
+        ],
+        oldest_cursor: 'beginning',
+        newest_cursor: 'before-latest',
+        has_more_before: false,
+        has_more_after: true,
+      });
+      render(<MessageList />, {
+        wrapper: ({ children }) => (
+          <Wrapper messages={[...process, answer]} pagination={{ oldestCursor: 'latest', hasMoreBefore: true }}>
+            {children}
+          </Wrapper>
+        ),
+      });
+
+      await waitFor(() => expect(screen.getByText('earlier question')).toBeInTheDocument());
+      expect(screen.getAllByTestId(/^msgtext-/).map((element) => element.textContent)).toEqual([
+        'earlier question',
+        'earlier answer',
+        'latest question',
+        'latest answer',
+      ]);
+      expect(screen.queryByTestId('tool-summary')).not.toBeInTheDocument();
+    });
+
+    it('continues through short pages and stops once earlier messages fill the viewport', async () => {
+      contentHeight = () => (document.getElementById('message-older-question') ? 900 : 200);
+      loadMessagePageMock
+        .mockResolvedValueOnce({
+          items: [{ ...createAcpToolCall({ id: 'more-process' }), created_at: 2 }],
+          oldest_cursor: 'middle',
+          newest_cursor: 'middle',
+          has_more_before: true,
+          has_more_after: true,
+        })
+        .mockResolvedValueOnce({
+          items: [historyText('older-question', 'older question', 1, 'right')],
+          oldest_cursor: 'older',
+          newest_cursor: 'older',
+          has_more_before: true,
+          has_more_after: true,
+        });
+      render(<MessageList />, {
+        wrapper: ({ children }) => (
+          <Wrapper
+            messages={[historyText('latest-answer', 'latest answer', 3)]}
+            pagination={{ oldestCursor: 'latest', hasMoreBefore: true }}
+          >
+            {children}
+          </Wrapper>
+        ),
+      });
+
+      await waitFor(() => expect(screen.getByText('older question')).toBeInTheDocument());
+      await notifyResize();
+      expect(loadMessagePageMock.mock.calls.map(([, options]) => options.before)).toEqual(['latest', 'middle']);
+      expect(screen.queryByTestId('tool-summary')).not.toBeInTheDocument();
+    });
+
+    it('loads older messages after a resize makes the existing content shorter than the viewport', async () => {
+      viewportHeight = 100;
+      loadMessagePageMock.mockResolvedValueOnce({
+        items: [historyText('older-question', 'older question', 1, 'right')],
+        oldest_cursor: 'beginning',
+        newest_cursor: 'beginning',
+        has_more_before: false,
+        has_more_after: true,
+      });
+      render(<MessageList />, {
+        wrapper: ({ children }) => (
+          <Wrapper
+            messages={[historyText('latest-answer', 'latest answer', 2)]}
+            pagination={{ oldestCursor: 'latest', hasMoreBefore: true }}
+          >
+            {children}
+          </Wrapper>
+        ),
+      });
+      expect(loadMessagePageMock).not.toHaveBeenCalled();
+
+      viewportHeight = 600;
+      await notifyResize();
+
+      await waitFor(() => expect(screen.getByText('older question')).toBeInTheDocument());
+      expect(loadMessagePageMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('stops automatic retries after a failed page but lets a scroll retry it', async () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+      loadMessagePageMock.mockRejectedValueOnce(new Error('history unavailable')).mockResolvedValueOnce({
+        items: [historyText('older-question', 'older question', 1, 'right')],
+        oldest_cursor: 'beginning',
+        newest_cursor: 'beginning',
+        has_more_before: false,
+        has_more_after: true,
+      });
+      render(<MessageList />, {
+        wrapper: ({ children }) => (
+          <Wrapper
+            messages={[historyText('latest-answer', 'latest answer', 2)]}
+            pagination={{ oldestCursor: 'latest', hasMoreBefore: true }}
+          >
+            {children}
+          </Wrapper>
+        ),
+      });
+
+      await waitFor(() => expect(consoleError).toHaveBeenCalled());
+      await notifyResize();
+      expect(loadMessagePageMock).toHaveBeenCalledTimes(1);
+      fireEvent.scroll(screen.getByTestId('message-list-scroller'));
+
+      await waitFor(() => expect(screen.getByText('older question')).toBeInTheDocument());
+    });
+
+    it.each([false, true])(
+      'waits for a pending viewport page before loading an expanded process (cancelled: %s)',
+      async (cancelled) => {
+        let finishFirstPage!: () => void;
+        loadMessagePageMock
+          .mockReturnValueOnce(
+            new Promise((resolve) => {
+              finishFirstPage = () =>
+                resolve({
+                  items: [{ ...createAcpToolCall({ id: 'middle-tool' }), created_at: 2 }],
+                  oldest_cursor: 'middle',
+                  newest_cursor: 'middle',
+                  has_more_before: true,
+                  has_more_after: true,
+                });
+            })
+          )
+          .mockResolvedValueOnce({
+            items: [
+              historyText('older-question', 'older question', 0, 'right'),
+              historyText('earlier-work', 'earlier work', 1),
+            ],
+            oldest_cursor: 'beginning',
+            newest_cursor: 'earlier-work',
+            has_more_before: false,
+            has_more_after: true,
+          });
+        render(<MessageList />, {
+          wrapper: ({ children }) => (
+            <Wrapper
+              messages={[historyText('latest-answer', 'latest answer', 3)]}
+              pagination={{ oldestCursor: 'latest', hasMoreBefore: true }}
+            >
+              {children}
+            </Wrapper>
+          ),
+        });
+        await waitFor(() => expect(loadMessagePageMock).toHaveBeenCalledTimes(1));
+        fireEvent.click(screen.getByRole('button', { name: /messages.turnProcess.title/ }));
+        if (cancelled) fireEvent.click(screen.getByRole('button', { name: /messages.turnProcess.title/ }));
+        expect(loadMessagePageMock).toHaveBeenCalledTimes(1);
+
+        contentHeight = () => 900;
+        await act(async () => finishFirstPage());
+        await notifyResize();
+
+        if (cancelled) {
+          expect(loadMessagePageMock).toHaveBeenCalledTimes(1);
+        } else {
+          await waitFor(() => expect(screen.getByText('earlier work')).toBeInTheDocument());
+          expect(loadMessagePageMock.mock.calls.map(([, options]) => options.before)).toEqual(['latest', 'middle']);
+        }
+      }
+    );
+
+    it('preserves the message visible when a delayed history page arrives after expanding the process', async () => {
+      let finishPage!: () => void;
+      loadMessagePageMock.mockReturnValueOnce(
+        new Promise((resolve) => {
+          finishPage = () =>
+            resolve({
+              items: [historyText('older-question', 'older question', 1, 'right')],
+              oldest_cursor: 'beginning',
+              newest_cursor: 'beginning',
+              has_more_before: false,
+              has_more_after: true,
+            });
+        })
+      );
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+        if (this.dataset.testid === 'message-list-scroller') return new DOMRect(0, 0, 100, 600);
+        return new DOMRect(0, this.id === 'message-current-progress' ? 20 : -100, 100, 100);
+      });
+      render(<MessageList />, {
+        wrapper: ({ children }) => (
+          <Wrapper
+            messages={[
+              historyText('current-progress', 'current progress', 2),
+              { ...createAcpToolCall({ id: 'current-tool' }), created_at: 3 },
+              historyText('latest-answer', 'latest answer', 4),
+            ]}
+            pagination={{ oldestCursor: 'latest', hasMoreBefore: true }}
+          >
+            {children}
+          </Wrapper>
+        ),
+      });
+      await waitFor(() => expect(loadMessagePageMock).toHaveBeenCalledTimes(1));
+      expect(preserveScrollAnchorMock).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: /messages.turnProcess.title/ }));
+      preserveScrollAnchorMock.mockClear();
+
+      await act(async () => finishPage());
+      await notifyResize();
+
+      expect(preserveScrollAnchorMock).toHaveBeenCalledExactlyOnceWith(
+        document.getElementById('message-current-progress')
+      );
+    });
+
+    it('loads the searched message window before attempting viewport backfill', async () => {
+      mockLocationState = { targetMessageId: 'searched-history' };
+      const loadAnchorPage = vi
+        .spyOn(ipcBridge.database.getConversationMessages, 'invoke')
+        .mockReturnValue(new Promise(() => {}));
+      const view = render(<MessageList />, {
+        wrapper: ({ children }) => (
+          <Wrapper
+            messages={[historyText('latest-answer', 'latest answer', 2)]}
+            pagination={{ oldestCursor: 'latest', hasMoreBefore: true }}
+          >
+            {children}
+          </Wrapper>
+        ),
+      });
+
+      await waitFor(() => expect(loadAnchorPage).toHaveBeenCalledTimes(1));
+      expect(
+        loadAnchorPage.mock.calls.map(([params]) => ({
+          anchorMessageId: params.anchor_message_id,
+          before: params.before,
+        }))
+      ).toEqual([{ anchorMessageId: 'searched-history', before: undefined }]);
+      expect(loadMessagePageMock).not.toHaveBeenCalled();
+      view.unmount();
+    });
+
+    it('resumes viewport backfill after locating a user message already in the current page', async () => {
+      mockLocationState = { targetMessageId: 'current-question' };
+      loadMessagePageMock.mockResolvedValueOnce({
+        items: [historyText('older-question', 'older question', 1, 'right')],
+        oldest_cursor: 'beginning',
+        newest_cursor: 'beginning',
+        has_more_before: false,
+        has_more_after: true,
+      });
+      render(<MessageList />, {
+        wrapper: ({ children }) => (
+          <Wrapper
+            messages={[
+              historyText('current-question', 'current question', 2, 'right'),
+              historyText('latest-answer', 'latest answer', 3),
+            ]}
+            pagination={{ oldestCursor: 'latest', hasMoreBefore: true }}
+          >
+            {children}
+          </Wrapper>
+        ),
+      });
+
+      await waitFor(() => expect(screen.getByText('older question')).toBeInTheDocument());
+      expect(loadMessagePageMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('stops backfilling when an older page does not advance its cursor', async () => {
+      loadMessagePageMock.mockResolvedValueOnce({
+        items: [],
+        oldest_cursor: 'latest',
+        newest_cursor: 'latest',
+        has_more_before: true,
+        has_more_after: true,
+      });
+      render(<MessageList />, {
+        wrapper: ({ children }) => (
+          <Wrapper
+            messages={[historyText('latest-answer', 'latest answer', 2)]}
+            pagination={{ oldestCursor: 'latest', hasMoreBefore: true }}
+          >
+            {children}
+          </Wrapper>
+        ),
+      });
+
+      await waitFor(() => expect(loadMessagePageMock).toHaveBeenCalledTimes(1));
+      await notifyResize();
+      expect(loadMessagePageMock).toHaveBeenCalledTimes(1);
+      expect(screen.getByText('latest answer')).toBeInTheDocument();
+    });
+  });
 
   it('reveals a collapsed process when the conversation anchor requests its message', async () => {
     const messages = [

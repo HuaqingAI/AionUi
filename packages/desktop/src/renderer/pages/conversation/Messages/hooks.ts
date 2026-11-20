@@ -897,7 +897,7 @@ export const useReplaceWithAnchorWindow = () => {
   );
 };
 
-export const useLoadPreviousMessagePage = (conversationId?: string) => {
+export const useLoadPreviousMessagePage = (conversationId?: string, beforeMerge?: () => void) => {
   const pagination = useMessagePaginationState();
   const setPagination = useUpdateMessagePaginationState();
   const prependHistoryPage = usePrependHistoryPage();
@@ -915,13 +915,14 @@ export const useLoadPreviousMessagePage = (conversationId?: string) => {
         contentMode: 'compact',
       });
       const messages = page.items.map(normalizeDbMessage);
+      beforeMerge?.();
       prependHistoryPage(messages);
       setPagination((current) => ({
         ...current,
         oldestCursor: page.oldest_cursor ?? current.oldestCursor,
         newestCursor: current.newestCursor ?? page.newest_cursor ?? undefined,
         hasMoreBefore: page.has_more_before,
-        hasMoreAfter: current.hasMoreAfter || page.has_more_after,
+        hasMoreAfter: current.hasMoreAfter,
         isLoadingBefore: false,
       }));
       return true;
@@ -931,6 +932,7 @@ export const useLoadPreviousMessagePage = (conversationId?: string) => {
       return false;
     }
   }, [
+    beforeMerge,
     conversationId,
     pagination.hasMoreBefore,
     pagination.isLoadingBefore,

@@ -351,7 +351,6 @@ const MessageList: React.FC<{
   const artifacts = useConversationArtifacts();
   const conversationContext = useConversationContextSafe();
   const rowWidthClass = getChatSurfaceWidthClass();
-  const loadPreviousMessagePage = useLoadPreviousMessagePage(conversationContext?.conversation_id);
   const loadAnchorMessageWindow = useLoadAnchorMessageWindow(conversationContext?.conversation_id);
   // While the agent is still streaming, the in-progress turn's last text keeps
   // moving down, so we defer its copy/timestamp row until the turn finishes to
@@ -371,6 +370,10 @@ const MessageList: React.FC<{
   const previousRunningRef = useRef(new Set<string>());
   const previousConversationRef = useRef(conversationContext?.conversation_id);
   const pendingRevealRef = useRef<string | undefined>(undefined);
+  const previousPageRequestRef = useRef<object | null>(null);
+  const [isLoadingPreviousPage, setIsLoadingPreviousPage] = useState(false);
+  const [pendingTurnHistoryMessageId, setPendingTurnHistoryMessageId] = useState<string>();
+  const automaticHistoryCursorsRef = useRef(new Set<string>());
 
   // Pre-process message list to group tool outputs into summary cards
   const processedList = useMemo(() => {
@@ -594,6 +597,10 @@ const MessageList: React.FC<{
     );
     preserveScrollAnchor?.(anchor ?? null);
   }, [preserveScrollAnchor]);
+  const loadPreviousMessagePage = useLoadPreviousMessagePage(
+    conversationContext?.conversation_id,
+    preserveReadingPosition
+  );
   const turnHistory = useTurnHistory(conversationContext?.conversation_id, preserveReadingPosition);
 
   const setTurnExpanded = useCallback((turn: MessageTurn<IProcessedItem>, expanded: boolean) => {
@@ -625,6 +632,10 @@ const MessageList: React.FC<{
 
   const loadTurnHistory = useCallback(
     (turn: MessageTurn<IProcessedItem>) => {
+      if (previousPageRequestRef.current || pagination.isLoadingBefore) {
+        setPendingTurnHistoryMessageId(turn.sourceMessageIds[0]);
+        return;
+      }
       const { before, after, isBoundary } = getTurnHistoryDirections(turn);
       void turnHistory.load({
         messageId: turn.sourceMessageIds[0],
@@ -633,8 +644,15 @@ const MessageList: React.FC<{
         isBoundary,
       });
     },
-    [getTurnHistoryDirections, turnHistory.load]
+    [getTurnHistoryDirections, pagination.isLoadingBefore, turnHistory.load]
   );
+
+  useEffect(() => {
+    if (!pendingTurnHistoryMessageId || isLoadingPreviousPage || pagination.isLoadingBefore) return;
+    setPendingTurnHistoryMessageId(undefined);
+    const turn = turns.find((entry) => entry.sourceMessageIds.includes(pendingTurnHistoryMessageId));
+    if (turn) loadTurnHistory(turn);
+  }, [isLoadingPreviousPage, loadTurnHistory, pagination.isLoadingBefore, pendingTurnHistoryMessageId, turns]);
 
   // Older history has no recorded turn clock. Estimate only when the loaded
   // messages include the user boundary and the final answer of the whole turn.
@@ -691,7 +709,18 @@ const MessageList: React.FC<{
     previousConversationRef.current = conversationContext?.conversation_id;
     setProcessExpansion(new Map());
     previousRunningRef.current = new Set();
+    previousPageRequestRef.current = null;
+    setIsLoadingPreviousPage(false);
+    setPendingTurnHistoryMessageId(undefined);
+    automaticHistoryCursorsRef.current.clear();
   }, [conversationContext?.conversation_id]);
+
+  useEffect(
+    () => () => {
+      previousPageRequestRef.current = null;
+    },
+    [conversationContext?.conversation_id]
+  );
 
   useLayoutEffect(() => {
     const previous = previousRunningRef.current;
@@ -760,24 +789,111 @@ const MessageList: React.FC<{
     [handleContentRef]
   );
 
+  const loadPreviousMessages = useCallback(async () => {
+    const scroller = scrollerElementRef.current;
+    const content = contentElementRef.current;
+    if (
+      !scroller ||
+      !content ||
+      previousPageRequestRef.current ||
+      isMessageListLoading ||
+      pagination.isLoadingBefore ||
+      pagination.isLoadingAnchor ||
+      !pagination.hasMoreBefore ||
+      !pagination.oldestCursor ||
+      turnHistory.status.loading
+    ) {
+      return;
+    }
+
+    const request = {};
+    previousPageRequestRef.current = request;
+    setIsLoadingPreviousPage(true);
+    try {
+      const loaded = await loadPreviousMessagePage();
+      if (loaded && previousPageRequestRef.current === request) {
+        // Let the merge and scroll anchoring settle before another page or a
+        // queued process disclosure can change the timeline again.
+        await new Promise<void>((resolve) => {
+          requestAnimationFrame(() => resolve());
+        });
+      }
+    } finally {
+      if (previousPageRequestRef.current === request) {
+        previousPageRequestRef.current = null;
+        setIsLoadingPreviousPage(false);
+      }
+    }
+  }, [
+    isMessageListLoading,
+    loadPreviousMessagePage,
+    pagination.hasMoreBefore,
+    pagination.isLoadingAnchor,
+    pagination.isLoadingBefore,
+    pagination.oldestCursor,
+    turnHistory.status.loading,
+  ]);
+
+  // Raw history pages can contain only one turn's hidden process. Fill the
+  // viewport after loading, collapsing, or resizing so older turns stay reachable.
+  useEffect(() => {
+    if (
+      isMessageListLoading ||
+      isLoadingPreviousPage ||
+      pagination.isLoadingBefore ||
+      pagination.isLoadingAnchor ||
+      !pagination.hasMoreBefore ||
+      !pagination.oldestCursor ||
+      pendingTurnHistoryMessageId ||
+      turnHistory.status.loading ||
+      (targetMessageId && handledTargetKeyRef.current !== `${location.key}:${targetMessageId}`)
+    ) {
+      return;
+    }
+    const scroller = scrollerElementRef.current;
+    const content = contentElementRef.current;
+    if (!scroller || !content) return;
+    const cursor = pagination.oldestCursor;
+    const fillViewport = () => {
+      if (
+        scroller.clientHeight <= 0 ||
+        scroller.scrollHeight > scroller.clientHeight ||
+        automaticHistoryCursorsRef.current.has(cursor)
+      ) {
+        return;
+      }
+      // A failed or non-advancing page must wait for an explicit retry.
+      automaticHistoryCursorsRef.current.add(cursor);
+      void loadPreviousMessages();
+    };
+    const observer = new ResizeObserver(fillViewport);
+    observer.observe(scroller);
+    observer.observe(content);
+    fillViewport();
+    return () => observer.disconnect();
+  }, [
+    highlightedMessageId,
+    isLoadingPreviousPage,
+    isMessageListLoading,
+    loadPreviousMessages,
+    location.key,
+    pagination.hasMoreBefore,
+    pagination.isLoadingAnchor,
+    pagination.isLoadingBefore,
+    pagination.oldestCursor,
+    pendingTurnHistoryMessageId,
+    processExpansion,
+    targetMessageId,
+    turnHistory.status.loading,
+    turns,
+  ]);
+
   const handleMessageListScroll = useCallback(
     (event: React.UIEvent<HTMLDivElement>) => {
       handleScroll(event);
-      const scroller = event.currentTarget;
-      if (!pagination.hasMoreBefore || pagination.isLoadingBefore || scroller.scrollTop > 160) {
-        return;
-      }
-
-      const previousHeight = contentElementRef.current?.scrollHeight ?? 0;
-      void loadPreviousMessagePage().then((loaded) => {
-        if (!loaded) return;
-        requestAnimationFrame(() => {
-          const nextHeight = contentElementRef.current?.scrollHeight ?? previousHeight;
-          scroller.scrollTop += nextHeight - previousHeight;
-        });
-      });
+      if (event.currentTarget.scrollTop <= 160) void loadPreviousMessages();
     },
-    [handleScroll, loadPreviousMessagePage, pagination.hasMoreBefore, pagination.isLoadingBefore]
+    [handleScroll, loadPreviousMessages]
   );
 
   useEffect(() => {
@@ -1028,6 +1144,11 @@ const MessageList: React.FC<{
                           preserveScrollAnchor?.(document.getElementById(`turn-${turn.id}`));
                           setTurnExpanded(turn, next);
                           if (next) loadTurnHistory(turn);
+                          else if (
+                            pendingTurnHistoryMessageId &&
+                            turn.sourceMessageIds.includes(pendingTurnHistoryMessageId)
+                          )
+                            setPendingTurnHistoryMessageId(undefined);
                         }}
                       >
                         {turn.processItems.map((item, index) => renderItem(index, item, true))}
