@@ -18,5 +18,12 @@
   "switchMode": "授权模式",
   "switchSuccess": "模式切换成功",
   "switchPendingNextTurn": "将在下一轮生效",
-  "switchFailed": "模式切换失败"
+  "switchFailed": "模式切换失败",
+  "descriptions": {
+    "build": "默认代理。根据配置的权限执行工具。",
+    "codexReadOnly": "Codex 可以读取当前工作区中的文件。编辑文件或访问互联网需要批准。",
+    "plan": "计划模式。禁止使用所有编辑工具。",
+    "codexAuto": "Codex 可以读取和编辑当前工作区中的文件，并运行命令。访问互联网或编辑其他文件需要批准。（与代理模式相同）",
+    "codexFullAccess": "Codex 可以编辑此工作区之外的文件并访问互联网，无需请求批准。使用时请谨慎。"
+  }
 }

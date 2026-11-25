@@ -5,7 +5,15 @@
  */
 
 import { ipcBridge } from '@/common';
+import referenceAgentModes from '@/renderer/services/i18n/locales/en-US/agentMode.json';
 import type { TFunction } from 'i18next';
+
+const agentModeDescriptionKeys = new Map(
+  Object.entries(referenceAgentModes.descriptions).map(([key, description]) => [
+    description,
+    `agentMode.descriptions.${key}`,
+  ])
+);
 
 /**
  * SWR key for the Agent settings management view (`/api/agents/management`).
@@ -38,6 +46,13 @@ export type AgentModeOption = {
   label: string;
   description?: string;
 };
+
+/** Translate recognized upstream descriptions while preserving custom agent text. */
+export function formatAgentModeDescription(t: TFunction, description?: string): string | undefined {
+  if (!description) return description;
+  const key = agentModeDescriptionKeys.get(description);
+  return key ? t(key, { defaultValue: description }) : description;
+}
 
 /** Source-specific bookkeeping (how to probe, how to upgrade). */
 export type AgentSourceInfo = {

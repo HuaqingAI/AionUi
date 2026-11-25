@@ -18,5 +18,12 @@
   "switchMode": "授權模式",
   "switchSuccess": "模式切換成功",
   "switchPendingNextTurn": "將在下一輪生效",
-  "switchFailed": "模式切換失敗"
+  "switchFailed": "模式切換失敗",
+  "descriptions": {
+    "build": "預設代理。根據設定的權限執行工具。",
+    "codexReadOnly": "Codex 可以讀取目前工作區中的檔案。編輯檔案或存取網際網路需要核准。",
+    "plan": "計畫模式。禁止使用所有編輯工具。",
+    "codexAuto": "Codex 可以讀取和編輯目前工作區中的檔案，並執行命令。存取網際網路或編輯其他檔案需要核准。（與代理模式相同）",
+    "codexFullAccess": "Codex 可以編輯此工作區以外的檔案並存取網際網路，無需請求核准。使用時請謹慎。"
+  }
 }

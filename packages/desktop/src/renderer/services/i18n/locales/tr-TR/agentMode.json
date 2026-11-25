@@ -18,5 +18,12 @@
   "switchMode": "İzin Modu",
   "switchSuccess": "Mode switched successfully",
   "switchPendingNextTurn": "Sonraki turda geçerli olacak",
-  "switchFailed": "Failed to switch mode"
+  "switchFailed": "Failed to switch mode",
+  "descriptions": {
+    "build": "Varsayılan ajan. Araçları yapılandırılmış izinlere göre çalıştırır.",
+    "codexReadOnly": "Codex, geçerli çalışma alanındaki dosyaları okuyabilir. Dosyaları düzenlemek veya internete erişmek için onay gerekir.",
+    "plan": "Plan modu. Tüm düzenleme araçlarının kullanımını yasaklar.",
+    "codexAuto": "Codex, geçerli çalışma alanındaki dosyaları okuyup düzenleyebilir ve komut çalıştırabilir. İnternete erişmek veya diğer dosyaları düzenlemek için onay gerekir. (Ajan moduyla aynıdır)",
+    "codexFullAccess": "Codex, onay istemeden bu çalışma alanı dışındaki dosyaları düzenleyebilir ve internete erişebilir. Kullanırken dikkatli olun."
+  }
 }

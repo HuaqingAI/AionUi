@@ -46,6 +46,7 @@ import { emitter, useAddEventListener } from '@/renderer/utils/emitter';
 import { localSelectionItems, mergeFileSelectionItems } from '@/renderer/utils/file/fileSelection';
 import { collectChatFileRefs, splitChatFileRefs } from '@/renderer/utils/file/messageFiles';
 import { assertManagedEnvironmentReady, ManagedEnvironmentNotReadyError } from '@/renderer/utils/managedEnvironment';
+import { formatAgentModeDescription } from '@/renderer/utils/model/agentTypes';
 import type { ChatFileRef } from '@/common/types/chatFile';
 import { Button, Message, Tag } from '@arco-design/web-react';
 import { Brain, Lightning, MagicHat, Shield } from '@icon-park/react';
@@ -583,7 +584,7 @@ Please check your local CLI tool authentication status`,
     const modeOptions: MobileActionSheetOption[] = availableModes.map((mode) => ({
       key: mode.value,
       label: t(`agentMode.${mode.value}`, { defaultValue: mode.label }),
-      description: mode.description,
+      description: formatAgentModeDescription(t, mode.description),
       active: (runtimeMode?.currentValue ?? currentMode) === mode.value,
     }));
 

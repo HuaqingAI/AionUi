@@ -14,7 +14,7 @@ import type {
   MobileActionSheetEntry,
   MobileActionSheetOption,
 } from '@/renderer/components/chat/MobileActionSheet/types';
-import type { AgentModeOption } from '@/renderer/utils/model/agentTypes';
+import { formatAgentModeDescription, type AgentModeOption } from '@/renderer/utils/model/agentTypes';
 import type { AgentRuntimeDerivedOption } from '@/renderer/utils/model/agentRuntimeCatalog';
 import { useLayoutContext } from '@/renderer/hooks/context/LayoutContext';
 import { getCleanFileNames, FileService } from '@/renderer/services/FileService';
@@ -301,7 +301,7 @@ const GuidActionRow: React.FC<GuidActionRowProps> = ({
       const modeOptions: MobileActionSheetOption[] = dynamicModes.map((mode) => ({
         key: mode.value,
         label: t(`agentMode.${mode.value}`, { defaultValue: mode.label }),
-        description: mode.description,
+        description: formatAgentModeDescription(t, mode.description),
         active: mode.value === selectedMode,
       }));
       entries.push({

@@ -18,5 +18,12 @@
   "switchMode": "Modo de Permissão",
   "switchSuccess": "Modo alternado com sucesso",
   "switchPendingNextTurn": "Entra em vigor no próximo turno",
-  "switchFailed": "Falha ao alternar modo"
+  "switchFailed": "Falha ao alternar modo",
+  "descriptions": {
+    "build": "O agente padrão. Executa ferramentas de acordo com as permissões configuradas.",
+    "codexReadOnly": "O Codex pode ler arquivos no espaço de trabalho atual. É necessária aprovação para editar arquivos ou acessar a internet.",
+    "plan": "Modo de planejamento. Proíbe o uso de todas as ferramentas de edição.",
+    "codexAuto": "O Codex pode ler e editar arquivos no espaço de trabalho atual e executar comandos. É necessária aprovação para acessar a internet ou editar outros arquivos. (Idêntico ao modo Agente)",
+    "codexFullAccess": "O Codex pode editar arquivos fora deste espaço de trabalho e acessar a internet sem solicitar aprovação. Use com cautela."
+  }
 }

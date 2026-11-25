@@ -9,7 +9,7 @@ import {
   type AcpConfigOptionsPort,
   useAcpConfigOptions,
 } from '@/renderer/hooks/agent/useAcpConfigOptions';
-import type { AgentModeOption } from '@/renderer/utils/model/agentTypes';
+import { formatAgentModeDescription, type AgentModeOption } from '@/renderer/utils/model/agentTypes';
 import { useLayoutContext } from '@/renderer/hooks/context/LayoutContext';
 import { AgentLogoIcon } from './AgentBadge';
 import { Dropdown, Menu, Message, Tooltip } from '@arco-design/web-react';
@@ -258,7 +258,7 @@ const AgentModeSelector: React.FC<AgentModeSelectorProps> = ({
                 {current_mode === mode.value ? '✓' : pendingMode === mode.value ? '⏱' : ''}
               </span>
               {mode.description ? (
-                <Tooltip content={mode.description} position='right'>
+                <Tooltip content={formatAgentModeDescription(t, mode.description)} position='right'>
                   <span className='min-w-0 truncate'>{getDisplayModeLabel(mode)}</span>
                 </Tooltip>
               ) : (

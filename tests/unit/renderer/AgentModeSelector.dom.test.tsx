@@ -4,10 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createInstance } from 'i18next';
 import React from 'react';
+import { initReactI18next } from 'react-i18next';
 import AgentModeSelector from '@/renderer/components/agent/AgentModeSelector';
+import enUS from '@/renderer/services/i18n/locales/en-US/agentMode.json';
+import zhCN from '@/renderer/services/i18n/locales/zh-CN/agentMode.json';
 
 const { useAcpConfigOptionsMock } = vi.hoisted(() => ({
   useAcpConfigOptionsMock: vi.fn(),
@@ -77,18 +81,7 @@ vi.mock('@arco-design/web-react', () => {
   };
 });
 
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (key: string, options?: { defaultValue?: string }) =>
-      key === 'agentMode.permission'
-        ? '权限'
-        : key === 'agentMode.default'
-          ? '默认'
-          : key === 'agentMode.bypassPermissions'
-            ? '全自动'
-            : (options?.defaultValue ?? key),
-  }),
-}));
+const modeI18n = createInstance();
 
 const runtimeMode = () => ({
   id: 'mode',
@@ -101,7 +94,20 @@ const runtimeMode = () => ({
 });
 
 describe('AgentModeSelector', () => {
-  beforeEach(() => {
+  beforeAll(async () => {
+    await modeI18n.use(initReactI18next).init({
+      lng: 'zh-CN',
+      fallbackLng: 'en-US',
+      resources: {
+        'en-US': { translation: { agentMode: enUS } },
+        'zh-CN': { translation: { agentMode: zhCN } },
+      },
+      interpolation: { escapeValue: false },
+    });
+  });
+
+  beforeEach(async () => {
+    await modeI18n.changeLanguage('zh-CN');
     vi.clearAllMocks();
     useAcpConfigOptionsMock.mockImplementation(() => ({
       setStatus: { state: 'idle' },
@@ -338,5 +344,126 @@ describe('AgentModeSelector', () => {
       'data-tooltip-content',
       'Run without permission prompts'
     );
+  });
+
+  it.each([
+    ['build', 'Build', 'The default agent. Executes tools based on configured permissions.', 'build'],
+    ['plan', 'Plan', 'Plan mode. Disallows all edit tools.', 'plan'],
+    [
+      'read-only',
+      'Read Only',
+      'Codex can read files in the current workspace. Approval is required to edit files or access the internet.',
+      'codexReadOnly',
+    ],
+    [
+      'auto',
+      'Auto',
+      'Codex can read and edit files in the current workspace, and run commands. Approval is required to access the internet or edit other files. (Identical to Agent mode)',
+      'codexAuto',
+    ],
+    [
+      'full-access',
+      'Full Access',
+      'Codex can edit files outside this workspace and access the internet without asking for approval. Exercise caution when using.',
+      'codexFullAccess',
+    ],
+  ] as const)('translates the observed %s mode tooltip into the display language', (value, label, description, key) => {
+    useAcpConfigOptionsMock.mockReturnValue({
+      setStatus: { state: 'idle' },
+      mode: { ...runtimeMode(), currentValue: value, options: [{ value, label, description }] },
+    });
+
+    render(<AgentModeSelector backend='codex' conversation_id='conv-1' />);
+
+    expect(screen.getByText(label).closest('[data-tooltip-content]')).toHaveAttribute(
+      'data-tooltip-content',
+      zhCN.descriptions[key]
+    );
+  });
+
+  it('translates persisted mode descriptions before a conversation is created', () => {
+    useAcpConfigOptionsMock.mockReturnValue({ setStatus: { state: 'idle' }, mode: null });
+
+    render(
+      <AgentModeSelector
+        backend='opencode'
+        onModeSelect={vi.fn()}
+        dynamicModes={[
+          {
+            value: 'build',
+            label: 'Build',
+            description: 'The default agent. Executes tools based on configured permissions.',
+          },
+        ]}
+      />
+    );
+
+    expect(screen.getByText('Build').closest('[data-tooltip-content]')).toHaveAttribute(
+      'data-tooltip-content',
+      zhCN.descriptions.build
+    );
+  });
+
+  it('updates existing mode tooltips when the display language changes', async () => {
+    const description =
+      'Codex can read files in the current workspace. Approval is required to edit files or access the internet.';
+    useAcpConfigOptionsMock.mockReturnValue({
+      setStatus: { state: 'idle' },
+      mode: {
+        ...runtimeMode(),
+        currentValue: 'read-only',
+        options: [{ value: 'read-only', label: 'Read Only', description }],
+      },
+    });
+
+    render(<AgentModeSelector backend='codex' conversation_id='conv-1' />);
+
+    expect(screen.getByText('Read Only').closest('[data-tooltip-content]')).toHaveAttribute(
+      'data-tooltip-content',
+      zhCN.descriptions.codexReadOnly
+    );
+
+    await act(async () => {
+      await modeI18n.changeLanguage('en-US');
+    });
+
+    expect(screen.getByText('Read Only').closest('[data-tooltip-content]')).toHaveAttribute(
+      'data-tooltip-content',
+      description
+    );
+  });
+
+  it('preserves custom descriptions even when their mode ID matches a built-in mode', () => {
+    const description = 'Build with the organization-specific deployment workflow';
+    useAcpConfigOptionsMock.mockReturnValue({
+      setStatus: { state: 'idle' },
+      mode: {
+        ...runtimeMode(),
+        currentValue: 'build',
+        options: [{ value: 'build', label: 'Custom Build', description }],
+      },
+    });
+
+    render(<AgentModeSelector backend='opencode' conversation_id='conv-1' />);
+
+    expect(screen.getByText('Custom Build').closest('[data-tooltip-content]')).toHaveAttribute(
+      'data-tooltip-content',
+      description
+    );
+  });
+
+  it('keeps modes without descriptions free of tooltips', () => {
+    useAcpConfigOptionsMock.mockReturnValue({
+      setStatus: { state: 'idle' },
+      mode: {
+        ...runtimeMode(),
+        currentValue: 'build',
+        options: [{ value: 'build', label: 'Build' }],
+      },
+    });
+
+    render(<AgentModeSelector backend='opencode' conversation_id='conv-1' />);
+
+    expect(screen.getByText('Build').closest('[data-tooltip-content]')).toBeNull();
   });
 });

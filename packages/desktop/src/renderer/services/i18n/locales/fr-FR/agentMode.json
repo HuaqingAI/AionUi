@@ -18,5 +18,12 @@
   "switchMode": "Changer de mode",
   "switchSuccess": "Mode changé avec succès",
   "switchPendingNextTurn": "Prend effet au prochain tour",
-  "switchFailed": "Échec du changement de mode"
+  "switchFailed": "Échec du changement de mode",
+  "descriptions": {
+    "build": "L’agent par défaut. Exécute les outils selon les autorisations configurées.",
+    "codexReadOnly": "Codex peut lire les fichiers de l’espace de travail actuel. Une approbation est nécessaire pour modifier des fichiers ou accéder à Internet.",
+    "plan": "Mode planification. Interdit l’utilisation de tous les outils de modification.",
+    "codexAuto": "Codex peut lire et modifier les fichiers de l’espace de travail actuel et exécuter des commandes. Une approbation est nécessaire pour accéder à Internet ou modifier d’autres fichiers. (Identique au mode Agent)",
+    "codexFullAccess": "Codex peut modifier des fichiers en dehors de cet espace de travail et accéder à Internet sans demander d’approbation. À utiliser avec prudence."
+  }
 }

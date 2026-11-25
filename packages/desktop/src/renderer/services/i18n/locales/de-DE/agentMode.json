@@ -18,5 +18,12 @@
   "switchMode": "Modus wechseln",
   "switchSuccess": "Modus erfolgreich gewechselt",
   "switchPendingNextTurn": "Wird ab der nächsten Runde wirksam",
-  "switchFailed": "Moduswechsel fehlgeschlagen"
+  "switchFailed": "Moduswechsel fehlgeschlagen",
+  "descriptions": {
+    "build": "Der Standardagent. Führt Werkzeuge gemäß den konfigurierten Berechtigungen aus.",
+    "codexReadOnly": "Codex kann Dateien im aktuellen Arbeitsbereich lesen. Zum Bearbeiten von Dateien oder für den Internetzugriff ist eine Genehmigung erforderlich.",
+    "plan": "Planungsmodus. Verbietet die Verwendung aller Bearbeitungswerkzeuge.",
+    "codexAuto": "Codex kann Dateien im aktuellen Arbeitsbereich lesen und bearbeiten sowie Befehle ausführen. Für den Internetzugriff oder das Bearbeiten anderer Dateien ist eine Genehmigung erforderlich. (Identisch mit dem Agentenmodus)",
+    "codexFullAccess": "Codex kann ohne Nachfrage nach einer Genehmigung Dateien außerhalb dieses Arbeitsbereichs bearbeiten und auf das Internet zugreifen. Seien Sie bei der Verwendung vorsichtig."
+  }
 }

@@ -18,5 +18,12 @@
   "switchMode": "Permission Mode",
   "switchSuccess": "Mode switched successfully",
   "switchPendingNextTurn": "Takes effect on the next turn",
-  "switchFailed": "Failed to switch mode"
+  "switchFailed": "Failed to switch mode",
+  "descriptions": {
+    "build": "The default agent. Executes tools based on configured permissions.",
+    "codexReadOnly": "Codex can read files in the current workspace. Approval is required to edit files or access the internet.",
+    "plan": "Plan mode. Disallows all edit tools.",
+    "codexAuto": "Codex can read and edit files in the current workspace, and run commands. Approval is required to access the internet or edit other files. (Identical to Agent mode)",
+    "codexFullAccess": "Codex can edit files outside this workspace and access the internet without asking for approval. Exercise caution when using."
+  }
 }
