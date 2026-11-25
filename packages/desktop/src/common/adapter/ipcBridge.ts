@@ -60,6 +60,12 @@ import type {
   HTHInjectProjectConfigResult,
   HTHModelPricingDescriptionsRequest,
   HTHModelPricingDescriptionsResult,
+  HTHNotificationChanged,
+  HTHNotificationDetailView,
+  HTHNotificationMarkAllRequest,
+  HTHNotificationRequest,
+  HTHNotificationResult,
+  HTHNotificationSnapshot,
   HTHQuotaSummary,
   HTHStartLoginRequest,
   HTHStartLoginResult,
@@ -858,6 +864,20 @@ export const application = {
 // ---------------------------------------------------------------------------
 
 export const hth = {
+  notifications: {
+    snapshot: bridge.buildProvider<HTHNotificationResult<HTHNotificationSnapshot>, void>('hth.notifications.snapshot'),
+    refresh: bridge.buildProvider<HTHNotificationResult<HTHNotificationSnapshot>, void>('hth.notifications.refresh'),
+    detail: bridge.buildProvider<HTHNotificationResult<HTHNotificationDetailView>, HTHNotificationRequest>(
+      'hth.notifications.detail'
+    ),
+    markRead: bridge.buildProvider<HTHNotificationResult<HTHNotificationSnapshot>, HTHNotificationRequest>(
+      'hth.notifications.mark-read'
+    ),
+    markAllRead: bridge.buildProvider<HTHNotificationResult<HTHNotificationSnapshot>, HTHNotificationMarkAllRequest>(
+      'hth.notifications.mark-all-read'
+    ),
+    changed: bridge.buildEmitter<HTHNotificationChanged>('hth.notifications.changed'),
+  },
   authStatus: bridge.buildProvider<HTHAuthStatus, void>('hth.auth-status'),
   startLogin: bridge.buildProvider<HTHStartLoginResult, HTHStartLoginRequest>('hth.start-login'),
   openDefaultBrowserSettings: bridge.buildProvider<boolean, void>('hth.open-default-browser-settings'),

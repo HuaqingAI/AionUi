@@ -7,3 +7,5 @@
 export * from './clientEnvironment';
 export * from './clientHeartbeatService';
 export * from './clientLogUploadService';
+export * from './clientNotificationService';
+export * from './clientNotificationReadStore';

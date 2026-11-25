@@ -17,6 +17,9 @@ vi.mock('@/common', () => ({
 vi.mock('@/common/config/constants', () => ({ TEAM_MODE_ENABLED: false }));
 vi.mock('@renderer/pages/conversation/GroupedHistory/ConversationSearchPopover', () => ({ default: () => null }));
 vi.mock('@/renderer/components/layout/Titlebar/MobileConversationBrand', () => ({ default: () => null }));
+vi.mock('@/renderer/components/layout/Titlebar/NotificationCenter', () => ({
+  default: () => <span data-testid='notification-center' />,
+}));
 vi.mock('@/renderer/components/layout/WindowControls', () => ({
   default: () => <div data-testid='window-controls' />,
 }));
@@ -24,7 +27,7 @@ vi.mock('@/renderer/hooks/context/LayoutContext', () => ({
   useLayoutContext: () => ({ isMobile: false }),
 }));
 vi.mock('@/renderer/hooks/context/NavigationHistoryContext', () => ({
-  useNavigationHistory: () => null,
+  useNavigationHistory: () => ({ canBack: true, canForward: false, back: vi.fn(), forward: vi.fn() }),
 }));
 vi.mock('@/renderer/utils/platform', () => ({
   isElectronDesktop: () => platform.desktop,
@@ -38,6 +41,17 @@ describe('Titlebar workspace toggle', () => {
   beforeEach(() => {
     platform.desktop = true;
     platform.mac = false;
+  });
+
+  it('places desktop notifications after forward navigation and hides them on the web', () => {
+    const { rerender } = render(<Titlebar workspaceAvailable={false} />);
+    const forward = screen.getByRole('button', { name: 'common.forward' });
+    expect(
+      forward.compareDocumentPosition(screen.getByTestId('notification-center')) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    platform.desktop = false;
+    rerender(<Titlebar workspaceAvailable={false} />);
+    expect(screen.queryByTestId('notification-center')).not.toBeInTheDocument();
   });
 
   it('shows window controls without a titlebar workspace toggle on Windows', () => {

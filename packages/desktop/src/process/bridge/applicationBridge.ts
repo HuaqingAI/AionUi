@@ -17,6 +17,9 @@ import { restartApplication } from './restartApplication';
 import { HTHAuthService } from '@process/services/hth/authService';
 import { HTHClientHeartbeatService } from '@process/services/hth/client/clientHeartbeatService';
 import { HTHClientLogUploadService } from '@process/services/hth/client/clientLogUploadService';
+import { HTHClientNotificationService } from '@process/services/hth/client/clientNotificationService';
+import { HTHClientNotificationReadStore } from '@process/services/hth/client/clientNotificationReadStore';
+import path from 'node:path';
 import { shouldRunClientHeartbeat } from '@process/services/hth/client/clientEnvironment';
 import { HTHCoreIdentityService } from '@process/services/hth/coreIdentityService';
 import { HTHConfigSyncService } from '@process/services/hth/configSyncService';
@@ -26,6 +29,7 @@ import { BROWSER_SESSION_PARTITION } from '@/common/config/constants';
 import { browserControlService } from '@process/resources/builtinMcp/browser/BrowserControlService';
 
 let mainWindowRef: BrowserWindow | null = null;
+let clientNotificationService: HTHClientNotificationService | undefined;
 let workspacePreparationServer: HTHWorkspacePreparationServer | undefined;
 let resolveWorkspacePreparationBackendReady!: () => void;
 const workspacePreparationBackendReady = new Promise<void>((resolve) => {
@@ -121,6 +125,16 @@ export function setStartOnBootEnabled(enabled: boolean): IStartOnBootStatus {
 
 export function setApplicationMainWindow(win: BrowserWindow): void {
   mainWindowRef = win;
+  const updateVisibility = () => {
+    if (mainWindowRef !== win) return;
+    clientNotificationService?.setVisible(!win.isDestroyed() && win.isVisible() && !win.isMinimized());
+  };
+  win.on('show', updateVisibility);
+  win.on('hide', updateVisibility);
+  win.on('minimize', updateVisibility);
+  win.on('restore', updateVisibility);
+  win.on('closed', updateVisibility);
+  updateVisibility();
 }
 
 function showHTHLoginWindow(): void {
@@ -317,6 +331,7 @@ export function initApplicationBridge(): void {
   let clientHeartbeatService: HTHClientHeartbeatService;
   hthAuthService = new HTHAuthService(undefined, {
     onLoginComplete: async () => {
+      clientNotificationService?.restart();
       await coreIdentityService.establish(await hthAuthService.getAccess());
       repairLegacyAssistantAvatars();
       if (shouldRunClientHeartbeat()) {
@@ -328,6 +343,32 @@ export function initApplicationBridge(): void {
     },
   });
   clientHeartbeatService = new HTHClientHeartbeatService(hthAuthService);
+  clientNotificationService = new HTHClientNotificationService({
+    getAccess: () => hthAuthService.getDesktopUpdateAccess(),
+    readStore: new HTHClientNotificationReadStore(path.join(app.getPath('userData'), 'hth', 'notifications')),
+    onChanged: (event) => ipcBridge.hth.notifications.changed.emit(event),
+  });
+  clientNotificationService.setVisible(
+    Boolean(mainWindowRef && !mainWindowRef.isDestroyed() && mainWindowRef.isVisible() && !mainWindowRef.isMinimized())
+  );
+  const notificationService = clientNotificationService;
+  const resumeNotifications = () => {
+    notificationService.setVisible(
+      Boolean(
+        mainWindowRef && !mainWindowRef.isDestroyed() && mainWindowRef.isVisible() && !mainWindowRef.isMinimized()
+      )
+    );
+    notificationService.resume();
+  };
+  const suspendNotifications = () => notificationService.setVisible(false);
+  void app.whenReady().then(() => notificationService.start());
+  powerMonitor.on('resume', resumeNotifications);
+  powerMonitor.on('suspend', suspendNotifications);
+  app.once('before-quit', () => {
+    notificationService.stop();
+    powerMonitor.removeListener('resume', resumeNotifications);
+    powerMonitor.removeListener('suspend', suspendNotifications);
+  });
   const clientLogUploadService = new HTHClientLogUploadService(hthAuthService);
   if (shouldRunClientHeartbeat()) {
     void app.whenReady().then(() => clientHeartbeatService.start());
@@ -402,6 +443,7 @@ export function initApplicationBridge(): void {
   });
   ipcBridge.hth.exchangeLoginCode.provider((request) => hthAuthService.exchangeLoginCode(request));
   ipcBridge.hth.logout.provider(async () => {
+    notificationService.stop();
     clientHeartbeatService.stop();
     await coreIdentityService.clear();
     return hthAuthService.logout();
@@ -434,4 +476,9 @@ export function initApplicationBridge(): void {
   ipcBridge.hth.quotaSummary.provider(() => hthQuotaService.getSummary());
   ipcBridge.hth.refreshQuotaSummary.provider(() => hthQuotaService.refreshSummary());
   ipcBridge.hth.uploadClientLogs.provider((request) => clientLogUploadService.upload(request));
+  ipcBridge.hth.notifications.snapshot.provider(() => notificationService.snapshot());
+  ipcBridge.hth.notifications.refresh.provider(() => notificationService.refresh());
+  ipcBridge.hth.notifications.detail.provider((request) => notificationService.detail(request));
+  ipcBridge.hth.notifications.markRead.provider((request) => notificationService.markRead(request));
+  ipcBridge.hth.notifications.markAllRead.provider((request) => notificationService.markAllRead(request));
 }

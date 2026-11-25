@@ -202,5 +202,25 @@
   "openInSystemBrowser": "Abrir en el navegador del sistema",
   "viewMoreLines_one": "Ver más ({{count}} línea)",
   "viewMoreLines_other": "Ver más ({{count}} líneas)",
-  "aiAssistant": "Asistente de IA"
+  "aiAssistant": "Asistente de IA",
+  "notificationCenter": {
+    "title": "Centro de mensajes",
+    "unreadLabel": "Centro de mensajes, {{total}} sin leer",
+    "markAllRead": "Marcar todos como leídos",
+    "storageRecovered": "El historial local de lectura estaba dañado y se ha creado de nuevo.",
+    "empty": "No hay mensajes",
+    "category": "Anuncio",
+    "read": "Leído",
+    "unread": "Sin leer",
+    "errors": {
+      "unauthenticated": "Inicia sesión de nuevo para ver los mensajes.",
+      "forbidden": "Los mensajes no están disponibles para esta cuenta.",
+      "unsupported": "Este servidor aún no admite notificaciones de mensajes.",
+      "unavailable": "No se pudieron cargar los mensajes. Inténtalo de nuevo.",
+      "not_found": "Este mensaje ya no está disponible.",
+      "invalid_response": "El servidor devolvió una respuesta de mensajes no válida.",
+      "stale_context": "Los mensajes han cambiado. Actualiza e inténtalo de nuevo.",
+      "storage_failed": "No se pudo guardar el historial de lectura. Inténtalo de nuevo."
+    }
+  }
 }

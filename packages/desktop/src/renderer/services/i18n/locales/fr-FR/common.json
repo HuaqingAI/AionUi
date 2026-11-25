@@ -202,5 +202,25 @@
   "viewMoreLines_other": "Voir plus ({{count}} lignes)",
   "selectedCount": "{{count}} sélectionné(s)",
   "selectedSkills": "Compétences sélectionnées",
-  "aiAssistant": "Assistant IA"
+  "aiAssistant": "Assistant IA",
+  "notificationCenter": {
+    "title": "Centre de messages",
+    "unreadLabel": "Centre de messages, {{total}} non lus",
+    "markAllRead": "Tout marquer comme lu",
+    "storageRecovered": "L’historique local de lecture était endommagé et a été recréé.",
+    "empty": "Aucun message",
+    "category": "Annonce",
+    "read": "Lu",
+    "unread": "Non lu",
+    "errors": {
+      "unauthenticated": "Reconnectez-vous pour consulter les messages.",
+      "forbidden": "Les messages ne sont pas disponibles pour ce compte.",
+      "unsupported": "Ce serveur ne prend pas encore en charge les notifications.",
+      "unavailable": "Impossible de charger les messages. Réessayez.",
+      "not_found": "Ce message n’est plus disponible.",
+      "invalid_response": "Le serveur a renvoyé une réponse de messages invalide.",
+      "stale_context": "Les messages ont changé. Actualisez puis réessayez.",
+      "storage_failed": "Impossible d’enregistrer l’historique de lecture. Réessayez."
+    }
+  }
 }

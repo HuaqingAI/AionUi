@@ -8,6 +8,7 @@ import { ipcBridge } from '@/common';
 import { TEAM_MODE_ENABLED } from '@/common/config/constants';
 import ConversationSearchPopover from '@renderer/pages/conversation/GroupedHistory/ConversationSearchPopover';
 import MobileConversationBrand from './MobileConversationBrand';
+import NotificationCenter from './NotificationCenter';
 import WindowControls from '../WindowControls';
 import { WORKSPACE_STATE_EVENT, dispatchWorkspaceToggleEvent } from '@renderer/utils/workspace/workspaceEvents';
 import type { WorkspaceStateDetail } from '@renderer/utils/workspace/workspaceEvents';
@@ -330,6 +331,7 @@ const Titlebar: React.FC<TitlebarProps> = ({ workspaceAvailable }) => {
             </button>
           </>
         )}
+        {isDesktopRuntime && <NotificationCenter iconSize={iconSize} strokeWidth={desktopIconStroke} />}
       </div>
       <div
         className={classNames('app-titlebar__brand', {

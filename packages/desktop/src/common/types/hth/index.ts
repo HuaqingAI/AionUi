@@ -6,3 +6,4 @@
 
 export * from './authTypes';
 export * from './configTypes';
+export * from './notificationTypes';

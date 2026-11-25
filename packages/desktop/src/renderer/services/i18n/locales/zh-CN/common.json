@@ -207,5 +207,25 @@
   "openInSystemBrowser": "系统浏览器打开",
   "viewMoreLines_one": "查看更多 ({{count}} 行)",
   "viewMoreLines_other": "查看更多 ({{count}} 行)",
-  "aiAssistant": "AI 助手"
+  "aiAssistant": "AI 助手",
+  "notificationCenter": {
+    "title": "消息中心",
+    "unreadLabel": "消息中心，{{total}} 条未读",
+    "markAllRead": "一键已读",
+    "storageRecovered": "本地阅读记录已损坏，现已重新建立。",
+    "empty": "暂无消息",
+    "category": "公告消息",
+    "read": "已读",
+    "unread": "未读",
+    "errors": {
+      "unauthenticated": "请重新登录后查看消息。",
+      "forbidden": "当前账号无法查看消息。",
+      "unsupported": "当前服务器暂不支持消息通知。",
+      "unavailable": "消息加载失败，请重试。",
+      "not_found": "这条消息已不可用。",
+      "invalid_response": "服务器返回的消息数据无效。",
+      "stale_context": "消息已发生变化，请刷新后重试。",
+      "storage_failed": "阅读记录保存失败，请重试。"
+    }
+  }
 }

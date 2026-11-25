@@ -202,5 +202,25 @@
   "openInSystemBrowser": "Abrir no navegador do sistema",
   "viewMoreLines_one": "Ver Mais ({{count}} linha)",
   "viewMoreLines_other": "Ver Mais ({{count}} linhas)",
-  "aiAssistant": "Assistente de IA"
+  "aiAssistant": "Assistente de IA",
+  "notificationCenter": {
+    "title": "Central de mensagens",
+    "unreadLabel": "Central de mensagens, {{total}} não lidas",
+    "markAllRead": "Marcar todas como lidas",
+    "storageRecovered": "O histórico local de leitura estava corrompido e foi recriado.",
+    "empty": "Nenhuma mensagem",
+    "category": "Comunicado",
+    "read": "Lida",
+    "unread": "Não lida",
+    "errors": {
+      "unauthenticated": "Entre novamente para ver as mensagens.",
+      "forbidden": "As mensagens não estão disponíveis para esta conta.",
+      "unsupported": "Este servidor ainda não oferece notificações de mensagens.",
+      "unavailable": "Não foi possível carregar as mensagens. Tente novamente.",
+      "not_found": "Esta mensagem não está mais disponível.",
+      "invalid_response": "O servidor retornou uma resposta de mensagens inválida.",
+      "stale_context": "As mensagens mudaram. Atualize e tente novamente.",
+      "storage_failed": "Não foi possível salvar o histórico de leitura. Tente novamente."
+    }
+  }
 }

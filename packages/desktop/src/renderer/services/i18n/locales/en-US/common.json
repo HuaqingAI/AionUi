@@ -207,5 +207,25 @@
   "openInSystemBrowser": "Open in system browser",
   "viewMoreLines_one": "View More ({{count}} line)",
   "viewMoreLines_other": "View More ({{count}} lines)",
-  "aiAssistant": "AI Assistant"
+  "aiAssistant": "AI Assistant",
+  "notificationCenter": {
+    "title": "Message center",
+    "unreadLabel": "Message center, {{total}} unread",
+    "markAllRead": "Mark all as read",
+    "storageRecovered": "Local reading history was damaged and has been rebuilt.",
+    "empty": "No messages",
+    "category": "Announcement",
+    "read": "Read",
+    "unread": "Unread",
+    "errors": {
+      "unauthenticated": "Sign in again to view messages.",
+      "forbidden": "Messages are unavailable for this account.",
+      "unsupported": "This server does not support messages yet.",
+      "unavailable": "Unable to load messages. Please try again.",
+      "not_found": "This message is no longer available.",
+      "invalid_response": "The server returned an invalid message response.",
+      "stale_context": "Messages have changed. Please refresh and try again.",
+      "storage_failed": "Unable to save reading history. Please try again."
+    }
+  }
 }

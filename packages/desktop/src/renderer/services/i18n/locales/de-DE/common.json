@@ -202,5 +202,25 @@
   "openInSystemBrowser": "Im Systembrowser öffnen",
   "viewMoreLines_one": "Mehr anzeigen ({{count}} Zeile)",
   "viewMoreLines_other": "Mehr anzeigen ({{count}} Zeilen)",
-  "aiAssistant": "KI-Assistent"
+  "aiAssistant": "KI-Assistent",
+  "notificationCenter": {
+    "title": "Nachrichtenzentrale",
+    "unreadLabel": "Nachrichtenzentrale, {{total}} ungelesen",
+    "markAllRead": "Alle als gelesen markieren",
+    "storageRecovered": "Der lokale Lesestatus war beschädigt und wurde neu erstellt.",
+    "empty": "Keine Nachrichten",
+    "category": "Ankündigung",
+    "read": "Gelesen",
+    "unread": "Ungelesen",
+    "errors": {
+      "unauthenticated": "Melden Sie sich erneut an, um Nachrichten anzuzeigen.",
+      "forbidden": "Nachrichten sind für dieses Konto nicht verfügbar.",
+      "unsupported": "Dieser Server unterstützt noch keine Nachrichten.",
+      "unavailable": "Nachrichten konnten nicht geladen werden. Bitte erneut versuchen.",
+      "not_found": "Diese Nachricht ist nicht mehr verfügbar.",
+      "invalid_response": "Der Server hat eine ungültige Nachrichtenantwort gesendet.",
+      "stale_context": "Die Nachrichten haben sich geändert. Bitte aktualisieren und erneut versuchen.",
+      "storage_failed": "Der Lesestatus konnte nicht gespeichert werden. Bitte erneut versuchen."
+    }
+  }
 }

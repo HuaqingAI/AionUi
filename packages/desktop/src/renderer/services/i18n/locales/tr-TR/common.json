@@ -202,5 +202,25 @@
   "openInSystemBrowser": "Sistem tarayıcısında aç",
   "viewMoreLines_one": "Daha Fazla Göster ({{count}} satır)",
   "viewMoreLines_other": "Daha Fazla Göster ({{count}} satır)",
-  "aiAssistant": "Yapay Zekâ Asistanı"
+  "aiAssistant": "Yapay Zekâ Asistanı",
+  "notificationCenter": {
+    "title": "Mesaj merkezi",
+    "unreadLabel": "Mesaj merkezi, {{total}} okunmamış",
+    "markAllRead": "Tümünü okundu işaretle",
+    "storageRecovered": "Yerel okuma geçmişi bozulduğu için yeniden oluşturuldu.",
+    "empty": "Mesaj yok",
+    "category": "Duyuru",
+    "read": "Okundu",
+    "unread": "Okunmamış",
+    "errors": {
+      "unauthenticated": "Mesajları görmek için yeniden oturum açın.",
+      "forbidden": "Bu hesap için mesajlar kullanılamıyor.",
+      "unsupported": "Bu sunucu henüz mesaj bildirimlerini desteklemiyor.",
+      "unavailable": "Mesajlar yüklenemedi. Lütfen tekrar deneyin.",
+      "not_found": "Bu mesaj artık kullanılamıyor.",
+      "invalid_response": "Sunucu geçersiz bir mesaj yanıtı döndürdü.",
+      "stale_context": "Mesajlar değişti. Yenileyip tekrar deneyin.",
+      "storage_failed": "Okuma geçmişi kaydedilemedi. Lütfen tekrar deneyin."
+    }
+  }
 }

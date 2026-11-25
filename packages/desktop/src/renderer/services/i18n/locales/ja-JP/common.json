@@ -202,5 +202,25 @@
   "openInSystemBrowser": "システムブラウザで開く",
   "viewMoreLines_one": "もっと見る ({{count}} 行)",
   "viewMoreLines_other": "もっと見る ({{count}} 行)",
-  "aiAssistant": "AI アシスタント"
+  "aiAssistant": "AI アシスタント",
+  "notificationCenter": {
+    "title": "メッセージセンター",
+    "unreadLabel": "メッセージセンター、未読 {{total}} 件",
+    "markAllRead": "すべて既読にする",
+    "storageRecovered": "ローカルの既読履歴が破損したため、再作成しました。",
+    "empty": "メッセージはありません",
+    "category": "お知らせ",
+    "read": "既読",
+    "unread": "未読",
+    "errors": {
+      "unauthenticated": "再ログインしてメッセージをご確認ください。",
+      "forbidden": "このアカウントではメッセージを表示できません。",
+      "unsupported": "このサーバーはメッセージ通知に未対応です。",
+      "unavailable": "メッセージを読み込めませんでした。再試行してください。",
+      "not_found": "このメッセージは利用できなくなりました。",
+      "invalid_response": "サーバーのメッセージ応答が無効です。",
+      "stale_context": "メッセージが変更されました。更新して再試行してください。",
+      "storage_failed": "既読履歴を保存できませんでした。再試行してください。"
+    }
+  }
 }

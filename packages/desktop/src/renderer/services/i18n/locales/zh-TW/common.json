@@ -202,5 +202,25 @@
   "openInSystemBrowser": "系統瀏覽器開啟",
   "viewMoreLines_one": "檢視更多 ({{count}} 行)",
   "viewMoreLines_other": "檢視更多 ({{count}} 行)",
-  "aiAssistant": "AI 助手"
+  "aiAssistant": "AI 助手",
+  "notificationCenter": {
+    "title": "訊息中心",
+    "unreadLabel": "訊息中心，{{total}} 則未讀",
+    "markAllRead": "全部標為已讀",
+    "storageRecovered": "本機閱讀紀錄已損壞，現已重新建立。",
+    "empty": "暫無訊息",
+    "category": "公告訊息",
+    "read": "已讀",
+    "unread": "未讀",
+    "errors": {
+      "unauthenticated": "請重新登入後查看訊息。",
+      "forbidden": "目前帳號無法查看訊息。",
+      "unsupported": "目前伺服器尚不支援訊息通知。",
+      "unavailable": "訊息載入失敗，請重試。",
+      "not_found": "這則訊息已無法使用。",
+      "invalid_response": "伺服器傳回的訊息資料無效。",
+      "stale_context": "訊息已變更，請重新整理後再試。",
+      "storage_failed": "閱讀紀錄儲存失敗，請重試。"
+    }
+  }
 }
