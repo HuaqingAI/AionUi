@@ -593,6 +593,8 @@
     "selected": "MCP sélectionnés"
   },
   "runtimePreparing": {
+    "preparationTitle": "Préparation de la conversation...",
+    "preparationFailed": "Impossible de préparer cette conversation. Réessayez pour continuer.",
     "sendboxHint": "Préparation de l'environnement d'exécution. Le premier démarrage peut prendre un peu plus de temps.",
     "notReady": "L'environnement est encore en cours d'initialisation. Réessayez plus tard."
   },

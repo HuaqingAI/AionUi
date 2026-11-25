@@ -597,6 +597,8 @@
     "selected": "Selected MCP"
   },
   "runtimePreparing": {
+    "preparationTitle": "Preparing conversation...",
+    "preparationFailed": "Could not prepare this conversation. Retry to continue.",
     "sendboxHint": "Preparing the runtime environment. First startup can take a little longer.",
     "notReady": "The environment is still initializing. Please try again later."
   },

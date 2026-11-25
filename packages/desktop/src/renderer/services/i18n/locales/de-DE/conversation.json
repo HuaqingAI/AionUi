@@ -594,6 +594,8 @@
     "selected": "Ausgewählte MCP"
   },
   "runtimePreparing": {
+    "preparationTitle": "Unterhaltung wird vorbereitet...",
+    "preparationFailed": "Diese Unterhaltung konnte nicht vorbereitet werden. Versuchen Sie es erneut, um fortzufahren.",
     "sendboxHint": "Laufzeit-Umgebung wird vorbereitet. Der erste Start kann etwas länger dauern.",
     "notReady": "Die Umgebung wird noch initialisiert. Bitte versuchen Sie es später erneut."
   },

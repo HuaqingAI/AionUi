@@ -820,6 +820,8 @@ export type I18nKey =
   | 'conversation.planBar.progress'
   | 'conversation.planBar.title'
   | 'conversation.runtimePreparing.notReady'
+  | 'conversation.runtimePreparing.preparationFailed'
+  | 'conversation.runtimePreparing.preparationTitle'
   | 'conversation.runtimePreparing.sendboxHint'
   | 'conversation.sendbox.hint'
   | 'conversation.sendbox.hintWithSessions'

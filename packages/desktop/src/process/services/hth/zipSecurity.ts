@@ -133,7 +133,7 @@ async function copyDirectory(
 }
 
 async function writeSyncManifest(targetDir: string, version: string, overwrite: boolean): Promise<void> {
-  const manifestPath = path.join(targetDir, '.aionui-hth-sync.json');
+  const manifestPath = path.join(targetDir, '.hqbuddy-hth-sync.json');
   assertPathInside(targetDir, manifestPath);
   await fs.mkdir(targetDir, { recursive: true });
   await fs

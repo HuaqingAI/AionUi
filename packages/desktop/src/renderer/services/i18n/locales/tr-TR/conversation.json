@@ -595,6 +595,8 @@
     "selected": "Seçili MCP"
   },
   "runtimePreparing": {
+    "preparationTitle": "Sohbet hazırlanıyor...",
+    "preparationFailed": "Bu sohbet hazırlanamadı. Devam etmek için yeniden deneyin.",
     "sendboxHint": "Çalışma ortamı hazırlanıyor. İlk başlatma biraz daha uzun sürebilir.",
     "notReady": "Ortam başlatılıyor. Lütfen daha sonra tekrar deneyin."
   },

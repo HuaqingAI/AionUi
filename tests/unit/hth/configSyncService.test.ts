@@ -2547,7 +2547,7 @@ describe('HTHConfigSyncService auth handling', () => {
     await expect(fs.readFile(path.join(opencodeHome, 'opencode.jsonc'), 'utf8')).resolves.toBe(
       '{ "model": "hth/gpt-5", "apiKey": "sk-personal-1" }\n'
     );
-    const syncManifest = JSON.parse(await fs.readFile(path.join(opencodeHome, '.aionui-hth-sync.json'), 'utf8'));
+    const syncManifest = JSON.parse(await fs.readFile(path.join(opencodeHome, '.hqbuddy-hth-sync.json'), 'utf8'));
     expect(syncManifest).toMatchObject({ version: agent.version });
     expect(syncManifest.managedBy).toBeUndefined();
     expect(syncManifest.files).toBeUndefined();
@@ -2779,7 +2779,7 @@ describe('HTHConfigSyncService auth handling', () => {
         headers: expect.objectContaining({ Authorization: 'Bearer token-1' }),
       })
     );
-    const syncManifest = JSON.parse(await fs.readFile(path.join(workspace, '.aionui-hth-sync.json'), 'utf8'));
+    const syncManifest = JSON.parse(await fs.readFile(path.join(workspace, '.hqbuddy-hth-sync.json'), 'utf8'));
     expect(syncManifest).toMatchObject({ version: '1.0.0' });
     expect(syncManifest.managedBy).toBeUndefined();
     expect(syncManifest.files).toBeUndefined();

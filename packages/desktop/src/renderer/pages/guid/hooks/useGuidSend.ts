@@ -10,10 +10,6 @@ import type { IMcpServer, TProviderWithModel } from '@/common/config/storage';
 import { toSessionMcpServer } from '@/renderer/hooks/mcp/catalog';
 import { emitter } from '@/renderer/utils/emitter';
 import { updateWorkspaceTime } from '@/renderer/utils/workspace/workspaceHistory';
-import { markHTHProjectConfigInjected } from '@/renderer/pages/conversation/hooks/useHTHProjectConfigInjection';
-import { getConversationOrNull } from '@/renderer/pages/conversation/utils/conversationCache';
-import { ensureConversationRuntime } from '@/renderer/pages/conversation/utils/ensureConversationRuntime';
-import { deriveSelectOption, hasObservedValue } from '@/renderer/hooks/agent/useAcpConfigOptions';
 import { Message } from '@arco-design/web-react';
 import { useCallback, useRef } from 'react';
 import { type TFunction } from 'i18next';
@@ -21,6 +17,7 @@ import type { NavigateFunction } from 'react-router-dom';
 import { mutate as swrMutate } from 'swr';
 import { getConversationCreateErrorMessage } from '@/renderer/pages/conversation/utils/conversationCreateError';
 import { registerAgentModelConversation } from '@/renderer/services/runtime/agentModelCatalog';
+import { registerConversationPreparation } from '@/renderer/pages/conversation/runtime/conversationPreparation';
 import {
   buildGuidSessionExcludedAutoInjectSkills,
   filterGuidSessionSkillIds,
@@ -138,20 +135,6 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
         throw new Error(`HTH project config injection failed: ${result.reason}`);
       }
     };
-    const injectNewConversationProjectConfig = async (conversationId: string, workspace?: string) => {
-      const projectConfigWorkspace =
-        assistantBackend === 'codex' && !workspace
-          ? (await getConversationOrNull(conversationId))?.extra?.workspace
-          : workspace;
-      if (assistantBackend === 'codex' && !projectConfigWorkspace) {
-        throw new Error('Codex workspace is unavailable after conversation creation');
-      }
-
-      await injectHTHProjectConfig(conversationId, projectConfigWorkspace);
-      if (assistantBackend === 'codex' && projectConfigWorkspace) {
-        markHTHProjectConfigInjected(conversationId, projectConfigWorkspace, assistantConversationId);
-      }
-    };
     const enabled_skills_to_send = filterGuidSessionSkillIds(guidEnabledSkills ?? assistantDefaultSkillIds);
     const excludeBuiltinSkills = buildGuidSessionExcludedAutoInjectSkills(
       guidDisabledBuiltinSkills ?? assistantDefaultDisabledBuiltinSkillIds
@@ -248,7 +231,7 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
           updateWorkspaceTime(finalWorkspace);
         }
 
-        await injectNewConversationProjectConfig(conversation.id, conversation.extra?.workspace);
+        await injectHTHProjectConfig(conversation.id, conversation.extra?.workspace);
 
         if (assistantConversationId) {
           await Promise.all([
@@ -307,38 +290,29 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
         updateWorkspaceTime(finalWorkspace);
       }
 
-      await injectNewConversationProjectConfig(conversation.id, conversation.extra?.workspace);
-
-      if (assistantBackend === 'opencode' && selectedThoughtLevelValue) {
-        // Startup may validate effort against the original model's catalog and
-        // discard Max before switching models. Confirm it on the started model
-        // before navigation can trigger the first message.
-        const { config_options } = await ensureConversationRuntime(conversation.id);
-        const model = deriveSelectOption(config_options, 'model', ['model']);
-        if (selectedAcpModel && model?.currentValue !== selectedAcpModel) {
-          throw new Error(t('agent.model.switchFailed'));
-        }
-        const thoughtLevel = deriveSelectOption(config_options, 'thought_level', [
-          'thought_level',
-          'reasoning_effort',
-          'effort',
-          'thinking_budget',
-          'thinking',
-        ]);
-        if (!thoughtLevel?.options.some(({ value }) => value === selectedThoughtLevelValue)) {
-          throw new Error(t('agent.thoughtLevel.switchFailed'));
-        }
-        if (thoughtLevel.currentValue !== selectedThoughtLevelValue) {
-          const response = await ipcBridge.acpConversation.setConfigOption.invoke({
-            conversation_id: conversation.id,
-            option_id: thoughtLevel.id,
-            value: selectedThoughtLevelValue,
-          });
-          if (!hasObservedValue(response, thoughtLevel.id, selectedThoughtLevelValue)) {
-            throw new Error(t('agent.thoughtLevel.switchFailed'));
-          }
-        }
+      if (assistantBackend === 'opencode' || assistantBackend === 'codex') {
+        registerConversationPreparation(conversation.id, {
+          backend: assistantBackend,
+          assistantId: assistantConversationId,
+          workspace: conversation.extra?.workspace,
+          model: selectedAcpModel,
+          thoughtLevel: selectedThoughtLevelValue,
+          initialMessage: input.trim() ? { input, files: files.length > 0 ? files : undefined } : undefined,
+        });
+        void swrMutate(`conversation/${conversation.id}`, conversation, false).catch(() =>
+          console.warn('[Guid] Failed to seed the new conversation cache')
+        );
+        emitter.emit('chat.history.refresh');
+        await navigate(`/conversation/${conversation.id}`);
+        // These caches are not prerequisites for preparing or sending the first turn.
+        void Promise.all([
+          swrMutate(`guid.assistant.detail.${assistantConversationId}.${localeKey}`),
+          swrMutate('assistants.list'),
+        ]).catch(() => console.warn('[Guid] Failed to refresh assistant caches after navigation'));
+        return;
       }
+
+      await injectHTHProjectConfig(conversation.id, conversation.extra?.workspace);
 
       if (assistantConversationId) {
         await Promise.all([

@@ -50,13 +50,13 @@ describe('hth zip security', () => {
   it('adds missing configuration while preserving workspace edits and its existing manifest', async () => {
     const { source, target } = await createWorkspace();
     await fs.writeFile(path.join(target, 'instructions.md'), 'user edits');
-    await fs.writeFile(path.join(target, '.aionui-hth-sync.json'), 'existing manifest');
+    await fs.writeFile(path.join(target, '.hqbuddy-hth-sync.json'), 'existing manifest');
 
     expect(await copyManagedSection(source, 'project', target, 'v2', { overwrite: false })).toEqual([
       '.codex/config.toml',
     ]);
     expect(await fs.readFile(path.join(target, 'instructions.md'), 'utf8')).toBe('user edits');
-    expect(await fs.readFile(path.join(target, '.aionui-hth-sync.json'), 'utf8')).toBe('existing manifest');
+    expect(await fs.readFile(path.join(target, '.hqbuddy-hth-sync.json'), 'utf8')).toBe('existing manifest');
   });
 
   it('retains explicit manual reinjection behavior', async () => {
@@ -64,7 +64,7 @@ describe('hth zip security', () => {
     await fs.writeFile(path.join(target, 'instructions.md'), 'old config');
     await copyManagedSection(source, 'project', target, 'v2');
     expect(await fs.readFile(path.join(target, 'instructions.md'), 'utf8')).toBe('package instructions');
-    expect(JSON.parse(await fs.readFile(path.join(target, '.aionui-hth-sync.json'), 'utf8')).version).toBe('v2');
+    expect(JSON.parse(await fs.readFile(path.join(target, '.hqbuddy-hth-sync.json'), 'utf8')).version).toBe('v2');
   });
 
   it('removes newly copied files when a background initialization is interrupted', async () => {
