@@ -1293,6 +1293,7 @@ async function ensureManagedToolLauncherUsesManagedNode(
       targetPath,
       nodeExecutable,
       nodeScript: await isManagedToolNodeScriptTarget(targetPath),
+      cliType: tool.toolId === CODEX_TOOL_ID ? 'codex' : 'opencode',
     });
     const currentPreparation = await fs.readFile(preparationPath, 'utf8').catch((): undefined => undefined);
     if (currentPreparation !== preparation) {
@@ -1346,6 +1347,7 @@ function ensureManagedToolLauncherUsesManagedNodeSync(
       targetPath,
       nodeExecutable,
       nodeScript: isManagedToolNodeScriptTargetSync(targetPath),
+      cliType: tool.toolId === CODEX_TOOL_ID ? 'codex' : 'opencode',
     });
     let currentPreparation: string | undefined;
     try {

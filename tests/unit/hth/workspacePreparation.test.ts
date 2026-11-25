@@ -71,6 +71,8 @@ describe('managed CLI workspace preparation', () => {
       conversationId?: string;
       token?: string;
       native?: boolean;
+      cliType?: 'codex' | 'opencode';
+      configContent?: string;
       args?: string[];
       workspace?: string;
       script?: string;
@@ -113,6 +115,7 @@ process.stdin.on('end', () => {
             : targetPath,
         nodeExecutable: process.execPath,
         nodeScript: !options.native,
+        cliType: options.cliType ?? 'opencode',
       })
     );
     const args = options.native ? [targetPath, ...(options.args ?? [])] : (options.args ?? []);
@@ -123,6 +126,7 @@ process.stdin.on('end', () => {
         AIONUI_CONVERSATION_ID: options.conversationId ?? 'cron-conversation',
         AIONUI_WORKSPACE_PREPARATION_PIPE: connection.pipe,
         AIONUI_WORKSPACE_PREPARATION_TOKEN: options.token ?? connection.token,
+        OPENCODE_CONFIG_CONTENT: options.configContent,
       },
       stdio: 'pipe',
       windowsHide: true,
@@ -224,6 +228,92 @@ process.stdin.on('end', () => {
     expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 17, stderr: 'cli stderr' });
     expect(JSON.parse(result.stdout)).toMatchObject({ config: 'native assistant', args: ['native argument'] });
   });
+
+  it('adds Codex attribution without replacing existing command arguments', async () => {
+    const result = await runLauncher(
+      { pipe: 'unused', token: 'unused' },
+      {
+        conversationId: '',
+        cliType: 'codex',
+        args: ['app-server', '-c', 'model_reasoning_effort="high"'],
+      }
+    );
+    expect(JSON.parse(result.stdout).args).toEqual([
+      'app-server',
+      '-c',
+      'model_reasoning_effort="high"',
+      '-c',
+      'model_providers.hth.http_headers.X-Client-App="hqbuddy-codex"',
+    ]);
+    expect(result.code).toBe(17);
+  });
+
+  it.each([
+    {
+      name: 'empty',
+      configContent: undefined,
+      expectedConfig: { provider: { hth: { options: { headers: { 'X-Client-App': 'hqbuddy-opencode' } } } } },
+    },
+    {
+      name: 'existing',
+      configContent: JSON.stringify({
+        model: 'hth/keep-model',
+        provider: {
+          other: { options: { headers: { 'X-Other': 'keep' } } },
+          hth: {
+            name: 'Keep HTH',
+            options: {
+              apiKey: 'dummy-local-key',
+              headers: { 'X-Existing': 'keep', 'x-client-app': 'obsolete' },
+            },
+          },
+        },
+      }),
+      expectedConfig: {
+        model: 'hth/keep-model',
+        provider: {
+          other: { options: { headers: { 'X-Other': 'keep' } } },
+          hth: {
+            name: 'Keep HTH',
+            options: {
+              apiKey: 'dummy-local-key',
+              headers: { 'X-Existing': 'keep', 'X-Client-App': 'hqbuddy-opencode' },
+            },
+          },
+        },
+      },
+    },
+  ])('adds OpenCode attribution while preserving $name configuration', async ({ configContent, expectedConfig }) => {
+    const result = await runLauncher(
+      { pipe: 'unused', token: 'unused' },
+      {
+        conversationId: '',
+        configContent,
+        args: ['acp', '--port', '12345'],
+        script: `process.stdout.write(JSON.stringify({ args: process.argv.slice(2), config: JSON.parse(process.env.OPENCODE_CONFIG_CONTENT) }));`,
+      }
+    );
+    expect(JSON.parse(result.stdout)).toEqual({
+      args: ['acp', '--port', '12345'],
+      config: expectedConfig,
+    });
+    expect(result.code).toBe(0);
+  });
+
+  it.each(['invalid JSON', 'null', '{"provider":[]}', '{"provider":{"hth":{"options":{"headers":[]}}}}'])(
+    'does not start OpenCode when its existing override is invalid: %s',
+    async (configContent) => {
+      const result = await runLauncher(
+        { pipe: 'unused', token: 'unused' },
+        {
+          conversationId: '',
+          configContent,
+        }
+      );
+      expect(result).toEqual({ code: 1, stdout: '', stderr: 'Workspace preparation failed.\n' });
+      await expect(fs.access(path.join(workspace, 'started'))).rejects.toThrow();
+    }
+  );
 
   // Shapes are grounded in codex-cli 0.145.0's generated TurnStartParams and
   // @agentclientprotocol/sdk 0.18.2's schema/schema.json. The fake CLI records
