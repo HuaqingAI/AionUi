@@ -80,13 +80,13 @@
     },
     "incompleteInstallation": {
       "title": "华青智能助手 installation is incomplete",
-      "description": "This installation is missing required local resources, so AionCore cannot start. Please download and reinstall the latest 华青智能助手. If the issue returns after reinstalling, check whether security or antivirus software quarantined AionCore.",
+      "description": "This installation is missing required local resources and cannot start. Please download and reinstall the latest version of 华青智能助手.",
       "downloadLatest": "Download latest",
       "sendDiagnostics": "Send diagnostics",
       "diagnosticsSent": "Diagnostics sent",
       "diagnosticsReportSuccess": "Diagnostics report sent",
       "diagnosticsReportFailed": "Failed to send diagnostics report",
-      "runtimeComponentDescription": "This installation is missing required bundled runtime components, so {{resource}} cannot start. Reinstall the latest 华青智能助手 package. If it still happens after reinstalling, check whether security or antivirus software quarantined 华青智能助手 components."
+      "runtimeComponentDescription": "This installation is missing required local resources and cannot start. Please download and reinstall the latest version of 华青智能助手."
     },
     "packageArchitectureMismatch": {
       "title": "华青智能助手 package architecture mismatch",

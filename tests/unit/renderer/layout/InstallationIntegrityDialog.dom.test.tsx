@@ -75,6 +75,24 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+describe('InstallationIntegrityDialog — incomplete installation', () => {
+  it('offers only a download action that opens the latest installer page', () => {
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
+    render(<InstallationIntegrityFooter diagnostics={diagnostics} />);
+
+    expect(screen.queryAllByRole('button')).toHaveLength(1);
+    expect(screen.queryByTestId('installation-integrity-report')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('installation-integrity-download'));
+
+    expect(openSpy).toHaveBeenCalledExactlyOnceWith(
+      'https://hth.huaqing.run/downloads',
+      '_blank',
+      'noopener,noreferrer'
+    );
+  });
+});
+
 describe('InstallationIntegrityDialog — recoverable_database_corruption recovery gate', () => {
   it('AC-5a: clicking rebuild opens a second confirmation and does NOT recover yet', () => {
     const confirmSpy = stubModalConfirm();

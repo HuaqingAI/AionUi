@@ -80,13 +80,13 @@
     },
     "incompleteInstallation": {
       "title": "华青智能助手 kurulumu eksik",
-      "description": "Bu kurulumda gerekli yerel kaynaklar eksik, bu yüzden AionCore başlatılamıyor. Lütfen en son 华青智能助手 sürümünü indirip yeniden kurun. Yeniden kurulumdan sonra sorun tekrarlarsa güvenlik veya antivirüs yazılımının AionCore'u karantinaya alıp almadığını kontrol edin.",
+      "description": "Bu kurulumda gerekli yerel kaynaklar eksik olduğundan uygulama başlatılamıyor. Lütfen 华青智能助手 uygulamasının en son sürümünü indirip yeniden yükleyin.",
       "downloadLatest": "Son sürümü indir",
       "sendDiagnostics": "Tanı raporu gönder",
       "diagnosticsSent": "Tanı raporu gönderildi",
       "diagnosticsReportSuccess": "Tanı raporu gönderildi",
       "diagnosticsReportFailed": "Tanı raporu gönderilemedi",
-      "runtimeComponentDescription": "Bu kurulumda gerekli yerleşik çalışma zamanı bileşenleri eksik olduğu için {{resource}} başlatılamıyor. En son 华青智能助手 paketini yeniden yükleyin. Yeniden yükledikten sonra da devam ederse güvenlik veya antivirüs yazılımının 华青智能助手 bileşenlerini karantinaya alıp almadığını kontrol edin."
+      "runtimeComponentDescription": "Bu kurulumda gerekli yerel kaynaklar eksik olduğundan uygulama başlatılamıyor. Lütfen 华青智能助手 uygulamasının en son sürümünü indirip yeniden yükleyin."
     },
     "packageArchitectureMismatch": {
       "title": "华青智能助手 package architecture mismatch",

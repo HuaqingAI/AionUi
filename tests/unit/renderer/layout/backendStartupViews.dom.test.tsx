@@ -19,7 +19,7 @@ const COPY: Record<string, string> = {
     'AionCore could not finish starting and has exited. Please restart the app; if this keeps happening, please send diagnostics.',
   'common.backendStartup.exited.sendDiagnostics': 'Send diagnostics',
   'common.backendStartup.incompleteInstallation.description':
-    'Your installation is missing required local resources. Please download and reinstall the latest AionUi; if it persists after reinstalling, check whether antivirus quarantined AionCore.',
+    'This installation is missing required local resources and cannot start. Please download and reinstall the latest version of 华青智能助手.',
 };
 
 vi.mock('react-i18next', () => ({

@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { type FeedbackEventTags, submitFeedbackReport } from '@/renderer/services/feedback/submitFeedbackReport';
 
-const AIONUI_DOWNLOAD_URL = 'https://www.aionui.com/';
+const AIONUI_DOWNLOAD_URL = 'https://hth.huaqing.run/downloads';
 const INSTALLATION_INTEGRITY_REPORT_FLUSH_TIMEOUT_MS = 2000;
 
 type InstallationIntegrityDialogKind =
@@ -43,9 +43,8 @@ export function openDownloadLatest(): void {
  * copy lives in, and which footer actions the dialog offers. One row per kind
  * replaces the previous per-suffix ternary chains.
  *
- * `showDiagnostics: false` kinds (the downgrade dialog) have no diagnostics
- * button at all: the root cause is fully understood and the only remedy is
- * updating, so the single download action stays unambiguous.
+ * `showDiagnostics: false` kinds offer a single download action when installing
+ * the latest version is the remedy.
  */
 const DIALOG_KIND_CONFIG: Record<
   InstallationIntegrityDialogKind,
@@ -57,7 +56,7 @@ const DIALOG_KIND_CONFIG: Record<
     showRecover?: boolean;
   }
 > = {
-  incomplete_installation: { i18nSection: 'incompleteInstallation', showDiagnostics: true, showDownloadLatest: true },
+  incomplete_installation: { i18nSection: 'incompleteInstallation', showDiagnostics: false, showDownloadLatest: true },
   data_migration: { i18nSection: 'dataMigration', showDiagnostics: true },
   database_newer_than_app: { i18nSection: 'databaseNewerThanApp', showDiagnostics: false, showDownloadLatest: true },
   local_data_repair: { i18nSection: 'localDataRepair', showDiagnostics: true },

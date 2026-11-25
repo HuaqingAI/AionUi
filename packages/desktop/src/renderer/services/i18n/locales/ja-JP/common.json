@@ -80,13 +80,13 @@
     },
     "incompleteInstallation": {
       "title": "华青智能助手 のインストールが不完全です",
-      "description": "このインストールには必要なローカルリソースが不足しているため、AionCore を起動できません。最新の 华青智能助手 をダウンロードして再インストールしてください。再インストール後も問題が再発する場合は、セキュリティソフトまたはウイルス対策ソフトが AionCore を隔離していないか確認してください。",
+      "description": "必要なローカルリソースが不足しているため、起動できません。最新版の 华青智能助手 をダウンロードして再インストールしてください。",
       "downloadLatest": "最新版をダウンロード",
       "sendDiagnostics": "診断レポートを送信",
       "diagnosticsSent": "診断レポートを送信済み",
       "diagnosticsReportSuccess": "診断レポートを送信しました",
       "diagnosticsReportFailed": "診断レポートの送信に失敗しました",
-      "runtimeComponentDescription": "このインストールには必要な組み込み実行コンポーネントが不足しているため、{{resource}} を起動できません。最新版の 华青智能助手 パッケージを再インストールしてください。再インストール後も続く場合は、セキュリティソフトまたはウイルス対策ソフトが 华青智能助手 コンポーネントを隔離していないか確認してください。"
+      "runtimeComponentDescription": "必要なローカルリソースが不足しているため、起動できません。最新版の 华青智能助手 をダウンロードして再インストールしてください。"
     },
     "packageArchitectureMismatch": {
       "title": "华青智能助手 package architecture mismatch",

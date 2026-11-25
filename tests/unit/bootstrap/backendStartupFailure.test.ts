@@ -368,17 +368,14 @@ describe('detectStartupArchitectureMismatch', () => {
 });
 
 describe('getInstallationIntegrityModalActions', () => {
-  it('exposes diagnostics reporting next to download-latest for blocking dialogs', () => {
+  it('offers only download-latest for incomplete-installation dialogs', () => {
     const t = (key: string) => key;
-    const onReportDiagnostics = vi.fn();
 
-    const actions = getInstallationIntegrityModalActions(t, { onReportDiagnostics });
+    const actions = getInstallationIntegrityModalActions(t);
 
     expect(actions.downloadText).toBe('common.backendStartup.incompleteInstallation.downloadLatest');
-    expect(actions.reportText).toBe('common.backendStartup.incompleteInstallation.sendDiagnostics');
-
-    actions.onReportDiagnostics();
-    expect(onReportDiagnostics).toHaveBeenCalledOnce();
+    expect(actions.reportText).toBeUndefined();
+    expect(actions.recoverText).toBeUndefined();
   });
 
   it('uses data migration copy and diagnostics-only actions for local data migration failures', () => {

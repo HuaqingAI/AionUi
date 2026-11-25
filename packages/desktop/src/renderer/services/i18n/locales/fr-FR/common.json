@@ -80,13 +80,13 @@
     },
     "incompleteInstallation": {
       "title": "L'installation d'华青智能助手 est incomplète",
-      "description": "Cette installation ne dispose pas des ressources locales requises, AionCore ne peut donc pas démarrer. Veuillez télécharger et réinstaller la dernière version d'华青智能助手. Si le problème réapparaît après la réinstallation, vérifiez si un logiciel de sécurité ou antivirus a mis AionCore en quarantaine.",
+      "description": "Cette installation ne dispose pas des ressources locales nécessaires et ne peut pas démarrer. Veuillez télécharger et réinstaller la dernière version de 华青智能助手.",
       "downloadLatest": "Télécharger le dernier",
       "sendDiagnostics": "Envoyer des diagnostics",
       "diagnosticsSent": "Diagnostics envoyés",
       "diagnosticsReportSuccess": "Rapport de diagnostic envoyé",
       "diagnosticsReportFailed": "Échec de l'envoi du rapport de diagnostic",
-      "runtimeComponentDescription": "Il manque les composants d'exécution groupés requis dans cette installation, donc {{resource}} ne peut pas démarrer. Réinstallez le dernier package 华青智能助手. Si cela se produit toujours après la réinstallation, vérifiez si un logiciel de sécurité ou un antivirus a mis en quarantaine les composants 华青智能助手."
+      "runtimeComponentDescription": "Cette installation ne dispose pas des ressources locales nécessaires et ne peut pas démarrer. Veuillez télécharger et réinstaller la dernière version de 华青智能助手."
     },
     "packageArchitectureMismatch": {
       "title": "Inadéquation de l'architecture du package 华青智能助手",

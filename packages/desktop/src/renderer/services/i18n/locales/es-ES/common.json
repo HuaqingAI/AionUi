@@ -79,13 +79,13 @@
     },
     "incompleteInstallation": {
       "title": "La instalación de 华青智能助手 está incompleta",
-      "description": "Esta instalación no tiene los recursos locales necesarios, por lo que AionCore no puede iniciar. Descarga e instala la última versión de 华青智能助手. Si el problema persiste después de reinstalar, verifica si el software de seguridad o antivirus puso en cuarentena AionCore.",
+      "description": "Esta instalación no tiene los recursos locales necesarios y no puede iniciarse. Descarga y reinstala la última versión de 华青智能助手.",
       "downloadLatest": "Descargar la última versión",
       "sendDiagnostics": "Enviar diagnóstico",
       "diagnosticsSent": "Diagnóstico enviado",
       "diagnosticsReportSuccess": "Reporte de diagnóstico enviado",
       "diagnosticsReportFailed": "Error al enviar el reporte de diagnóstico",
-      "runtimeComponentDescription": "Esta instalación no tiene los componentes de runtime necesarios, por lo que {{resource}} no puede iniciar. Reinstala el último paquete de 华青智能助手. Si sigue fallando, verifica si el software de seguridad o antivirus puso en cuarentena componentes de 华青智能助手."
+      "runtimeComponentDescription": "Esta instalación no tiene los recursos locales necesarios y no puede iniciarse. Descarga y reinstala la última versión de 华青智能助手."
     },
     "packageArchitectureMismatch": {
       "title": "Incompatibilidad de arquitectura del paquete 华青智能助手",
