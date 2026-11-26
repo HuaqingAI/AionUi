@@ -840,7 +840,9 @@
       "command": "命令",
       "version": "版本",
       "path": "路径",
-      "lastChecked": "最近检测"
+      "lastChecked": "最近检测",
+      "latestVersion": "最新版本",
+      "pinnedVersion": "固定版本"
     },
     "kind": {
       "uv": "uv",
@@ -860,8 +862,12 @@
     },
     "actions": {
       "check": "检测",
-      "repair": "安装/修复"
-    }
+      "repair": "安装/修复",
+      "installUpgrade": "安装/升级"
+    },
+    "latestVersionFailed": "查询最新版本失败",
+    "latestVersionNotChecked": "尚未查询",
+    "updateAvailable": "有新版本 {{version}} 可用"
   },
   "helpDocumentation": "帮助文档",
   "updateLog": "更新日志",

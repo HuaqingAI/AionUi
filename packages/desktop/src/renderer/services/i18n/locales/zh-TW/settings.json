@@ -840,7 +840,9 @@
       "command": "命令",
       "version": "版本",
       "path": "路徑",
-      "lastChecked": "最近檢測"
+      "lastChecked": "最近檢測",
+      "latestVersion": "最新版本",
+      "pinnedVersion": "固定版本"
     },
     "kind": {
       "uv": "uv",
@@ -860,8 +862,12 @@
     },
     "actions": {
       "check": "檢測",
-      "repair": "安裝/修復"
-    }
+      "repair": "安裝/修復",
+      "installUpgrade": "安裝/升級"
+    },
+    "latestVersionFailed": "查詢最新版本失敗",
+    "latestVersionNotChecked": "尚未查詢",
+    "updateAvailable": "有新版本 {{version}} 可用"
   },
   "helpDocumentation": "幫助文檔",
   "updateLog": "更新日誌",

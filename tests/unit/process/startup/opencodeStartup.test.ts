@@ -36,6 +36,7 @@ import {
   ensureOpenCodeReady,
   ensureManagedNodeEnvironmentMarker,
   ensureManagedStartupToolReadyForDiagnostics,
+  readManagedStartupToolLatestVersionForDiagnostics,
   setManagedStartupToolBootstrapEnabled,
   isManagedNodeEnvironmentReady,
   MANAGED_NODE_ENVIRONMENT_MARKER,
@@ -1127,7 +1128,7 @@ describe('opencode startup bootstrap', () => {
           fixture.npmCliPath,
           'install',
           '--global',
-          '@officecli/officecli',
+          entrypoint === 'explicit startup' ? '@officecli/officecli' : '@officecli/officecli@latest',
           '--prefix',
           fixture.officeCliPrefix,
           '--registry',
@@ -1146,6 +1147,194 @@ describe('opencode startup bootstrap', () => {
       );
     }
   );
+
+  it.each(getManagedStartupToolsForDiagnostics())(
+    'reinstalls $displayName manually with managed Node/npm without running CLI version checks',
+    async (tool) => {
+      vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+      const fixture = await createManagedNodeFixture();
+      const commandPath = getManagedStartupToolCommandPathForDiagnostics(tool.toolId, fixture.dataPath)!;
+      const prefix = path.dirname(commandPath);
+      const packageRoot = getManagedStartupToolPackageRootForDiagnostics(tool.toolId, fixture.dataPath)!;
+      await mkdir(packageRoot, { recursive: true });
+      await writeFile(commandPath, 'existing launcher');
+      await writeFile(
+        path.join(packageRoot, 'package.json'),
+        JSON.stringify({ version: tool.requiredVersion ?? '1.0.0' })
+      );
+      if (tool.toolId === 'dws') {
+        await mkdir(path.join(packageRoot, 'vendor'), { recursive: true });
+        await writeFile(path.join(packageRoot, 'vendor', 'dws.exe'), 'existing binary');
+      }
+      const commandRunner = vi.fn(async (_file: string, args: string[]) => {
+        if (args[0] === '-v') return { stdout: 'v24.11.0' };
+        if (args[0] === fixture.npmCliPath && args[1] === '--version') return { stdout: '10.0.0' };
+        if (args[0] === fixture.npmCliPath && args[1] === 'install') return { stdout: 'installed' };
+        throw new Error('unexpected CLI version command');
+      });
+
+      const result = await ensureManagedStartupToolReadyForDiagnostics(tool.toolId, {
+        commandRunner,
+        dataPath: fixture.dataPath,
+        emitStatus: vi.fn(),
+        env: {},
+      });
+
+      expect(result).toEqual({ status: 'ready' });
+      expect(commandRunner.mock.calls).toEqual([
+        [fixture.nodeExecutable, ['-v'], expect.any(Object)],
+        [fixture.nodeExecutable, [fixture.npmCliPath, '--version'], expect.any(Object)],
+        [
+          fixture.nodeExecutable,
+          [
+            fixture.npmCliPath,
+            'install',
+            '--global',
+            tool.toolId === 'codex' ? '@openai/codex@0.151.0' : `${tool.packageName}@latest`,
+            '--prefix',
+            prefix,
+            '--registry',
+            'https://registry.npmmirror.com',
+            ...(tool.toolId === 'dws' ? ['--ignore-scripts'] : []),
+          ],
+          expect.objectContaining({
+            cwd: fixture.dataPath,
+            env: expect.objectContaining({ NPM_CONFIG_PREFIX: prefix }),
+            timeout: 180000,
+          }),
+        ],
+      ]);
+    }
+  );
+
+  it('replaces a newer installed Codex with the pinned release during a manual installation', async () => {
+    const fixture = await createManagedNodeFixture();
+    const packageRoot = getManagedStartupToolPackageRootForDiagnostics('codex', fixture.dataPath)!;
+    await mkdir(packageRoot, { recursive: true });
+    await writeFile(fixture.codexCommandPath, 'existing launcher');
+    await writeFile(path.join(packageRoot, 'package.json'), JSON.stringify({ version: '0.152.0' }));
+    const commandRunner = vi.fn(async (_file: string, args: string[]) =>
+      args[0] === '-v' ? { stdout: 'v24.11.0' } : { stdout: 'done' }
+    );
+
+    const result = await ensureManagedStartupToolReadyForDiagnostics('codex', {
+      commandRunner,
+      dataPath: fixture.dataPath,
+      emitStatus: vi.fn(),
+      env: {},
+    });
+
+    expect(result).toEqual({ status: 'ready' });
+    expect(commandRunner.mock.calls.map(([, args]) => args)).toEqual([
+      ['-v'],
+      [fixture.npmCliPath, '--version'],
+      [
+        fixture.npmCliPath,
+        'uninstall',
+        '--global',
+        '@openai/codex',
+        '--prefix',
+        fixture.codexPrefix,
+        '--registry',
+        'https://registry.npmmirror.com',
+      ],
+      [
+        fixture.npmCliPath,
+        'install',
+        '--global',
+        '@openai/codex@0.151.0',
+        '--prefix',
+        fixture.codexPrefix,
+        '--registry',
+        'https://registry.npmmirror.com',
+      ],
+    ]);
+  });
+
+  it('reports a failed manual installation when npm rejects the install', async () => {
+    const fixture = await createManagedNodeFixture();
+    const commandRunner = vi.fn(async (_file: string, args: string[]) => {
+      if (args[1] === 'install') throw new Error('registry unavailable');
+      return args[0] === '-v' ? { stdout: 'v24.11.0' } : { stdout: '10.0.0' };
+    });
+
+    const result = await ensureManagedStartupToolReadyForDiagnostics('ziniao-open', {
+      commandRunner,
+      dataPath: fixture.dataPath,
+      emitStatus: vi.fn(),
+      env: {},
+    });
+
+    expect(result).toEqual({ status: 'failed', error: 'registry unavailable' });
+    expect(commandRunner).toHaveBeenCalledTimes(3);
+  });
+
+  it.each(['ziniao-open', 'codex'] as const)('reads the latest %s version using managed npm', async (toolId) => {
+    const fixture = await createManagedNodeFixture();
+    const tool = getManagedStartupToolsForDiagnostics().find((entry) => entry.toolId === toolId)!;
+    const commandRunner = vi.fn(async (_file: string, args: string[]) => {
+      if (args[0] === '-v') return { stdout: 'v24.11.0' };
+      if (args[1] === '--version') return { stdout: '10.0.0' };
+      return { stdout: '"1.3.1"\n' };
+    });
+
+    await expect(
+      readManagedStartupToolLatestVersionForDiagnostics(toolId, { commandRunner, dataPath: fixture.dataPath })
+    ).resolves.toBe('1.3.1');
+    expect(commandRunner).toHaveBeenLastCalledWith(
+      fixture.nodeExecutable,
+      [
+        fixture.npmCliPath,
+        'view',
+        `${tool.packageName}@latest`,
+        'version',
+        '--json',
+        '--registry',
+        'https://registry.npmmirror.com',
+      ],
+      expect.objectContaining({ cwd: fixture.dataPath, timeout: 30000 })
+    );
+    expect(commandRunner).toHaveBeenCalledTimes(3);
+  });
+
+  it.each(['not json', '"latest"', '["1.3.1"]', 'null', ''])(
+    'rejects malformed registry version output %j',
+    async (stdout) => {
+      const fixture = await createManagedNodeFixture();
+      const commandRunner = vi.fn(async (_file: string, args: string[]) => {
+        if (args[0] === '-v') return { stdout: 'v24.11.0' };
+        if (args[1] === '--version') return { stdout: '10.0.0' };
+        return { stdout };
+      });
+
+      await expect(
+        readManagedStartupToolLatestVersionForDiagnostics('ziniao-open', { commandRunner, dataPath: fixture.dataPath })
+      ).rejects.toThrow();
+    }
+  );
+
+  it('propagates npm registry failures when reading the latest version', async () => {
+    const fixture = await createManagedNodeFixture();
+    const commandRunner = vi.fn(async (_file: string, args: string[]) => {
+      if (args[0] === '-v') return { stdout: 'v24.11.0' };
+      if (args[1] === '--version') return { stdout: '10.0.0' };
+      throw new Error('registry timed out');
+    });
+
+    await expect(
+      readManagedStartupToolLatestVersionForDiagnostics('ziniao-open', { commandRunner, dataPath: fixture.dataPath })
+    ).rejects.toThrow('registry timed out');
+  });
+
+  it('does not use system npm when managed Node is unavailable for a registry query', async () => {
+    const dataPath = await mkdtemp(path.join(tmpdir(), 'aionui-cli-latest-missing-node-'));
+    const commandRunner = vi.fn(async () => ({ stdout: '1.3.1' }));
+
+    await expect(
+      readManagedStartupToolLatestVersionForDiagnostics('ziniao-open', { commandRunner, dataPath })
+    ).rejects.toThrow('managed Node runtime is not ready');
+    expect(commandRunner).not.toHaveBeenCalled();
+  });
 
   it('skips OfficeCLI startup by default without running commands', async () => {
     const commandRunner = vi.fn(async () => ({}));

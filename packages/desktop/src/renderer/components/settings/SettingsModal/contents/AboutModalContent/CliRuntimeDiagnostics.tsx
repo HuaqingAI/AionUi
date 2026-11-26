@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Button, Collapse, Message, Switch, Tag, Tooltip, Typography } from '@arco-design/web-react';
+import { Badge, Button, Collapse, Message, Switch, Tag, Tooltip, Typography } from '@arco-design/web-react';
 import { Copy, Download, Refresh } from '@icon-park/react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -238,8 +238,19 @@ const CliRuntimeDiagnostics: React.FC<CliRuntimeDiagnosticsProps> = ({ appVersio
     for (const item of items) {
       lines.push(`${item.label}: ${t(`settings.runtimeDiagnostics.status.${item.status}`)}`);
       lines.push(`  ${t('settings.runtimeDiagnostics.summaryCommand')}: ${commandText(item)}`);
-      if (item.versionOutput) {
-        lines.push(`  ${t('settings.runtimeDiagnostics.summaryOutput')}: ${item.versionOutput}`);
+      if (item.versionOutput ?? item.installedVersion) {
+        lines.push(
+          `  ${t('settings.runtimeDiagnostics.summaryOutput')}: ${item.versionOutput ?? item.installedVersion}`
+        );
+      }
+      if (item.latestVersion) {
+        lines.push(`  ${t('settings.runtimeDiagnostics.columns.latestVersion')}: ${item.latestVersion}`);
+      }
+      if (item.latestVersionError) {
+        lines.push(`  ${t('settings.runtimeDiagnostics.latestVersionFailed')}: ${item.latestVersionError}`);
+      }
+      if (item.kind === 'managed-node-tool' && item.requiredVersion) {
+        lines.push(`  ${t('settings.runtimeDiagnostics.columns.pinnedVersion')}: ${item.requiredVersion}`);
       }
       const itemPath = item.resolvedPath ?? item.expectedPath;
       if (itemPath) {
@@ -330,10 +341,31 @@ const CliRuntimeDiagnostics: React.FC<CliRuntimeDiagnosticsProps> = ({ appVersio
                     installingIds.has(item.id) ||
                     savingIds.has(item.id);
                   const itemPath = item.resolvedPath ?? item.expectedPath ?? t('settings.runtimeDiagnostics.noPath');
+                  const isCli = item.kind === 'managed-node-tool';
                   const versionOutput =
-                    item.versionOutput ?? item.error ?? t('settings.runtimeDiagnostics.noVersionOutput');
+                    (isCli && UNAVAILABLE_STATUSES.has(item.status) ? item.error : undefined) ??
+                    item.versionOutput ??
+                    item.installedVersion ??
+                    item.error ??
+                    t('settings.runtimeDiagnostics.noVersionOutput');
+                  const hasUpdate = isCli && Boolean(item.updateAvailable) && !item.requiredVersion;
+                  const installLabel = t(
+                    isCli
+                      ? 'settings.runtimeDiagnostics.actions.installUpgrade'
+                      : 'settings.runtimeDiagnostics.actions.repair'
+                  );
+                  const installTooltip = hasUpdate
+                    ? t('settings.runtimeDiagnostics.updateAvailable', { version: item.latestVersion ?? '' })
+                    : isCli && item.requiredVersion
+                      ? `${t('settings.runtimeDiagnostics.columns.pinnedVersion')}: ${item.requiredVersion}`
+                      : installLabel;
                   return (
-                    <div key={item.id} className='rd-8px border border-b-base bg-fill-1 p-12px'>
+                    <div
+                      key={item.id}
+                      role='group'
+                      aria-label={item.label}
+                      className='rd-8px border border-b-base bg-fill-1 p-12px'
+                    >
                       <div className='flex flex-wrap items-start justify-between gap-10px'>
                         <div className='min-w-0 flex flex-wrap items-center gap-8px'>
                           <Tag color={getStatusColor(item.status)}>
@@ -347,6 +379,7 @@ const CliRuntimeDiagnostics: React.FC<CliRuntimeDiagnosticsProps> = ({ appVersio
                         <div className='flex flex-wrap items-center gap-6px'>
                           <Button
                             size='mini'
+                            aria-label={`${item.label} ${t('settings.runtimeDiagnostics.actions.check')}`}
                             icon={<Refresh size={12} />}
                             loading={checkingIds.has(item.id) || item.status === 'checking'}
                             disabled={itemBusy}
@@ -354,15 +387,21 @@ const CliRuntimeDiagnostics: React.FC<CliRuntimeDiagnosticsProps> = ({ appVersio
                           >
                             {t('settings.runtimeDiagnostics.actions.check')}
                           </Button>
-                          <Button
-                            size='mini'
-                            icon={<Download size={12} />}
-                            loading={installingIds.has(item.id) || item.status === 'installing'}
-                            disabled={itemBusy || !item.installable || item.status === 'unsupported'}
-                            onClick={() => void runInstall([item.id])}
-                          >
-                            {t('settings.runtimeDiagnostics.actions.repair')}
-                          </Button>
+                          <Tooltip content={installTooltip}>
+                            <Badge dot={hasUpdate} count={hasUpdate ? 1 : 0}>
+                              <Button
+                                size='mini'
+                                aria-label={`${item.label} ${installLabel}`}
+                                aria-description={hasUpdate ? installTooltip : undefined}
+                                icon={<Download size={12} />}
+                                loading={installingIds.has(item.id) || item.status === 'installing'}
+                                disabled={itemBusy || !item.installable || item.status === 'unsupported'}
+                                onClick={() => void runInstall([item.id])}
+                              >
+                                {installLabel}
+                              </Button>
+                            </Badge>
+                          </Tooltip>
                           {item.kind === 'managed-node-tool' && typeof item.bootstrapEnabled === 'boolean' && (
                             <Tooltip content={t('settings.runtimeDiagnostics.autoCheckTooltip')}>
                               <span className='ms-6px flex items-center gap-6px'>
@@ -396,6 +435,30 @@ const CliRuntimeDiagnostics: React.FC<CliRuntimeDiagnosticsProps> = ({ appVersio
                         <Typography.Text className='font-mono text-t-primary whitespace-pre-wrap break-all'>
                           {versionOutput}
                         </Typography.Text>
+                        {isCli && (
+                          <>
+                            <Typography.Text className='text-t-tertiary'>
+                              {t('settings.runtimeDiagnostics.columns.latestVersion')}
+                            </Typography.Text>
+                            <Tooltip content={item.latestVersionError}>
+                              <Typography.Text className='font-mono text-t-primary break-all'>
+                                {item.latestVersionError
+                                  ? t('settings.runtimeDiagnostics.latestVersionFailed')
+                                  : (item.latestVersion ?? t('settings.runtimeDiagnostics.latestVersionNotChecked'))}
+                              </Typography.Text>
+                            </Tooltip>
+                            {item.requiredVersion && (
+                              <>
+                                <Typography.Text className='text-t-tertiary'>
+                                  {t('settings.runtimeDiagnostics.columns.pinnedVersion')}
+                                </Typography.Text>
+                                <Typography.Text className='font-mono text-t-secondary'>
+                                  {item.requiredVersion}
+                                </Typography.Text>
+                              </>
+                            )}
+                          </>
+                        )}
                         <Typography.Text className='text-t-tertiary'>
                           {t('settings.runtimeDiagnostics.columns.path')}
                         </Typography.Text>

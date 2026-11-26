@@ -5,7 +5,7 @@
  */
 
 import React from 'react';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RuntimeDiagnosticItem, RuntimeDiagnosticStatus } from '@/common/adapter/ipcBridge';
 
@@ -42,7 +42,9 @@ vi.mock('react-i18next', () => ({
               ? `${params?.version} 已就绪, 立即安装`
               : key === 'settings.clientLogUpload.success'
                 ? `${key}:${params?.bytes}`
-                : key,
+                : key === 'settings.runtimeDiagnostics.updateAvailable'
+                  ? `${key}:${params?.version}`
+                  : key,
   }),
 }));
 
@@ -165,6 +167,7 @@ function createDiagnosticItems(): RuntimeDiagnosticItem[] {
       installable: true,
       kind: 'managed-node-tool',
       label,
+      requiredVersion: id === 'codex' ? '0.151.0' : undefined,
       status,
       versionOutput: status === 'ready' ? `${command} 1.0.0` : undefined,
       error: status === 'broken' ? 'version command failed' : undefined,
@@ -403,6 +406,146 @@ describe('AboutModalContent update ready state', () => {
     await waitFor(() => {
       expect(mocks.runtimeDiagnosticsInstallMock).toHaveBeenCalledWith({ ids: ['codex'] });
     });
+  });
+
+  it('offers install/upgrade for the nine CLIs and keeps install/repair for uv and Python', async () => {
+    render(<AboutModalContent />);
+    expandRuntimeDiagnostics();
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByRole('button', { name: /settings.runtimeDiagnostics.actions.installUpgrade$/ })
+      ).toHaveLength(9);
+    });
+    expect(screen.getByRole('button', { name: 'uv settings.runtimeDiagnostics.actions.repair' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Python 3.14 settings.runtimeDiagnostics.actions.repair' })
+    ).toBeInTheDocument();
+  });
+
+  it('checks the selected CLI and displays its latest version with an upgrade badge', async () => {
+    render(<AboutModalContent />);
+    expandRuntimeDiagnostics();
+    const checkButton = await screen.findByRole('button', {
+      name: 'Ziniao Open settings.runtimeDiagnostics.actions.check',
+    });
+    await waitFor(() => expect(checkButton).not.toBeDisabled());
+    mocks.runtimeDiagnosticsProbeMock.mockResolvedValue([
+      {
+        ...createDiagnosticItems().find((item) => item.id === 'ziniao-open')!,
+        installedVersion: '1.0.0',
+        latestVersion: '2.0.0',
+        updateAvailable: true,
+      },
+    ]);
+
+    fireEvent.click(checkButton);
+
+    const row = screen.getByRole('group', { name: 'Ziniao Open' });
+    await waitFor(() => expect(within(row).getByText('2.0.0')).toBeInTheDocument());
+    expect(mocks.runtimeDiagnosticsProbeMock).toHaveBeenLastCalledWith({ ids: ['ziniao-open'] });
+    expect(
+      within(row).getByRole('button', { name: 'Ziniao Open settings.runtimeDiagnostics.actions.installUpgrade' })
+    ).toHaveAccessibleDescription('settings.runtimeDiagnostics.updateAvailable:2.0.0');
+    expect(row.querySelector('.arco-badge-dot')).toBeInTheDocument();
+  });
+
+  it('displays the Codex latest version and fixed version without an upgrade badge', async () => {
+    mocks.runtimeDiagnosticsProbeMock.mockResolvedValue(
+      createDiagnosticItems().map((item) =>
+        item.id === 'codex' ? Object.assign(item, { latestVersion: '0.200.0', updateAvailable: true }) : item
+      )
+    );
+    render(<AboutModalContent />);
+    expandRuntimeDiagnostics();
+
+    const row = await screen.findByRole('group', { name: 'Codex' });
+    await waitFor(() => expect(within(row).getByText('0.200.0')).toBeInTheDocument());
+    expect(within(row).getByText('0.151.0')).toBeInTheDocument();
+    expect(row.querySelector('.arco-badge-dot')).not.toBeInTheDocument();
+  });
+
+  it('shows a latest-version query failure alongside the healthy installed CLI', async () => {
+    mocks.runtimeDiagnosticsProbeMock.mockResolvedValue(
+      createDiagnosticItems().map((item) =>
+        item.id === 'ziniao-open' ? Object.assign(item, { latestVersionError: 'registry request timed out' }) : item
+      )
+    );
+    render(<AboutModalContent />);
+    expandRuntimeDiagnostics();
+
+    const row = await screen.findByRole('group', { name: 'Ziniao Open' });
+    await waitFor(() =>
+      expect(within(row).getByText('settings.runtimeDiagnostics.latestVersionFailed')).toBeInTheDocument()
+    );
+    expect(within(row).getByText('ziniao-cli 1.0.0')).toBeInTheDocument();
+    expect(
+      within(row).getByRole('button', { name: 'Ziniao Open settings.runtimeDiagnostics.actions.installUpgrade' })
+    ).not.toBeDisabled();
+  });
+
+  it('installs the selected CLI and clears the upgrade badge without another probe', async () => {
+    const ziniao = createDiagnosticItems().find((item) => item.id === 'ziniao-open')!;
+    mocks.runtimeDiagnosticsProbeMock.mockResolvedValue(
+      createDiagnosticItems().map((item) =>
+        item.id === 'ziniao-open' ? Object.assign(item, { latestVersion: '2.0.0', updateAvailable: true }) : item
+      )
+    );
+    mocks.runtimeDiagnosticsInstallMock.mockResolvedValue({
+      failedIds: [],
+      items: [
+        {
+          ...ziniao,
+          versionOutput: undefined,
+          installedVersion: '2.0.0',
+          latestVersion: '2.0.0',
+          updateAvailable: false,
+        },
+      ],
+    });
+    render(<AboutModalContent />);
+    expandRuntimeDiagnostics();
+    const installButton = await screen.findByRole('button', {
+      name: 'Ziniao Open settings.runtimeDiagnostics.actions.installUpgrade',
+    });
+    await waitFor(() => expect(installButton).not.toBeDisabled());
+
+    fireEvent.click(installButton);
+
+    const row = screen.getByRole('group', { name: 'Ziniao Open' });
+    await waitFor(() => expect(installButton).not.toHaveAttribute('aria-description'));
+    expect(mocks.runtimeDiagnosticsInstallMock).toHaveBeenLastCalledWith({ ids: ['ziniao-open'] });
+    expect(mocks.runtimeDiagnosticsProbeMock).toHaveBeenCalledTimes(1);
+    expect(row.querySelector('.arco-badge-dot')).not.toBeInTheDocument();
+  });
+
+  it('shows a CLI installation failure while retaining its latest version and upgrade badge', async () => {
+    const ziniao = {
+      ...createDiagnosticItems().find((item) => item.id === 'ziniao-open')!,
+      installedVersion: '1.0.0',
+      latestVersion: '2.0.0',
+      updateAvailable: true,
+    };
+    mocks.runtimeDiagnosticsProbeMock.mockResolvedValue([ziniao]);
+    mocks.runtimeDiagnosticsInstallMock.mockResolvedValue({
+      failedIds: ['ziniao-open'],
+      items: [{ ...ziniao, status: 'failed', error: 'npm install failed: registry request timed out' }],
+    });
+    render(<AboutModalContent />);
+    expandRuntimeDiagnostics();
+    const installButton = await screen.findByRole('button', {
+      name: 'Ziniao Open settings.runtimeDiagnostics.actions.installUpgrade',
+    });
+    await waitFor(() => expect(installButton).not.toBeDisabled());
+
+    fireEvent.click(installButton);
+
+    const row = screen.getByRole('group', { name: 'Ziniao Open' });
+    await waitFor(() =>
+      expect(within(row).getByText('npm install failed: registry request timed out')).toBeInTheDocument()
+    );
+    expect(within(row).getByText('2.0.0')).toBeInTheDocument();
+    expect(row.querySelector('.arco-badge-dot')).toBeInTheDocument();
   });
 
   it('shows automatic check switches for only the nine CLIs with OfficeCLI off', async () => {

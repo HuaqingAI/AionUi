@@ -840,7 +840,9 @@
       "command": "Command",
       "version": "Version",
       "path": "Path",
-      "lastChecked": "Last checked"
+      "lastChecked": "Last checked",
+      "latestVersion": "Latest version",
+      "pinnedVersion": "Pinned version"
     },
     "kind": {
       "uv": "uv",
@@ -860,8 +862,12 @@
     },
     "actions": {
       "check": "Check",
-      "repair": "Install/repair"
-    }
+      "repair": "Install/repair",
+      "installUpgrade": "Install/upgrade"
+    },
+    "latestVersionFailed": "Could not check the latest version",
+    "latestVersionNotChecked": "Not checked",
+    "updateAvailable": "Version {{version}} is available"
   },
   "helpDocumentation": "Help Documentation",
   "updateLog": "Update Log",

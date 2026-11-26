@@ -14,7 +14,11 @@ import {
   getUvExecutablePathForDiagnostics,
 } from '@process/startup/uvStartup';
 import type { DiagnosticCommandRunner } from '@process/services/runtime-diagnostics';
-import { getManagedStartupToolCommandPathForDiagnostics } from '@process/startup/opencodeStartup';
+import {
+  getManagedStartupToolCommandPathForDiagnostics,
+  getManagedStartupToolPackageRootForDiagnostics,
+  type ManagedStartupToolId,
+} from '@process/startup/opencodeStartup';
 import { ProcessConfig } from '@process/utils/initStorage';
 import type { IConfigStorageRefer, ILegacyConfigStorageRefer } from '@/common/config/storage';
 
@@ -48,6 +52,31 @@ describe('RuntimeDiagnosticsService', () => {
     const uvxPath = getUvExecutablePathForDiagnostics(dataPath, 'uvx');
     await mkdir(path.dirname(uvPath), { recursive: true });
     await Promise.all([writeFile(uvPath, 'uv'), writeFile(uvxPath, 'uvx')]);
+  }
+
+  async function createManagedNodeCommands(dataPath: string): Promise<void> {
+    const nodeDirectory = path.join(dataPath, 'runtime', 'node', 'node-v24.11.0-test');
+    const npmRoot = path.join(nodeDirectory, 'node_modules', 'npm');
+    await Promise.all([
+      mkdir(path.join(npmRoot, 'bin'), { recursive: true }),
+      mkdir(path.join(npmRoot, 'lib'), { recursive: true }),
+    ]);
+    await Promise.all([
+      writeFile(path.join(nodeDirectory, 'node.exe'), ''),
+      writeFile(path.join(npmRoot, 'package.json'), '{}'),
+      writeFile(path.join(npmRoot, 'bin', 'npm-cli.js'), ''),
+      writeFile(path.join(npmRoot, 'lib', 'cli.js'), ''),
+    ]);
+  }
+
+  async function createManagedCli(dataPath: string, toolId: ManagedStartupToolId, version: string): Promise<void> {
+    const commandPath = getManagedStartupToolCommandPathForDiagnostics(toolId, dataPath);
+    const packageRoot = getManagedStartupToolPackageRootForDiagnostics(toolId, dataPath)!;
+    await Promise.all([mkdir(path.dirname(commandPath), { recursive: true }), mkdir(packageRoot, { recursive: true })]);
+    await Promise.all([
+      writeFile(commandPath, ''),
+      writeFile(path.join(packageRoot, 'package.json'), JSON.stringify({ version })),
+    ]);
   }
 
   it('lists the managed uv, Python, and nine startup CLI components', async () => {
@@ -210,6 +239,209 @@ describe('RuntimeDiagnosticsService', () => {
     expect(ensureUvRuntime).toHaveBeenCalledTimes(1);
     expect(result.failedIds).toEqual([]);
     expect(result.items[0]).toEqual(expect.objectContaining({ status: 'ready', versionOutput: 'uv 0.11.31' }));
+  });
+
+  it.each([
+    { installed: '1.2.0', latest: '1.3.0', updateAvailable: true },
+    { installed: '10.0.0', latest: '2.0.0', updateAvailable: false },
+    { installed: '1.3.0', latest: '1.3.0', updateAvailable: false },
+    { installed: '2.0.0-beta.1', latest: '2.0.0', updateAvailable: true },
+    { installed: '1.3.0+local', latest: '1.3.0', updateAvailable: false },
+    { installed: 'unknown', latest: '1.3.0', updateAvailable: false },
+  ])(
+    'compares installed package $installed with registry latest $latest',
+    async ({ installed, latest, updateAvailable }) => {
+      const dataPath = await createDataPath();
+      await createManagedNodeCommands(dataPath);
+      await createManagedCli(dataPath, 'shopify-cli', installed);
+      const commandRunner = vi.fn<DiagnosticCommandRunner>(async (_file, args) => {
+        if (args[0] === '-v') return { stdout: 'v24.11.0' };
+        if (args[1] === '--version') return { stdout: '11.6.0' };
+        if (args[1] === 'view') return { stdout: JSON.stringify(latest) };
+        return { stdout: `@shopify/cli/${installed} win32-x64 node-v24.11.0` };
+      });
+      const service = new RuntimeDiagnosticsService({ commandRunner, dataPath });
+
+      const [item] = await service.probe(['shopify-cli']);
+
+      expect(item).toMatchObject({
+        status: 'ready',
+        installedVersion: installed,
+        latestVersion: latest,
+        updateAvailable,
+      });
+      expect(service.list().find((entry) => entry.id === 'shopify-cli')).toEqual(item);
+    }
+  );
+
+  it('shows the registry latest for Codex while keeping the installed version pinned', async () => {
+    const dataPath = await createDataPath();
+    await createManagedNodeCommands(dataPath);
+    await createManagedCli(dataPath, 'codex', '0.151.0');
+    const commandRunner = vi.fn<DiagnosticCommandRunner>(async (_file, args) => {
+      if (args[0] === '-v') return { stdout: 'v24.11.0' };
+      if (args[1] === 'view') return { stdout: '"0.160.0"' };
+      return { stdout: '0.151.0' };
+    });
+    const service = new RuntimeDiagnosticsService({ commandRunner, dataPath });
+
+    const [item] = await service.probe(['codex']);
+
+    expect(item).toMatchObject({
+      status: 'ready',
+      installedVersion: '0.151.0',
+      latestVersion: '0.160.0',
+      requiredVersion: '0.151.0',
+      updateAvailable: false,
+    });
+  });
+
+  it('queries the latest version even when the CLI is not installed', async () => {
+    const dataPath = await createDataPath();
+    await createManagedNodeCommands(dataPath);
+    const commandRunner = vi.fn<DiagnosticCommandRunner>(async (_file, args) => {
+      if (args[0] === '-v') return { stdout: 'v24.11.0' };
+      if (args[1] === 'view') return { stdout: '"1.4.0"' };
+      return { stdout: '11.6.0' };
+    });
+    const service = new RuntimeDiagnosticsService({ commandRunner, dataPath });
+
+    const [item] = await service.probe(['ziniao-open']);
+
+    expect(item).toMatchObject({ status: 'missing', latestVersion: '1.4.0', updateAvailable: false });
+    expect(item.installedVersion).toBeUndefined();
+  });
+
+  it('keeps a working CLI ready and clears stale upgrade information when the registry query fails', async () => {
+    const dataPath = await createDataPath();
+    await createManagedNodeCommands(dataPath);
+    await createManagedCli(dataPath, 'ziniao-open', '1.3.0');
+    let registryFailed = false;
+    const commandRunner = vi.fn<DiagnosticCommandRunner>(async (_file, args) => {
+      if (args[0] === '-v') return { stdout: 'v24.11.0' };
+      if (args[1] === 'view') {
+        if (registryFailed) throw new Error('registry unavailable token=private-token');
+        return { stdout: '"1.4.0"' };
+      }
+      return { stdout: '1.3.0' };
+    });
+    const service = new RuntimeDiagnosticsService({ commandRunner, dataPath });
+    await service.probe(['ziniao-open']);
+    registryFailed = true;
+
+    const [item] = await service.probe(['ziniao-open']);
+
+    expect(item).toMatchObject({ status: 'ready', installedVersion: '1.3.0', updateAvailable: false });
+    expect(item.latestVersion).toBeUndefined();
+    expect(item.latestVersionError).toBe('registry unavailable token=<redacted>');
+  });
+
+  it('updates installed package metadata and clears the upgrade badge without running CLI probes after installation', async () => {
+    const dataPath = await createDataPath();
+    await createManagedNodeCommands(dataPath);
+    await createManagedCli(dataPath, 'ziniao-open', '1.3.0');
+    const commandRunner = vi.fn<DiagnosticCommandRunner>(async (_file, args) => {
+      if (args[0] === '-v') return { stdout: 'v24.11.0' };
+      if (args[1] === 'view') return { stdout: '"1.4.0"' };
+      return { stdout: '1.3.0' };
+    });
+    const ensureManagedToolReady = vi.fn(async () => {
+      await createManagedCli(dataPath, 'ziniao-open', '1.4.0');
+      return { status: 'ready' as const };
+    });
+    const service = new RuntimeDiagnosticsService({ commandRunner, dataPath, ensureManagedToolReady });
+    const [before] = await service.probe(['ziniao-open']);
+    expect(before.updateAvailable).toBe(true);
+    commandRunner.mockClear();
+
+    const result = await service.install(['ziniao-open']);
+
+    expect(commandRunner).not.toHaveBeenCalled();
+    expect(result.items[0]).toMatchObject({
+      status: 'ready',
+      installedVersion: '1.4.0',
+      latestVersion: '1.4.0',
+      lastCheckedAt: before.lastCheckedAt,
+      updateAvailable: false,
+    });
+  });
+
+  it.each(['failure response', 'thrown error', 'skipped install'] as const)(
+    'preserves the last detected versions and upgrade badge after a $0',
+    async (failure) => {
+      const dataPath = await createDataPath();
+      await createManagedNodeCommands(dataPath);
+      await createManagedCli(dataPath, 'ziniao-open', '1.3.0');
+      const commandRunner = vi.fn<DiagnosticCommandRunner>(async (_file, args) => {
+        if (args[0] === '-v') return { stdout: 'v24.11.0' };
+        if (args[1] === 'view') return { stdout: '"1.4.0"' };
+        return { stdout: '1.3.0' };
+      });
+      const service = new RuntimeDiagnosticsService({
+        commandRunner,
+        dataPath,
+        ensureManagedToolReady: async () => {
+          if (failure === 'thrown error') throw new Error('npm install failed');
+          return { status: failure === 'skipped install' ? 'skipped' : 'failed', error: 'npm install failed' };
+        },
+      });
+      const [before] = await service.probe(['ziniao-open']);
+      commandRunner.mockClear();
+
+      const result = await service.install(['ziniao-open']);
+
+      expect(result.items[0]).toMatchObject({
+        status: failure === 'skipped install' ? 'skipped' : 'failed',
+        error: 'npm install failed',
+        installedVersion: '1.3.0',
+        latestVersion: '1.4.0',
+        lastCheckedAt: before.lastCheckedAt,
+        updateAvailable: true,
+      });
+      expect(commandRunner).not.toHaveBeenCalled();
+    }
+  );
+
+  it('finishes an in-flight latest-version query before installing so stale checks cannot overwrite the upgrade', async () => {
+    const dataPath = await createDataPath();
+    await createManagedNodeCommands(dataPath);
+    await createManagedCli(dataPath, 'ziniao-open', '1.3.0');
+    let releaseQuery!: () => void;
+    const queryGate = new Promise<void>((resolve) => {
+      releaseQuery = resolve;
+    });
+    let queryStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      queryStarted = resolve;
+    });
+    const commandRunner = vi.fn<DiagnosticCommandRunner>(async (_file, args) => {
+      if (args[0] === '-v') return { stdout: 'v24.11.0' };
+      if (args[1] === 'view') {
+        queryStarted();
+        await queryGate;
+        return { stdout: '"1.4.0"' };
+      }
+      return { stdout: '1.3.0' };
+    });
+    const ensureManagedToolReady = vi.fn(async () => {
+      await createManagedCli(dataPath, 'ziniao-open', '1.4.0');
+      return { status: 'ready' as const };
+    });
+    const service = new RuntimeDiagnosticsService({ commandRunner, dataPath, ensureManagedToolReady });
+    const checking = service.probe(['ziniao-open']);
+    await started;
+
+    const installing = service.install(['ziniao-open']);
+    expect(ensureManagedToolReady).not.toHaveBeenCalled();
+    releaseQuery();
+    await Promise.all([checking, installing]);
+
+    expect(service.list().find((item) => item.id === 'ziniao-open')).toMatchObject({
+      status: 'ready',
+      installedVersion: '1.4.0',
+      latestVersion: '1.4.0',
+      updateAvailable: false,
+    });
   });
 
   it('deduplicates concurrent repair requests for the same component', async () => {

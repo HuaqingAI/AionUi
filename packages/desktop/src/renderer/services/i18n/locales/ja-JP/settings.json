@@ -828,7 +828,9 @@
       "command": "Command",
       "version": "Version",
       "path": "Path",
-      "lastChecked": "Last checked"
+      "lastChecked": "Last checked",
+      "latestVersion": "最新バージョン",
+      "pinnedVersion": "固定バージョン"
     },
     "kind": {
       "uv": "uv",
@@ -848,8 +850,12 @@
     },
     "actions": {
       "check": "Check",
-      "repair": "Install/repair"
-    }
+      "repair": "Install/repair",
+      "installUpgrade": "インストール/アップグレード"
+    },
+    "latestVersionFailed": "最新バージョンを確認できませんでした",
+    "latestVersionNotChecked": "未確認",
+    "updateAvailable": "バージョン {{version}} が利用可能です"
   },
   "helpDocumentation": "ヘルプドキュメント",
   "updateLog": "アップデートログ",

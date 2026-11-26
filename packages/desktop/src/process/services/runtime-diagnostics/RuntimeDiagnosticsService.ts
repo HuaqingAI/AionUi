@@ -7,6 +7,7 @@
 import { execFile } from 'node:child_process';
 import fs from 'node:fs/promises';
 import { promisify } from 'node:util';
+import { gt, valid } from 'semver';
 import type {
   IRuntimeStatusEvent,
   RuntimeDiagnosticBatchInstallResult,
@@ -20,6 +21,7 @@ import {
   getManagedStartupToolCommandInvocationForDiagnostics,
   getManagedStartupToolDwsBinaryPathForDiagnostics,
   readManagedStartupToolPackageVersionForDiagnostics,
+  readManagedStartupToolLatestVersionForDiagnostics,
   setManagedStartupToolBootstrapEnabled,
   type EnsureOpenCodeReadyOptions,
   type ManagedStartupToolId,
@@ -57,6 +59,8 @@ type RuntimeDiagnosticsServiceOptions = {
   ensureUvRuntime?: (options?: EnsureUvReadyOptions) => Promise<UvBootstrapResult>;
   now?: () => number;
 };
+
+type CliVersionQueryResult = Pick<RuntimeDiagnosticItem, 'latestVersion' | 'latestVersionError'>;
 
 async function defaultCommandRunner(
   file: string,
@@ -124,6 +128,16 @@ function createGuidance(status: RuntimeDiagnosticStatus): string | undefined {
 
 function isUnavailable(status: RuntimeDiagnosticStatus): boolean {
   return status === 'missing' || status === 'broken' || status === 'failed';
+}
+
+function hasAvailableCliUpdate(
+  definition: RuntimeDiagnosticDefinition,
+  installedVersion: string | undefined,
+  latestVersion: string | undefined
+): boolean {
+  const installed = installedVersion && valid(installedVersion);
+  const latest = latestVersion && valid(latestVersion);
+  return Boolean(!definition.requiredVersion && installed && latest && gt(latest, installed));
 }
 
 export class RuntimeDiagnosticsService {
@@ -233,10 +247,10 @@ export class RuntimeDiagnosticsService {
   ): RuntimeDiagnosticItem {
     const item = {
       ...this.createBaseItem(definition),
+      lastCheckedAt: this.now(),
       ...update,
       durationMs: this.now() - startedAt,
       guidance: update.guidance ?? createGuidance(status),
-      lastCheckedAt: this.now(),
       status,
     };
     return this.publish(item);
@@ -259,7 +273,11 @@ export class RuntimeDiagnosticsService {
       return existing;
     }
 
-    const installPromise = this.runInstall(definition);
+    const pendingProbe = definition.kind === 'managed-node-tool' ? this.probePromises.get(definition.id) : undefined;
+    // Serialize CLI checks and installs so an older check cannot overwrite an upgrade result.
+    const installPromise = pendingProbe
+      ? pendingProbe.catch((): undefined => undefined).then(() => this.runInstall(definition))
+      : this.runInstall(definition);
     this.installPromises.set(definition.id, installPromise);
     try {
       return await installPromise;
@@ -363,7 +381,11 @@ export class RuntimeDiagnosticsService {
       return existing;
     }
 
-    const probePromise = this.runProbe(definition);
+    const pendingInstall =
+      definition.kind === 'managed-node-tool' ? this.installPromises.get(definition.id) : undefined;
+    const probePromise = pendingInstall
+      ? pendingInstall.catch((): undefined => undefined).then(() => this.runProbe(definition))
+      : this.runProbe(definition);
     this.probePromises.set(definition.id, probePromise);
     try {
       return await probePromise;
@@ -505,20 +527,48 @@ export class RuntimeDiagnosticsService {
 
   private async runInstall(definition: RuntimeDiagnosticDefinition): Promise<RuntimeDiagnosticItem> {
     const startedAt = this.now();
+    const previous = this.latest.get(definition.id);
+    const previousCliVersions =
+      definition.kind === 'managed-node-tool'
+        ? {
+            installedVersion: previous?.installedVersion,
+            lastCheckedAt: previous?.lastCheckedAt,
+            latestVersion: previous?.latestVersion,
+            latestVersionError: previous?.latestVersionError,
+            updateAvailable: previous?.updateAvailable,
+            versionOutput: previous?.versionOutput,
+          }
+        : {};
     this.createProgressItem(definition, 'installing');
 
     try {
       const result = await this.runInstaller(definition);
       if (result.status === 'skipped') {
         return this.createCompletedItem(definition, 'skipped', startedAt, {
+          ...previousCliVersions,
           error: result.error,
           lastInstalledAt: this.now(),
         });
       }
       if (result.status !== 'ready') {
         return this.createCompletedItem(definition, 'failed', startedAt, {
+          ...previousCliVersions,
           error: result.error ?? 'installation failed',
           lastInstalledAt: this.now(),
+        });
+      }
+      if (definition.kind === 'managed-node-tool' && definition.toolId) {
+        const installedVersion =
+          (await readManagedStartupToolPackageVersionForDiagnostics(definition.toolId, this.dataPath)) ?? undefined;
+        return this.createCompletedItem(definition, 'ready', startedAt, {
+          installedVersion,
+          lastCheckedAt: previous?.lastCheckedAt,
+          lastInstalledAt: this.now(),
+          latestVersion: previous?.latestVersion,
+          latestVersionError: previous?.latestVersionError,
+          resolvedPath: definition.resolveExpectedPath(this.dataPath) ?? undefined,
+          updateAvailable: hasAvailableCliUpdate(definition, installedVersion, previous?.latestVersion),
+          versionOutput: installedVersion,
         });
       }
       const item = await this.probeOne(definition);
@@ -528,6 +578,7 @@ export class RuntimeDiagnosticsService {
       });
     } catch (error) {
       return this.createCompletedItem(definition, 'failed', startedAt, {
+        ...previousCliVersions,
         error: sanitizeRuntimeText(error),
         lastInstalledAt: this.now(),
       });
@@ -584,7 +635,33 @@ export class RuntimeDiagnosticsService {
         error: 'managed command path could not be resolved',
       });
     }
-    return this.probeManagedNodeTool(definition, expectedPath, startedAt);
+    if (!definition.toolId) {
+      return this.createCompletedItem(definition, 'failed', startedAt, {
+        error: 'managed tool id is missing',
+      });
+    }
+    const [item, installedVersion, latestVersionResult] = await Promise.all([
+      this.probeManagedNodeTool(definition, expectedPath, startedAt),
+      readManagedStartupToolPackageVersionForDiagnostics(definition.toolId, this.dataPath),
+      readManagedStartupToolLatestVersionForDiagnostics(definition.toolId, {
+        commandRunner: this.commandRunner,
+        dataPath: this.dataPath,
+      }).then<CliVersionQueryResult, CliVersionQueryResult>(
+        (latestVersion) => ({ latestVersion, latestVersionError: undefined }),
+        (error: unknown) => ({ latestVersion: undefined, latestVersionError: sanitizeRuntimeText(error) })
+      ),
+    ]);
+    return this.publish({
+      ...item,
+      durationMs: Math.max(0, this.now() - startedAt),
+      installedVersion: installedVersion ?? undefined,
+      ...latestVersionResult,
+      updateAvailable: hasAvailableCliUpdate(
+        definition,
+        installedVersion ?? undefined,
+        latestVersionResult.latestVersion
+      ),
+    });
   }
 }
 

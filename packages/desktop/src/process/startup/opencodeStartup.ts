@@ -23,6 +23,7 @@ import {
 import fs from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
+import { valid as validVersion } from 'semver';
 import { promisify } from 'util';
 import yauzl from 'yauzl';
 import { getSystemDir, ProcessConfig } from '../utils/initStorage';
@@ -1542,6 +1543,7 @@ async function ensureManagedToolInstalledWithManagedNode(options: {
   commandRunner: CommandRunner;
   dataPath: string;
   forceInstall?: boolean;
+  manualInstall: boolean;
   nodeRuntime: ManagedNodeRuntime;
   tool: ManagedAcpTool;
 }): Promise<void> {
@@ -1576,7 +1578,7 @@ async function ensureManagedToolInstalledWithManagedNode(options: {
     commandEnv.OPENCODE_CONFIG_DIR = getOpenCodeConfigDir(options.dataPath);
   }
 
-  if (!options.forceInstall && (await pathExists(commandPath))) {
+  if (!options.manualInstall && !options.forceInstall && (await pathExists(commandPath))) {
     const packageIsReady = options.tool.toolId !== DWS_TOOL_ID || (await pathExists(getDwsBinaryPath(prefix)));
     if (packageIsReady && !codexNeedsInstall) {
       await ensureManagedToolLauncherUsesManagedNode(options.tool, options.dataPath, nodeExecutable);
@@ -1627,7 +1629,9 @@ async function ensureManagedToolInstalledWithManagedNode(options: {
       npmCliPath,
       'install',
       '--global',
-      options.tool.packageSpec ?? options.tool.packageName,
+      options.manualInstall && options.tool.toolId !== CODEX_TOOL_ID
+        ? `${options.tool.packageName}@latest`
+        : (options.tool.packageSpec ?? options.tool.packageName),
       '--prefix',
       prefix,
       '--registry',
@@ -1649,7 +1653,10 @@ async function ensureManagedToolInstalledWithManagedNode(options: {
     throw new Error(`${options.tool.displayName} command was not created after installation`);
   }
   await ensureManagedToolLauncherUsesManagedNode(options.tool, options.dataPath, nodeExecutable);
-  if (!(await waitForManagedToolVersion(options.tool, options.dataPath, nodeExecutable, options.commandRunner))) {
+  if (
+    !options.manualInstall &&
+    !(await waitForManagedToolVersion(options.tool, options.dataPath, nodeExecutable, options.commandRunner))
+  ) {
     throw new Error(`${options.tool.displayName} version check failed after installation`);
   }
 }
@@ -1747,6 +1754,7 @@ async function ensureManagedToolReady(
       commandRunner,
       dataPath,
       forceInstall: !hadTool,
+      manualInstall: manual,
       nodeRuntime,
       tool: {
         ...scopedTool,
@@ -1818,6 +1826,48 @@ export function ensureManagedStartupToolReadyForDiagnostics(
     });
   }
   return ensureManagedToolReady(tool, options, true);
+}
+
+/** Read a CLI's latest registry version with the application's managed Node and npm. */
+export async function readManagedStartupToolLatestVersionForDiagnostics(
+  toolId: ManagedStartupToolId,
+  options: Pick<EnsureOpenCodeReadyOptions, 'commandRunner' | 'dataPath'> = {}
+): Promise<string> {
+  const tool = getStartupToolById(toolId);
+  if (!tool) {
+    throw new Error(`unknown managed startup tool: ${toolId}`);
+  }
+
+  const dataPath = options.dataPath ?? getDataPath();
+  const commandRunner = options.commandRunner ?? runCommand;
+  const nodeRuntime = await probeManagedNodeRuntime({ commandRunner, dataPath });
+  if (!nodeRuntime) {
+    throw new Error('managed Node runtime is not ready');
+  }
+
+  const result = await commandRunner(
+    nodeRuntime.nodeExecutable,
+    [
+      nodeRuntime.npmCliPath,
+      'view',
+      `${tool.packageName}@latest`,
+      'version',
+      '--json',
+      '--registry',
+      MANAGED_NPM_REGISTRY,
+    ],
+    {
+      cwd: dataPath,
+      env: buildManagedCommandEnv(tool, dataPath, nodeRuntime.nodeExecutable),
+      timeout: MANAGED_TOOL_VERSION_CHECK_TIMEOUT_MS,
+    }
+  );
+  const parsed: unknown = JSON.parse(result.stdout ?? '');
+  const version = typeof parsed === 'string' ? validVersion(parsed) : null;
+  if (!version) {
+    throw new Error(`invalid latest package version for ${tool.displayName}`);
+  }
+  return version;
 }
 
 export function ensureOpenCodeReadyOnce(options: EnsureOpenCodeReadyOptions = {}): Promise<OpenCodeBootstrapResult> {

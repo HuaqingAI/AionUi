@@ -724,15 +724,19 @@ export type RuntimeDiagnosticItem = {
   guidance?: string;
   id: string;
   installable: boolean;
+  installedVersion?: string;
   kind: RuntimeDiagnosticKind;
   label: string;
   lastCheckedAt?: number;
   lastInstalledAt?: number;
+  latestVersion?: string;
+  latestVersionError?: string;
   packageName?: string;
   packageSpec?: string;
   requiredVersion?: string;
   resolvedPath?: string;
   status: RuntimeDiagnosticStatus;
+  updateAvailable?: boolean;
   versionOutput?: string;
 };
 

@@ -834,7 +834,9 @@
       "command": "Command",
       "version": "Version",
       "path": "Path",
-      "lastChecked": "Last checked"
+      "lastChecked": "Last checked",
+      "latestVersion": "Найновіша версія",
+      "pinnedVersion": "Зафіксована версія"
     },
     "kind": {
       "uv": "uv",
@@ -854,8 +856,12 @@
     },
     "actions": {
       "check": "Check",
-      "repair": "Install/repair"
-    }
+      "repair": "Install/repair",
+      "installUpgrade": "Установити/оновити"
+    },
+    "latestVersionFailed": "Не вдалося перевірити найновішу версію",
+    "latestVersionNotChecked": "Не перевірено",
+    "updateAvailable": "Доступна версія {{version}}"
   },
   "helpDocumentation": "Довідкова документація",
   "updateLog": "Журнал оновлень",

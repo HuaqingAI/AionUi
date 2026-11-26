@@ -828,7 +828,9 @@
       "command": "Command",
       "version": "Version",
       "path": "Path",
-      "lastChecked": "Last checked"
+      "lastChecked": "Last checked",
+      "latestVersion": "최신 버전",
+      "pinnedVersion": "고정 버전"
     },
     "kind": {
       "uv": "uv",
@@ -848,8 +850,12 @@
     },
     "actions": {
       "check": "Check",
-      "repair": "Install/repair"
-    }
+      "repair": "Install/repair",
+      "installUpgrade": "설치/업그레이드"
+    },
+    "latestVersionFailed": "최신 버전을 확인하지 못했습니다",
+    "latestVersionNotChecked": "확인하지 않음",
+    "updateAvailable": "{{version}} 버전을 사용할 수 있습니다"
   },
   "helpDocumentation": "도움말 문서",
   "updateLog": "업데이트 로그",
