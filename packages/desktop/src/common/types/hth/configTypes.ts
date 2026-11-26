@@ -13,6 +13,7 @@ export type HTHAgentUrlType = 'https';
 export type HTHInitialModelCatalog = {
   scope: string;
   modelIds: string[];
+  codexModelIds?: string[];
   modelLabels?: Record<string, string>;
   codexConfigOptions?: AcpConfigOptionDto[];
   opencodeConfigOptions?: AcpConfigOptionDto[];
@@ -134,6 +135,12 @@ export type HTHInjectProjectConfigResult = {
     | 'defaultModelUnavailable'
     | 'openCodeConfigInvalid'
     | 'codexConfigInvalid'
+    | 'codexModelListEmpty'
+    | 'reasoningPolicyUnavailable'
+    | 'reasoningPolicyInvalid'
+    | 'reasoningPolicyForbidden'
+    | 'cronModelUnavailable'
+    | 'cronReasoningEffortUnavailable'
     | 'assistantRuntimeUnsupported';
 };
 

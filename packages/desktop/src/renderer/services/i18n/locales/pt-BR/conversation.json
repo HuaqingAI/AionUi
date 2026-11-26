@@ -795,5 +795,13 @@
     "progress": "{{completed}}/{{total}}",
     "expand": "Expandir plano",
     "collapse": "Recolher plano"
+  },
+  "modelReasoning": {
+    "unavailable": "As configura??es de racioc?nio est?o indispon?veis. Tente novamente.",
+    "invalid": "As configura??es de racioc?nio s?o inv?lidas. Contate o administrador.",
+    "forbidden": "Voc? n?o tem permiss?o para ler as configura??es de racioc?nio.",
+    "noCodexModels": "N?o h? modelos GPT dispon?veis para o Codex.",
+    "modelUnavailable": "O modelo selecionado n?o est? mais dispon?vel. Selecione outro.",
+    "effortUnavailable": "O esfor?o de racioc?nio selecionado n?o est? mais dispon?vel para este modelo. Selecione novamente."
   }
 }

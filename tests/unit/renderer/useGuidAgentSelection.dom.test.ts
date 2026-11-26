@@ -7,6 +7,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Assistant } from '@/common/types/agent/assistantTypes';
+import type { HTHRuntimeModelChoices, ReasoningEffort } from '@/common/types/hth/modelReasoning';
 import type { ManagedAgent } from '@/renderer/utils/model/agentTypes';
 import {
   observeAgentModelMessage,
@@ -26,9 +27,19 @@ import {
 let mockAssistants: Assistant[] = [];
 let mockManagedAgents: ManagedAgent[] = [];
 
-const { configGetMock, configSetMock } = vi.hoisted(() => ({
+const { configGetMock, configSetMock, modelChoicesMock } = vi.hoisted(() => ({
   configGetMock: vi.fn(),
   configSetMock: vi.fn(),
+  modelChoicesMock: vi.fn(),
+}));
+
+vi.mock('@/common', () => ({
+  ipcBridge: {
+    hth: {
+      runtimeModelChoices: { invoke: modelChoicesMock },
+      modelPricingDescriptions: { invoke: async () => ({ descriptions: {} }) },
+    },
+  },
 }));
 
 vi.mock('@/common/config/configService', () => ({
@@ -54,6 +65,7 @@ describe('useGuidAssistantSelection', () => {
     localStorage.clear();
     configGetMock.mockReturnValue(undefined);
     configSetMock.mockResolvedValue(undefined);
+    modelChoicesMock.mockReset().mockRejectedValue(new Error('reasoningPolicyUnavailable'));
     mockManagedAgents = [];
     mockAssistants = [
       {
@@ -84,6 +96,9 @@ describe('useGuidAssistantSelection', () => {
     'defaults first-use %s to Sol and exposes selectable reasoning levels',
     async (backend) => {
       mockAssistants = [assistantFixture({ id: 'hth-first-use', runtimeKey: backend, source: 'user', sortOrder: 1 })];
+      const gatewayChoices = modelChoicesFixture(backend, ['gpt-5.6-terra', 'gpt-6.1-sol', 'model-c']);
+      gatewayChoices.models[0].label = 'HTH/GPT-5.6-TERRA x18.7';
+      modelChoicesMock.mockResolvedValue(gatewayChoices);
       setAgentModelCatalogScope('first-use');
       seedAgentModelCatalog({
         scope: 'first-use',
@@ -110,7 +125,10 @@ describe('useGuidAssistantSelection', () => {
       });
       const { result } = renderHook(() => useGuidAssistantSelection({}));
 
-      await waitFor(() => expect(result.current.currentAcpCachedModelInfo?.available_models).toHaveLength(3));
+      await waitFor(() =>
+        expect(result.current.currentAcpCachedModelInfo?.available_models).toHaveLength(backend === 'codex' ? 2 : 3)
+      );
+      await waitFor(() => expect(result.current.selectedThoughtLevelValue).toBe('high'));
       expect(result.current.currentAcpCachedModelInfo?.available_models[0].id).toBe(
         backend === 'opencode' ? 'hth/gpt-5.6-terra' : 'gpt-5.6-terra'
       );
@@ -130,32 +148,25 @@ describe('useGuidAssistantSelection', () => {
   );
 
   it.each(['codex', 'opencode'])(
-    'replaces initial %s thinking choices with real session capabilities',
+    'updates native %s thinking choices from real session capabilities',
     async (backend) => {
-      mockAssistants = [assistantFixture({ id: `hth-${backend}`, runtimeKey: backend, source: 'user', sortOrder: 1 })];
-      setAgentModelCatalogScope('thinking-capabilities');
-      seedAgentModelCatalog({
-        scope: 'thinking-capabilities',
-        modelIds: ['gpt-5.6-terra'],
-        codexConfigOptions: [
-          {
-            id: 'reasoning_effort',
-            category: 'thought_level',
-            type: 'select',
-            current_value: 'high',
-            options: [{ value: 'high', name: 'High' }],
-          },
-        ],
-        opencodeConfigOptions: [
-          {
-            id: 'effort',
-            category: 'thought_level',
-            type: 'select',
-            current_value: 'high',
-            options: [{ value: 'high', name: 'High' }],
-          },
-        ],
-      });
+      mockAssistants = [
+        assistantFixture({ id: `native-${backend}`, runtimeKey: backend, source: 'generated', sortOrder: 1 }),
+      ];
+      mockManagedAgents = [
+        {
+          id: `agent-${backend}`,
+          config_options: [
+            {
+              id: backend === 'opencode' ? 'effort' : 'reasoning_effort',
+              category: 'thought_level',
+              type: 'select',
+              current_value: 'high',
+              options: [{ value: 'high', label: 'High' }],
+            },
+          ],
+        } as unknown as ManagedAgent,
+      ];
       const { result, rerender } = renderHook(() => useGuidAssistantSelection({}));
       await waitFor(() => expect(result.current.currentThoughtLevelOption?.options[0].value).toBe('high'));
       mockManagedAgents = [
@@ -187,12 +198,8 @@ describe('useGuidAssistantSelection', () => {
         } as unknown as ManagedAgent,
       ];
       rerender();
-      await waitFor(() =>
-        expect(result.current.currentThoughtLevelOption?.currentValue ?? null).toBe(
-          backend === 'opencode' ? 'high' : null
-        )
-      );
-      expect(result.current.selectedThoughtLevelValue).toBe(backend === 'opencode' ? 'high' : '');
+      await waitFor(() => expect(result.current.currentThoughtLevelOption?.currentValue ?? null).toBeNull());
+      expect(result.current.selectedThoughtLevelValue).toBe('');
     }
   );
 
@@ -234,7 +241,7 @@ describe('useGuidAssistantSelection', () => {
       mockManagedAgents = [
         {
           id: `agent-${backend}`,
-          available_models: { available_models: [{ id: `${prefix}another`, label: 'Another' }] },
+          available_models: { available_models: [{ id: `${prefix}gpt-another`, label: 'Another' }] },
         } as unknown as ManagedAgent,
       ];
       rerender();
@@ -248,6 +255,7 @@ describe('useGuidAssistantSelection', () => {
       mockAssistants = ['general', 'logistics'].map((name, index) =>
         assistantFixture({ id: `hth-${name}`, runtimeKey: backend, source: 'user', sortOrder: index + 1 })
       );
+      modelChoicesMock.mockResolvedValue(modelChoicesFixture(backend, ['gpt-6.1-sol']));
       const runtime = {
         id: `agent-${backend}`,
         config_options: [
@@ -291,6 +299,8 @@ describe('useGuidAssistantSelection', () => {
           ],
         } as unknown as ManagedAgent,
       ];
+      modelChoicesMock.mockResolvedValue(modelChoicesFixture(backend, ['gpt-6.1-sol'], ['low', 'medium']));
+      act(() => setAgentModelCatalogScope('updated-policy'));
       rerender();
       await waitFor(() => expect(result.current.selectedThoughtLevelValue).toBe('medium'));
       expect(result.current.currentThoughtLevelOption?.options.map(({ value }) => value)).toEqual(['low', 'medium']);
@@ -298,6 +308,7 @@ describe('useGuidAssistantSelection', () => {
   );
 
   it('mounts with High when Core omits the empty assistant models field', async () => {
+    modelChoicesMock.mockResolvedValue(modelChoicesFixture('opencode', ['gpt-6.1-sol']));
     mockAssistants = JSON.parse(
       JSON.stringify([
         {
@@ -327,9 +338,12 @@ describe('useGuidAssistantSelection', () => {
   });
 
   it.each(['hth-opencode', 'manual-opencode'])(
-    'only restores the OpenCode policy for imported legacy catalogs (%s)',
+    'uses gateway rules for OpenCode even when a legacy runtime has no efforts (%s)',
     async (id) => {
       mockAssistants = [assistantFixture({ id, runtimeKey: 'opencode', source: 'user', sortOrder: 1 })];
+      const gatewayChoices = modelChoicesFixture('opencode', ['gpt-6.1-sol'], ['none', 'max']);
+      gatewayChoices.models[0].label = 'Gateway Sol';
+      modelChoicesMock.mockResolvedValue(gatewayChoices);
       mockManagedAgents = [
         {
           id: 'agent-opencode',
@@ -352,16 +366,19 @@ describe('useGuidAssistantSelection', () => {
         ],
       });
       const { result } = renderHook(() => useGuidAssistantSelection({}));
-      await waitFor(() => expect(result.current.currentAcpCachedModelInfo?.available_models[0].label).toBe('Real Sol'));
-      expect(result.current.currentThoughtLevelOption?.options.map((option) => option.value) ?? []).toEqual(
-        id.startsWith('hth-') ? ['low', 'medium', 'high'] : []
+      await waitFor(() =>
+        expect(result.current.currentAcpCachedModelInfo?.available_models[0].label).toBe('Gateway Sol')
       );
-      expect(result.current.selectedThoughtLevelValue).toBe(id.startsWith('hth-') ? 'high' : '');
+      expect(result.current.currentThoughtLevelOption?.options.map((option) => option.value) ?? []).toEqual([
+        'none',
+        'max',
+      ]);
+      expect(result.current.selectedThoughtLevelValue).toBe('max');
     }
   );
 
   it('shows the newest real session catalog on Guid even while Core still has the previous list', async () => {
-    mockAssistants = [assistantFixture({ id: 'hth-codex', runtimeKey: 'codex', source: 'user', sortOrder: 1 })];
+    mockAssistants = [assistantFixture({ id: 'native-codex', runtimeKey: 'codex', source: 'generated', sortOrder: 1 })];
     setAgentModelCatalogScope('live-models');
     seedAgentModelCatalog({ scope: 'live-models', modelIds: ['gpt-5.6-terra', 'model-b', 'model-c'] });
     const { result } = renderHook(() => useGuidAssistantSelection({}));
@@ -406,7 +423,7 @@ describe('useGuidAssistantSelection', () => {
       current_model_label: null,
       available_models: initialIds.map((id) => ({ id, label: id })),
     };
-    mockAssistants = [assistantFixture({ id: 'hth-codex', runtimeKey: 'codex', source: 'user', sortOrder: 1 })];
+    mockAssistants = [assistantFixture({ id: 'native-codex', runtimeKey: 'codex', source: 'generated', sortOrder: 1 })];
     mockManagedAgents = [{ id: 'agent-codex', available_models: initialCatalog } as unknown as ManagedAgent];
     setAgentModelCatalogScope('missed-push');
     const firstHome = renderHook(() => useGuidAssistantSelection({}));
@@ -950,6 +967,28 @@ describe('useGuidAssistantSelection', () => {
     expect(result.current.currentAgentModeOptions.map((mode) => mode.value)).toEqual(['default', 'auto_edit', 'yolo']);
   });
 });
+
+function modelChoicesFixture(
+  backend: string,
+  modelIds: string[],
+  efforts: ReasoningEffort[] = ['low', 'medium', 'high']
+): HTHRuntimeModelChoices {
+  const cliType = backend === 'opencode' ? 'opencode' : 'codex';
+  const prefix = cliType === 'opencode' ? 'hth/' : '';
+  const availableIds = modelIds.filter((id) => cliType !== 'codex' || id.startsWith('gpt-'));
+  return {
+    cli_type: cliType,
+    policy_revision: 'test-policy',
+    default_model_id: `${prefix}${availableIds.includes('gpt-6.1-sol') ? 'gpt-6.1-sol' : availableIds[0]}`,
+    models: availableIds.map((id) => ({
+      id: `${prefix}${id}`,
+      gateway_model_id: id,
+      label: `HTH/${id.toUpperCase()}`,
+      efforts,
+      default_effort: efforts.includes('high') ? 'high' : efforts[efforts.length - 1],
+    })),
+  };
+}
 
 function assistantFixture({
   id,

@@ -407,6 +407,12 @@ export function initApplicationBridge(): void {
       if (!access) throw new Error('HTH login is required for runtime confirmation');
       await coreIdentityService.establish(access);
       await hthConfigSyncService.confirmConversationWorkspaceRuntime(request, confirmation);
+    },
+    async (request, selection) => {
+      const access = await hthAuthService.getAccess();
+      if (!access) throw new Error('HTH login is required for runtime validation');
+      await coreIdentityService.establish(access);
+      await hthConfigSyncService.validateConversationRuntimeSelection(request, selection);
     }
   );
   app.once('before-quit', () => {
@@ -445,6 +451,7 @@ export function initApplicationBridge(): void {
   ipcBridge.hth.logout.provider(async () => {
     notificationService.stop();
     clientHeartbeatService.stop();
+    hthConfigSyncService.clearModelReasoningState();
     await coreIdentityService.clear();
     return hthAuthService.logout();
   });
@@ -472,6 +479,11 @@ export function initApplicationBridge(): void {
     const access = await hthAuthService.getAccess();
     if (access) await coreIdentityService.establish(access);
     return hthConfigSyncService.getInitialModelCatalog();
+  });
+  ipcBridge.hth.runtimeModelChoices.provider(async (request) => {
+    const access = await hthAuthService.getAccess();
+    if (access) await coreIdentityService.establish(access);
+    return hthConfigSyncService.getRuntimeModelChoices(request);
   });
   ipcBridge.hth.quotaSummary.provider(() => hthQuotaService.getSummary());
   ipcBridge.hth.refreshQuotaSummary.provider(() => hthQuotaService.refreshSummary());

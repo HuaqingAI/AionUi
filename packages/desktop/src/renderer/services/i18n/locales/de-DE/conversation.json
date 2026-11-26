@@ -790,5 +790,13 @@
     "progress": "{{completed}}/{{total}}",
     "expand": "Plan ausklappen",
     "collapse": "Plan einklappen"
+  },
+  "modelReasoning": {
+    "unavailable": "Die Denkeinstellungen sind nicht verf?gbar. Bitte erneut versuchen.",
+    "invalid": "Die Denkeinstellungen sind ung?ltig. Bitte die Administration kontaktieren.",
+    "forbidden": "Keine Berechtigung zum Lesen der Denkeinstellungen.",
+    "noCodexModels": "F?r Codex sind keine GPT-Modelle verf?gbar.",
+    "modelUnavailable": "Das gew?hlte Modell ist nicht mehr verf?gbar. Bitte ein anderes w?hlen.",
+    "effortUnavailable": "Die gew?hlte Denkintensit?t ist f?r dieses Modell nicht mehr verf?gbar. Bitte erneut w?hlen."
   }
 }

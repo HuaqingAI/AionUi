@@ -39,6 +39,30 @@ import { HTH_UNAUTHORIZED_ERROR_CODE, type HTHAgentConfigItem, type HTHSyncProgr
 import { HTHAuthService } from '@/process/services/hth/authService';
 import { HTHConfigSyncService } from '@/process/services/hth/configSyncService';
 import { HTHPackageStore, resolveHTHAssistantId, resolveHTHPackageId } from '@/process/services/hth/packageStore';
+import {
+  DEFAULT_MODEL_REASONING_POLICY,
+  detectModelFamily,
+  parseModelReasoningPolicy,
+  resolveModelReasoning,
+  type ModelReasoningRule,
+} from '@/common/types/hth/modelReasoning';
+
+// Existing fixtures model a gateway predating the optional reasoning-policy endpoint.
+function stubHTHFetch(fetcher: unknown): void {
+  vi.stubGlobal('fetch', (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    const url = input instanceof Request ? input.url : String(input);
+    if (new URL(url).pathname === '/api/aionui/model-reasoning-policy') {
+      return Promise.resolve(new Response(null, { status: 404 }));
+    }
+    return (fetcher as typeof fetch)(input, init);
+  });
+}
+
+function enabledReasoningVariants(variants: Record<string, { disabled?: boolean }>): string[] {
+  return Object.entries(variants)
+    .filter(([, value]) => !value.disabled)
+    .map(([name]) => name);
+}
 
 const emptyMcpCatalogResponse = () =>
   new Response(JSON.stringify([]), {
@@ -89,7 +113,7 @@ describe('HTHConfigSyncService auth handling', () => {
         headers: { 'Content-Type': 'application/json' },
       });
     });
-    vi.stubGlobal('fetch', fetchMock);
+    stubHTHFetch(fetchMock);
     const authService = new HTHAuthService(authFile);
     const syncService = new HTHConfigSyncService(authService);
 
@@ -107,7 +131,7 @@ describe('HTHConfigSyncService auth handling', () => {
 
   it('reports unauthorized without calling hth when local auth is missing', async () => {
     const fetchMock = vi.fn();
-    vi.stubGlobal('fetch', fetchMock);
+    stubHTHFetch(fetchMock);
     const authService = new HTHAuthService(authFile);
     const syncService = new HTHConfigSyncService(authService);
 
@@ -465,7 +489,7 @@ describe('HTHConfigSyncService auth handling', () => {
     const coreFetch = vi.fn(
       async () => new Response(JSON.stringify([]), { status: 200, headers: { 'Content-Type': 'application/json' } })
     );
-    vi.stubGlobal('fetch', hthFetch);
+    stubHTHFetch(hthFetch);
 
     const result = await new HTHConfigSyncService(
       new HTHAuthService(authFile),
@@ -513,24 +537,8 @@ describe('HTHConfigSyncService auth handling', () => {
 
     const catalog = await fixture.service.getInitialModelCatalog();
 
-    expect(catalog?.codexConfigOptions).toEqual([
-      {
-        id: 'reasoning_effort',
-        name: 'Reasoning Effort',
-        category: 'thought_level',
-        type: 'select',
-        current_value: 'high',
-        options: [
-          { value: 'low', name: 'Low', description: 'Fast responses with lighter reasoning' },
-          {
-            value: 'medium',
-            name: 'Medium',
-            description: 'Balances speed and reasoning depth for everyday tasks',
-          },
-          { value: 'high', name: 'High', description: 'Greater reasoning depth for complex problems' },
-        ],
-      },
-    ]);
+    expect(catalog?.codexConfigOptions).toEqual([]);
+    expect(catalog?.codexModelIds).toEqual(['gpt-6.1-sol', 'gpt-5.6-terra']);
     expect(fixture.modelRequest).not.toHaveBeenCalled();
     expect(fixture.state.settings['hth.initialModelCatalog']).not.toHaveProperty('codexConfigOptions');
     expect(catalog?.opencodeConfigOptions).toEqual(
@@ -768,6 +776,9 @@ describe('HTHConfigSyncService auth handling', () => {
   ) {
     await writeStoredAuth(authFile, { displayName: 'Alice' });
     vi.stubGlobal('__backendPort', 18181);
+    stubHTHFetch(async () =>
+      Response.json({ data: [{ id: 'gpt-6.1-sol' }, { id: 'gpt-5.6-terra' }, { id: 'gpt-native-resumed-model' }] })
+    );
     const workspace = path.join(tempDir, 'cron-workspace');
     await fs.mkdir(workspace);
     const backend = options.backend ?? 'codex';
@@ -792,7 +803,9 @@ describe('HTHConfigSyncService auth handling', () => {
           const update = JSON.parse(init.body as string) as { extra: Record<string, unknown> };
           Object.assign(extra, update.extra);
         }
-        return Response.json({ data: { id: 'conversation-1', assistant: { id: 'manual-codex', backend }, extra } });
+        return Response.json({
+          data: { id: 'conversation-1', assistant: { id: 'manual-codex', source: 'user', backend }, extra },
+        });
       }
       throw new Error('Unexpected Core request');
     });
@@ -808,6 +821,9 @@ describe('HTHConfigSyncService auth handling', () => {
   async function ordinaryPreparationFixture() {
     await writeStoredAuth(authFile, { displayName: 'Alice' });
     vi.stubGlobal('__backendPort', 18181);
+    stubHTHFetch(async () =>
+      Response.json({ data: [{ id: 'gpt-6.1-sol' }, { id: 'gpt-5.6-terra' }, { id: 'gpt-native-resumed-model' }] })
+    );
     const workspace = path.join(tempDir, 'ordinary-workspace');
     await fs.mkdir(workspace);
     // Core persists homepage conversation_overrides here. They describe the
@@ -818,7 +834,11 @@ describe('HTHConfigSyncService auth handling', () => {
       current_model_id: 'homepage-seed-model',
       thought_level: 'medium',
     };
-    const conversation = { id: 'conversation-1', assistant: { id: 'manual-codex', backend: 'codex' }, extra };
+    const conversation = {
+      id: 'conversation-1',
+      assistant: { id: 'manual-codex', source: 'user', backend: 'codex' },
+      extra,
+    };
     const state = { patchStatus: 200 };
     const coreFetch = vi.fn(async (url: string, init?: RequestInit) => {
       if (!url.endsWith('/api/conversations/conversation-1')) throw new Error('Unexpected Core request');
@@ -835,6 +855,9 @@ describe('HTHConfigSyncService auth handling', () => {
       files: [],
       reason: 'assistantNotManaged',
     });
+    await service.prepareConversationWorkspace({ conversationId: 'conversation-1', workspace });
+    coreFetch.mockClear();
+    inject.mockClear();
     return { service, workspace, extra, conversation, state, coreFetch, inject };
   }
 
@@ -853,14 +876,14 @@ describe('HTHConfigSyncService auth handling', () => {
       });
       expect(fixture.inject).toHaveBeenCalledExactlyOnceWith(
         { conversationId: 'conversation-1', workspace: fixture.workspace, assistantId: 'manual-codex' },
-        { overwrite: false }
+        expect.objectContaining({ overwrite: false })
       );
       expect(fixture.coreFetch.mock.calls).toEqual([['http://127.0.0.1:18181/api/conversations/conversation-1']]);
     });
 
     it.each([
-      { backend: 'codex' as const, model: 'native-resumed-model', thoughtLevel: 'high' },
-      { backend: 'codex' as const, model: 'native-resumed-model' },
+      { backend: 'codex' as const, model: 'gpt-native-resumed-model', thoughtLevel: 'high' },
+      { backend: 'codex' as const, model: 'gpt-native-resumed-model' },
     ])('records the actual native thread settings independently of the homepage seed: %j', async (confirmation) => {
       const fixture = await ordinaryPreparationFixture();
       await fixture.service.confirmConversationWorkspaceRuntime(
@@ -897,7 +920,7 @@ describe('HTHConfigSyncService auth handling', () => {
       await expect(
         fixture.service.confirmConversationWorkspaceRuntime(
           { conversationId: 'conversation-1', workspace: mismatch === 'workspace' ? tempDir : fixture.workspace },
-          { backend: 'codex', model: 'native-resumed-model', thoughtLevel: 'high' }
+          { backend: 'codex', model: 'gpt-native-resumed-model', thoughtLevel: 'high' }
         )
       ).rejects.toThrow(error);
 
@@ -911,7 +934,7 @@ describe('HTHConfigSyncService auth handling', () => {
       await expect(
         fixture.service.confirmConversationWorkspaceRuntime(
           { conversationId: 'conversation-1', workspace: fixture.workspace },
-          { backend: 'codex', model: 'native-resumed-model', thoughtLevel: 'high' }
+          { backend: 'codex', model: 'gpt-native-resumed-model', thoughtLevel: 'high' }
         )
       ).rejects.toThrow('cronRuntimeConfirmationSaveFailed');
 
@@ -927,6 +950,10 @@ describe('HTHConfigSyncService auth handling', () => {
         config: { assistant_id: 'manual-codex', model_id: 'gpt-6.1-sol', config_options: { thought_level: 'medium' } },
       });
       const confirmation = { backend: 'codex' as const, model: 'gpt-6.1-sol', thoughtLevel: 'medium' };
+      await fixture.service.prepareConversationWorkspace({
+        conversationId: 'conversation-1',
+        workspace: fixture.workspace,
+      });
 
       await fixture.service.confirmConversationWorkspaceRuntime(
         { conversationId: 'conversation-1', workspace: fixture.workspace },
@@ -1011,7 +1038,8 @@ describe('HTHConfigSyncService auth handling', () => {
         fixture.service.prepareConversationWorkspace({ conversationId: 'conversation-1', workspace: fixture.workspace })
       ).resolves.toEqual({
         backend,
-        model: 'gpt-6.1-sol',
+        validateSelection: true,
+        model: backend === 'opencode' ? 'hth/gpt-6.1-sol' : 'gpt-6.1-sol',
         thoughtLevel: 'high',
         suppressSkillSuggestion: true,
       });
@@ -1019,7 +1047,12 @@ describe('HTHConfigSyncService auth handling', () => {
         version: 1,
         assistant_id: 'manual-codex',
         job_id: 'cron-1',
-        runtime: { backend, model: 'gpt-6.1-sol', thoughtLevel: 'high', suppressSkillSuggestion: true },
+        runtime: {
+          backend,
+          model: backend === 'opencode' ? 'hth/gpt-6.1-sol' : 'gpt-6.1-sol',
+          thoughtLevel: 'high',
+          suppressSkillSuggestion: true,
+        },
       });
       expect(fixture.coreFetch.mock.calls.filter(([, init]) => init?.method)).toEqual([
         ['http://127.0.0.1:18181/api/conversations/conversation-1', expect.objectContaining({ method: 'PATCH' })],
@@ -1039,6 +1072,7 @@ describe('HTHConfigSyncService auth handling', () => {
       fixture.service.prepareConversationWorkspace({ conversationId: 'conversation-1', workspace: fixture.workspace })
     ).resolves.toEqual({
       backend: 'codex',
+      validateSelection: true,
       model: 'gpt-6.1-sol',
       thoughtLevel: 'high',
       suppressSkillSuggestion: true,
@@ -1068,7 +1102,7 @@ describe('HTHConfigSyncService auth handling', () => {
 
     await expect(
       fixture.service.prepareConversationWorkspace({ conversationId: 'conversation-1', workspace: fixture.workspace })
-    ).resolves.toEqual({ backend: 'opencode' });
+    ).resolves.toEqual({ backend: 'opencode', validateSelection: true });
     expect(fixture.extra).not.toHaveProperty('aionui_cron_runtime');
   });
 
@@ -1080,29 +1114,38 @@ describe('HTHConfigSyncService auth handling', () => {
       fixture.service.prepareConversationWorkspace({ conversationId: 'conversation-1', workspace: fixture.workspace })
     ).resolves.toEqual({
       backend: 'codex',
+      validateSelection: true,
+      model: 'gpt-6.1-sol',
       thoughtLevel: 'high',
       suppressSkillSuggestion: true,
     });
-    expect(JSON.stringify(fixture.extra.aionui_cron_runtime)).not.toContain('"model"');
+    expect(fixture.extra.aionui_cron_runtime).toHaveProperty('runtime.model', 'gpt-6.1-sol');
   });
 
   it.each([
     { backend: 'codex', config: null },
     { backend: 'opencode', config: {} },
-  ])('suppresses new-conversation skill suggestions without changing model defaults: %j', async (options) => {
+  ])('resolves this run model defaults while suppressing new-conversation skill suggestions: %j', async (options) => {
     const fixture = await cronPreparationFixture(options);
     await expect(
       fixture.service.prepareConversationWorkspace({ conversationId: 'conversation-1', workspace: fixture.workspace })
     ).resolves.toEqual({
       backend: options.backend,
+      validateSelection: true,
       suppressSkillSuggestion: true,
-      ...(options.backend === 'codex' && { observeOnly: true }),
+      model: options.backend === 'opencode' ? 'hth/gpt-6.1-sol' : 'gpt-6.1-sol',
+      thoughtLevel: 'high',
     });
     expect(fixture.extra.aionui_cron_runtime).toEqual({
       version: 1,
       assistant_id: 'manual-codex',
       job_id: 'cron-1',
-      runtime: { backend: options.backend, suppressSkillSuggestion: true },
+      runtime: {
+        backend: options.backend,
+        model: options.backend === 'opencode' ? 'hth/gpt-6.1-sol' : 'gpt-6.1-sol',
+        thoughtLevel: 'high',
+        suppressSkillSuggestion: true,
+      },
     });
   });
 
@@ -1110,7 +1153,7 @@ describe('HTHConfigSyncService auth handling', () => {
     const fixture = await cronPreparationFixture({ mode: 'existing', anchor: 'conversation-1' });
     await expect(
       fixture.service.prepareConversationWorkspace({ conversationId: 'conversation-1', workspace: fixture.workspace })
-    ).resolves.toEqual({ backend: 'codex', model: 'gpt-6.1-sol', thoughtLevel: 'high' });
+    ).resolves.toEqual({ backend: 'codex', model: 'gpt-6.1-sol', thoughtLevel: 'high', validateSelection: true });
   });
 
   it('keeps the authenticated suppression snapshot without re-reading the source job', async () => {
@@ -1122,7 +1165,13 @@ describe('HTHConfigSyncService auth handling', () => {
     fixture.coreFetch.mockClear();
     await expect(
       fixture.service.prepareConversationWorkspace({ conversationId: 'conversation-1', workspace: fixture.workspace })
-    ).resolves.toEqual({ backend: 'codex', suppressSkillSuggestion: true, observeOnly: true });
+    ).resolves.toEqual({
+      backend: 'codex',
+      model: 'gpt-6.1-sol',
+      thoughtLevel: 'high',
+      suppressSkillSuggestion: true,
+      validateSelection: true,
+    });
     expect(fixture.coreFetch.mock.calls).toEqual([['http://127.0.0.1:18181/api/conversations/conversation-1']]);
   });
 
@@ -1156,10 +1205,7 @@ describe('HTHConfigSyncService auth handling', () => {
 
   it('prepares conversation workspace files from the persisted assistant before the CLI starts', async () => {
     await writeStoredAuth(authFile, { displayName: 'Alice' });
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => Response.json({ data: [{ id: 'gpt-6.1-sol' }] }))
-    );
+    stubHTHFetch(vi.fn(async () => Response.json({ data: [{ id: 'gpt-6.1-sol' }] })));
     (globalThis as typeof globalThis & { __backendPort?: number }).__backendPort = 18181;
     const workspace = path.join(tempDir, 'workspace');
     await fs.mkdir(workspace);
@@ -1244,8 +1290,7 @@ describe('HTHConfigSyncService auth handling', () => {
           },
         })
       );
-      vi.stubGlobal(
-        'fetch',
+      stubHTHFetch(
         vi.fn(async (input: string | URL) =>
           Response.json({ data: String(input).includes('/pricing') ? [] : [{ id: 'gpt-6.1-sol' }] })
         )
@@ -1381,10 +1426,7 @@ describe('HTHConfigSyncService auth handling', () => {
         },
       })
     );
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => Response.json({ data: [] }))
-    );
+    stubHTHFetch(vi.fn(async () => Response.json({ data: [] })));
     const service = new HTHConfigSyncService(
       new HTHAuthService(authFile),
       packageStore,
@@ -1427,7 +1469,7 @@ describe('HTHConfigSyncService auth handling', () => {
       { overwrite: false }
     );
 
-    expect(result).toEqual({ injected: false, files: [] });
+    expect(result).toEqual({ injected: false, files: [], reason: 'authRequired' });
     expect(await fs.readFile(configPath, 'utf8')).toBe(existingConfig);
   });
 
@@ -1478,10 +1520,7 @@ describe('HTHConfigSyncService auth handling', () => {
               },
         })
       );
-      vi.stubGlobal(
-        'fetch',
-        vi.fn(async () => Response.json({ data: [{ id: 'gpt-6.1-sol' }, { id: 'gpt-5.6-terra' }] }))
-      );
+      stubHTHFetch(vi.fn(async () => Response.json({ data: [{ id: 'gpt-6.1-sol' }, { id: 'gpt-5.6-terra' }] })));
       const service = new HTHConfigSyncService(
         new HTHAuthService(authFile),
         packageStore,
@@ -1618,7 +1657,7 @@ describe('HTHConfigSyncService auth handling', () => {
           headers: { 'Content-Type': 'application/json' },
         })
       );
-    vi.stubGlobal('fetch', fetchMock);
+    stubHTHFetch(fetchMock);
     const authService = new HTHAuthService(authFile);
     const syncService = new HTHConfigSyncService(authService, packageStore);
     const progressEvents: HTHSyncProgressEvent[] = [];
@@ -1749,7 +1788,7 @@ describe('HTHConfigSyncService auth handling', () => {
           headers: { 'Content-Type': 'application/json' },
         })
       );
-    vi.stubGlobal('fetch', fetchMock);
+    stubHTHFetch(fetchMock);
     const authService = new HTHAuthService(authFile);
     const syncService = new HTHConfigSyncService(authService, packageStore);
 
@@ -1874,7 +1913,7 @@ describe('HTHConfigSyncService auth handling', () => {
       .mockResolvedValueOnce(
         new Response(Buffer.from('restored-avatar'), { status: 200, headers: { 'Content-Type': 'image/png' } })
       );
-    vi.stubGlobal('fetch', remoteFetch);
+    stubHTHFetch(remoteFetch);
     const syncService = new HTHConfigSyncService(
       new HTHAuthService(authFile),
       packageStore,
@@ -1921,7 +1960,7 @@ describe('HTHConfigSyncService auth handling', () => {
         })
     );
     const remoteFetch = vi.fn();
-    vi.stubGlobal('fetch', remoteFetch);
+    stubHTHFetch(remoteFetch);
     const syncService = new HTHConfigSyncService(
       new HTHAuthService(authFile),
       packageStore,
@@ -1992,8 +2031,7 @@ describe('HTHConfigSyncService auth handling', () => {
       }
       throw new Error(`Unexpected Core request: ${url}`);
     });
-    vi.stubGlobal(
-      'fetch',
+    stubHTHFetch(
       vi.fn(
         async () =>
           new Response(JSON.stringify({ agents: [agent] }), {
@@ -2109,7 +2147,7 @@ describe('HTHConfigSyncService auth handling', () => {
           headers: { 'Content-Type': 'application/json' },
         })
       );
-    vi.stubGlobal('fetch', fetchMock);
+    stubHTHFetch(fetchMock);
     const authService = new HTHAuthService(authFile);
     const syncService = new HTHConfigSyncService(authService, packageStore);
 
@@ -2206,7 +2244,7 @@ describe('HTHConfigSyncService auth handling', () => {
           headers: { 'Content-Type': 'application/json' },
         })
       );
-    vi.stubGlobal('fetch', fetchMock);
+    stubHTHFetch(fetchMock);
     const authService = new HTHAuthService(authFile);
     const syncService = new HTHConfigSyncService(authService, packageStore);
 
@@ -2309,7 +2347,7 @@ describe('HTHConfigSyncService auth handling', () => {
           headers: { 'Content-Type': 'application/json' },
         })
       );
-    vi.stubGlobal('fetch', fetchMock);
+    stubHTHFetch(fetchMock);
     const authService = new HTHAuthService(authFile);
     const syncService = new HTHConfigSyncService(authService, packageStore);
 
@@ -2365,7 +2403,7 @@ describe('HTHConfigSyncService auth handling', () => {
         })
       )
       .mockResolvedValueOnce(new Response(null, { status: 204 }));
-    vi.stubGlobal('fetch', fetchMock);
+    stubHTHFetch(fetchMock);
     const authService = new HTHAuthService(authFile);
     const syncService = new HTHConfigSyncService(authService, packageStore);
 
@@ -2408,7 +2446,7 @@ describe('HTHConfigSyncService auth handling', () => {
           headers: { 'Content-Type': 'application/json' },
         })
       );
-    vi.stubGlobal('fetch', fetchMock);
+    stubHTHFetch(fetchMock);
     const authService = new HTHAuthService(authFile);
     const syncService = new HTHConfigSyncService(authService, packageStore);
     const progressEvents: HTHSyncProgressEvent[] = [];
@@ -2532,7 +2570,7 @@ describe('HTHConfigSyncService auth handling', () => {
           headers: { 'Content-Type': 'application/json' },
         })
       );
-    vi.stubGlobal('fetch', fetchMock);
+    stubHTHFetch(fetchMock);
     const authService = new HTHAuthService(authFile);
     const syncService = new HTHConfigSyncService(
       authService,
@@ -2627,7 +2665,7 @@ describe('HTHConfigSyncService auth handling', () => {
           headers: { 'Content-Type': 'application/json' },
         })
       );
-    vi.stubGlobal('fetch', fetchMock);
+    stubHTHFetch(fetchMock);
 
     const result = await new HTHConfigSyncService(
       new HTHAuthService(authFile),
@@ -2637,7 +2675,7 @@ describe('HTHConfigSyncService auth handling', () => {
 
     expect(result).toMatchObject({ success: true, imported: 1 });
     const config = await fs.readFile(path.join(codexHome, 'config.toml'), 'utf8');
-    expect(parseToml(config)).toMatchObject({ model: 'gpt-6.1-sol', model_reasoning_effort: 'high' });
+    expect(parseToml(config)).toMatchObject({ model: 'gpt-6.1-sol' });
     expect(config).toContain('model_provider = "hth"');
     expect(config).toContain(`[projects.${JSON.stringify(path.resolve(firstWorkspace))}]\ntrust_level = "trusted"`);
     expect(config).toContain(`[projects.${JSON.stringify(path.resolve(secondWorkspace))}]\ntrust_level = "trusted"`);
@@ -2728,7 +2766,7 @@ describe('HTHConfigSyncService auth handling', () => {
         { status: 200, headers: { 'Content-Type': 'application/json' } }
       );
     });
-    vi.stubGlobal('fetch', fetchMock);
+    stubHTHFetch(fetchMock);
 
     const result = await syncService.injectProjectConfig({
       conversationId: 'conversation-1',
@@ -2760,9 +2798,12 @@ describe('HTHConfigSyncService auth handling', () => {
     expect(models['gpt-6.1-sol']).toMatchObject({
       options: { reasoningEffort: 'high' },
       variants: {
+        none: { disabled: true },
         low: { reasoningEffort: 'low' },
         medium: { reasoningEffort: 'medium' },
         high: { reasoningEffort: 'high' },
+        xhigh: { disabled: true },
+        max: { disabled: true },
       },
     });
     expect(models['deepseek-v4-flash'].variants).toEqual(models['gpt-6.1-sol'].variants);
@@ -2790,7 +2831,7 @@ describe('HTHConfigSyncService auth handling', () => {
     ['opencode', ['deepseek-v4-flash', 'gpt-5.6-terra'], 'deepseek-v4-flash', 'deepseek-v4-flash'],
     ['opencode', ['deepseek-v4-flash'], 'removed-model', 'deepseek-v4-flash'],
     ['codex', ['deepseek-v4-flash', 'gpt-5.6-terra'], 'removed-model', 'gpt-5.6-terra'],
-    ['codex', ['deepseek-v4-flash', 'gpt-5.6-terra'], 'deepseek-v4-flash', 'deepseek-v4-flash'],
+    ['codex', ['deepseek-v4-flash', 'gpt-5.6-terra'], 'deepseek-v4-flash', 'gpt-5.6-terra'],
     ['codex', ['deepseek-v4-flash'], 'removed-model', 'deepseek-v4-flash'],
   ] as const)(
     'updates %s after a model deletion and keeps a usable configured model (%j, %s)',
@@ -2823,8 +2864,7 @@ describe('HTHConfigSyncService auth handling', () => {
           projectFiles: [relativeFile],
         })),
       } as unknown as HTHPackageStore;
-      vi.stubGlobal(
-        'fetch',
+      stubHTHFetch(
         vi.fn(
           async () =>
             new Response(JSON.stringify({ data: modelIds.map((id) => ({ id })) }), {
@@ -2850,6 +2890,12 @@ describe('HTHConfigSyncService auth handling', () => {
         assistantId: 'hth-agent',
       });
 
+      if (cliType === 'codex' && !modelIds.some((id) => id.startsWith('gpt-'))) {
+        expect(result).toMatchObject({ injected: false, reason: 'codexModelListEmpty' });
+        const catalog = JSON.parse(await fs.readFile(path.join(codexHome, 'hth-model-catalog.json'), 'utf8'));
+        expect(catalog.models).toEqual([]);
+        return;
+      }
       expect(result).toMatchObject({ injected: true });
       const content = await fs.readFile(path.join(workspace, relativeFile), 'utf8');
       if (cliType === 'opencode') {
@@ -2861,7 +2907,7 @@ describe('HTHConfigSyncService auth handling', () => {
         expect(parseToml(await fs.readFile(path.join(codexHome, 'config.toml'), 'utf8')).model).toBe(expectedModel);
         const catalog = JSON.parse(await fs.readFile(path.join(codexHome, 'hth-model-catalog.json'), 'utf8'));
         expect(catalog.models.map((model: { slug: string }) => model.slug).toSorted()).toEqual(
-          [...modelIds].toSorted()
+          modelIds.filter((id) => id.startsWith('gpt-')).toSorted()
         );
       }
     }
@@ -2893,7 +2939,7 @@ describe('HTHConfigSyncService auth handling', () => {
       })),
     } as unknown as HTHPackageStore;
     const fetchMock = vi.fn();
-    vi.stubGlobal('fetch', fetchMock);
+    stubHTHFetch(fetchMock);
 
     const result = await new HTHConfigSyncService(new HTHAuthService(authFile), packageStore).injectProjectConfig({
       conversationId: 'conversation-1',
@@ -2958,8 +3004,7 @@ describe('HTHConfigSyncService auth handling', () => {
       ].join('\n'),
       'utf8'
     );
-    vi.stubGlobal(
-      'fetch',
+    stubHTHFetch(
       vi.fn(async (input: string | URL) => {
         if (String(input).includes('/api/aionui/pricing')) {
           return new Response(
@@ -3007,22 +3052,11 @@ describe('HTHConfigSyncService auth handling', () => {
       'model_catalog_json = ' + JSON.stringify(path.join(codexHome, 'hth-model-catalog.json'))
     );
     const catalog = JSON.parse(await fs.readFile(path.join(codexHome, 'hth-model-catalog.json'), 'utf8'));
-    expect(catalog.models.map((model: { slug: string }) => model.slug)).toEqual([
-      'deepseek-reasoner',
-      'gpt-5.6-terra',
-      'gpt-6.1-sol',
-      'grok-4.5',
-    ]);
+    expect(catalog.models.map((model: { slug: string }) => model.slug)).toEqual(['gpt-5.6-terra', 'gpt-6.1-sol']);
     expect(catalog.models.every((model: { display_name: string }) => model.display_name.startsWith('HTH/'))).toBe(true);
-    expect(catalog.models[3]).toMatchObject({
-      slug: 'grok-4.5',
-      display_name: 'HTH/GROK-4.5 x2.4',
-      description: '输入 $4.00 / 百万 Token\n输出 $8.00 / 百万 Token',
-      visibility: 'list',
-      supported_in_api: true,
-    });
-    expect(catalog.models[0].input_modalities).toEqual(['text']);
-    expect(catalog.models[1].input_modalities).toEqual(['text', 'image']);
+    expect(
+      catalog.models.every((model: { input_modalities: string[] }) => model.input_modalities.includes('image'))
+    ).toBe(true);
     expect(
       catalog.models.every((model: { supports_reasoning_summaries: boolean }) => model.supports_reasoning_summaries)
     ).toBe(true);
@@ -3033,7 +3067,7 @@ describe('HTHConfigSyncService auth handling', () => {
     expect(codexHomeConfig).toContain('trust_level = "trusted"');
   });
 
-  it('preserves an existing Codex model catalog reference while refreshing the HTH catalog', async () => {
+  it('uses the managed Codex model catalog reference when refreshing the HTH catalog', async () => {
     await writeStoredAuth(authFile);
     const extractDir = path.join(tempDir, 'codex-existing-reference-extracted');
     const workspace = path.join(tempDir, 'codex-existing-reference-workspace');
@@ -3062,8 +3096,7 @@ describe('HTHConfigSyncService auth handling', () => {
         projectFiles: ['instructions.md'],
       })),
     } as unknown as HTHPackageStore;
-    vi.stubGlobal(
-      'fetch',
+    stubHTHFetch(
       vi.fn(
         async () =>
           new Response(JSON.stringify({ data: [{ id: 'gpt-6.1-sol' }, { id: 'gpt-5.6-terra' }, { id: 'grok-4.5' }] }), {
@@ -3086,13 +3119,9 @@ describe('HTHConfigSyncService auth handling', () => {
     expect(result).toMatchObject({ injected: true });
     const config = await fs.readFile(path.join(codexHome, 'config.toml'), 'utf8');
     expect(config.match(/^model_catalog_json =/gm)).toHaveLength(1);
-    expect(config).toContain('model_catalog_json = ' + JSON.stringify(existingCatalogPath));
+    expect(config).toContain('model_catalog_json = ' + JSON.stringify(path.join(codexHome, 'hth-model-catalog.json')));
     const catalog = JSON.parse(await fs.readFile(path.join(codexHome, 'hth-model-catalog.json'), 'utf8'));
-    expect(catalog.models.map((model: { slug: string }) => model.slug)).toEqual([
-      'gpt-5.6-terra',
-      'gpt-6.1-sol',
-      'grok-4.5',
-    ]);
+    expect(catalog.models.map((model: { slug: string }) => model.slug)).toEqual(['gpt-5.6-terra', 'gpt-6.1-sol']);
   });
 
   it('keeps the previous Codex catalog when the model list is unavailable', async () => {
@@ -3122,10 +3151,7 @@ describe('HTHConfigSyncService auth handling', () => {
         projectFiles: ['instructions.md'],
       })),
     } as unknown as HTHPackageStore;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => new Response('', { status: 503, headers: { 'Content-Type': 'application/json' } }))
-    );
+    stubHTHFetch(vi.fn(async () => new Response('', { status: 503, headers: { 'Content-Type': 'application/json' } })));
 
     const result = await new HTHConfigSyncService(
       new HTHAuthService(authFile),
@@ -3173,7 +3199,7 @@ describe('HTHConfigSyncService auth handling', () => {
       }
       return new Response('', { status: 404 });
     });
-    vi.stubGlobal('fetch', fetchMock);
+    stubHTHFetch(fetchMock);
 
     const result = await new HTHConfigSyncService(new HTHAuthService(authFile), packageStore).injectProjectConfig({
       conversationId: 'conversation-1',
@@ -3235,8 +3261,7 @@ describe('HTHConfigSyncService auth handling', () => {
       } as unknown as HTHPackageStore;
       (globalThis as typeof globalThis & { __backendPort?: number }).__backendPort = 21345;
       const modelRequest = vi.fn(async () => Response.json({ data: modelIds.map((id) => ({ id })) }));
-      vi.stubGlobal(
-        'fetch',
+      stubHTHFetch(
         vi.fn(async (input: string | URL) => {
           if (String(input) === 'http://127.0.0.1:21345/api/assistants/manual-codex') {
             return new Response(
@@ -3265,6 +3290,11 @@ describe('HTHConfigSyncService auth handling', () => {
         assistantId: 'manual-codex',
       });
 
+      if (!modelIds.some((id) => id.startsWith('gpt-'))) {
+        expect(result).toMatchObject({ injected: false, reason: 'codexModelListEmpty' });
+        await expect(fs.access(path.join(workspace, '.codex', 'config.toml'))).rejects.toThrow();
+        return;
+      }
       expect(result).toEqual({ injected: true, files: ['.codex/config.toml'] });
       expect(parseToml(await fs.readFile(path.join(workspace, '.codex', 'config.toml'), 'utf8'))).toMatchObject({
         model: expectedModel,
@@ -3287,7 +3317,7 @@ describe('HTHConfigSyncService auth handling', () => {
         workspace,
         assistantId: 'manual-codex',
       });
-      expect(modelRequest).toHaveBeenCalledTimes(1);
+      expect(modelRequest).toHaveBeenCalledTimes(2);
     }
   );
 
@@ -3301,8 +3331,7 @@ describe('HTHConfigSyncService auth handling', () => {
       findByAssistantId: vi.fn(async () => null),
     } as unknown as HTHPackageStore;
     (globalThis as typeof globalThis & { __backendPort?: number }).__backendPort = 21345;
-    vi.stubGlobal(
-      'fetch',
+    stubHTHFetch(
       vi.fn(
         async () =>
           new Response(
@@ -3328,11 +3357,9 @@ describe('HTHConfigSyncService auth handling', () => {
       assistantId: 'manual-codex',
     });
 
-    expect(result).toEqual({ injected: false, files: [] });
+    expect(result).toEqual({ injected: false, files: [], reason: 'authRequired' });
     await expect(fs.readFile(configPath, 'utf8')).resolves.toBe('model = "user-selected-model"\n');
-    await expect(fs.readFile(path.join(codexHome, 'config.toml'), 'utf8')).resolves.toContain(
-      `[projects.${JSON.stringify(path.resolve(workspace))}]\ntrust_level = "trusted"`
-    );
+    await expect(fs.access(path.join(codexHome, 'config.toml'))).rejects.toThrow();
   });
 
   it('retries manual Codex creation after an unavailable model list without leaving an unusable config', async () => {
@@ -3348,8 +3375,7 @@ describe('HTHConfigSyncService auth handling', () => {
         },
       })
     );
-    vi.stubGlobal(
-      'fetch',
+    stubHTHFetch(
       vi
         .fn()
         .mockResolvedValueOnce(new Response('', { status: 503 }))
@@ -3377,6 +3403,448 @@ describe('HTHConfigSyncService auth handling', () => {
     );
   });
 
+  async function reasoningRuntimeFixture(
+    cliType: 'opencode' | 'codex',
+    modelIds: string[],
+    rules: ModelReasoningRule[]
+  ) {
+    await writeStoredAuth(authFile);
+    const workspace = path.join(tempDir, 'reasoning-workspace');
+    const extractDir = path.join(tempDir, 'reasoning-package');
+    const codexHome = path.join(tempDir, 'reasoning-codex-home');
+    const file = cliType === 'opencode' ? 'opencode.jsonc' : '.codex/config.toml';
+    await fs.mkdir(path.dirname(path.join(extractDir, 'project', file)), { recursive: true });
+    await fs.writeFile(
+      path.join(extractDir, 'project', file),
+      cliType === 'opencode'
+        ? JSON.stringify({
+            instructions: ['keep.md'],
+            mcp: { keep: { type: 'remote', url: 'https://mcp.test' } },
+            provider: { hth: { models: {} } },
+          })
+        : 'model = "gpt-5.6-terra"\nmodel_reasoning_effort = "high"\n'
+    );
+    const packageStore = {
+      findByAssistantId: vi.fn(async () => ({ cliType, extractDir, version: '1.0.0', projectFiles: [file] })),
+    } as unknown as HTHPackageStore;
+    const state = { rules, status: 200, invalid: false };
+    const gatewayFetch = vi.fn(async (input: Parameters<typeof fetch>[0], _init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/model-reasoning-policy')) {
+        if (state.status !== 200) return new Response(null, { status: state.status });
+        return Response.json({
+          success: true,
+          data: state.invalid
+            ? {}
+            : {
+                schema_version: 1,
+                scope: 'global',
+                revision: `sha256:${'a'.repeat(64)}`,
+                default_efforts: ['low', 'medium', 'high'],
+                rules: state.rules,
+              },
+        });
+      }
+      return Response.json({ data: url.includes('/pricing') ? [] : modelIds.map((id) => ({ id })) });
+    });
+    vi.stubGlobal('fetch', gatewayFetch);
+    const service = new HTHConfigSyncService(new HTHAuthService(authFile), packageStore, () => codexHome);
+    const request = { conversationId: 'conversation-1', workspace, assistantId: 'hth-reasoning' };
+    return { service, request, workspace, codexHome, state, gatewayFetch };
+  }
+
+  it('generates OpenCode variants from exact overrides before family rules and preserves other config', async () => {
+    const fixture = await reasoningRuntimeFixture(
+      'opencode',
+      ['gpt-5.6-terra', 'Qwen/Qwen3-32B', 'custom-model'],
+      [
+        { match_type: 'family', match_value: 'gpt', efforts: ['low', 'high'] },
+        { match_type: 'model', match_value: 'gpt-5.6-terra', efforts: ['none', 'max'] },
+        { match_type: 'family', match_value: 'qwen', efforts: ['medium', 'xhigh'] },
+      ]
+    );
+    expect(await fixture.service.injectProjectConfig(fixture.request)).toMatchObject({ injected: true });
+    const config = JSON.parse(await fs.readFile(path.join(fixture.workspace, 'opencode.jsonc'), 'utf8'));
+    expect(
+      Object.fromEntries(
+        Object.entries(config.provider.hth.models).map(([id, value]) => [
+          id,
+          {
+            options: (value as { options: unknown }).options,
+            variants: enabledReasoningVariants(
+              (value as { variants: Record<string, { disabled?: boolean }> }).variants
+            ),
+          },
+        ])
+      )
+    ).toEqual({
+      'gpt-5.6-terra': { options: { reasoningEffort: 'max' }, variants: ['none', 'max'] },
+      'Qwen/Qwen3-32B': { options: { reasoningEffort: 'xhigh' }, variants: ['medium', 'xhigh'] },
+      'custom-model': { options: { reasoningEffort: 'high' }, variants: ['low', 'medium', 'high'] },
+    });
+    expect(config).toMatchObject({ instructions: ['keep.md'], mcp: { keep: { url: 'https://mcp.test' } } });
+    expect(config.provider.hth.models['gpt-5.6-terra'].variants).toEqual({
+      none: { reasoningEffort: 'none' },
+      low: { disabled: true },
+      medium: { disabled: true },
+      high: { disabled: true },
+      xhigh: { disabled: true },
+      max: { reasoningEffort: 'max' },
+    });
+  });
+
+  it('generates only GPT Codex models with each model reasoning levels and valid project defaults', async () => {
+    const fixture = await reasoningRuntimeFixture(
+      'codex',
+      ['deepseek-chat', 'qwen3', 'o3', 'gpt-5.6-terra', 'openai/gpt-other'],
+      [
+        { match_type: 'family', match_value: 'gpt', efforts: ['low', 'xhigh'] },
+        { match_type: 'model', match_value: 'gpt-5.6-terra', efforts: ['none', 'max'] },
+      ]
+    );
+    await fixture.service.injectProjectConfig(fixture.request);
+    const catalog = JSON.parse(await fs.readFile(path.join(fixture.codexHome, 'hth-model-catalog.json'), 'utf8'));
+    expect(
+      catalog.models.map(
+        (model: {
+          slug: string;
+          default_reasoning_level: string;
+          supported_reasoning_levels: Array<{ effort: string }>;
+        }) => ({
+          model: model.slug,
+          default: model.default_reasoning_level,
+          efforts: model.supported_reasoning_levels.map((level) => level.effort),
+        })
+      )
+    ).toEqual([
+      { model: 'gpt-5.6-terra', default: 'max', efforts: ['none', 'max'] },
+      { model: 'openai/gpt-other', default: 'xhigh', efforts: ['low', 'xhigh'] },
+    ]);
+    expect(parseToml(await fs.readFile(path.join(fixture.workspace, '.codex/config.toml'), 'utf8'))).toMatchObject({
+      model: 'gpt-5.6-terra',
+      model_reasoning_effort: 'max',
+    });
+    expect(parseToml(await fs.readFile(path.join(fixture.codexHome, 'config.toml'), 'utf8'))).toMatchObject({
+      model: 'gpt-5.6-terra',
+      model_reasoning_effort: 'max',
+    });
+  });
+
+  it('refreshes reasoning in an existing workspace without copying its project customizations', async () => {
+    const fixture = await reasoningRuntimeFixture('opencode', ['gpt-5.6-terra'], []);
+    await fixture.service.injectProjectConfig(fixture.request);
+    const configPath = path.join(fixture.workspace, 'opencode.jsonc');
+    const config = JSON.parse(await fs.readFile(configPath, 'utf8'));
+    config.instructions = ['custom.md'];
+    await fs.writeFile(configPath, JSON.stringify(config));
+    fixture.state.rules = [{ match_type: 'model', match_value: 'gpt-5.6-terra', efforts: ['none'] }];
+    await fixture.service.injectProjectConfig(fixture.request, { overwrite: false });
+    const refreshed = JSON.parse(await fs.readFile(configPath, 'utf8'));
+    expect(refreshed.instructions).toEqual(['custom.md']);
+    expect(refreshed.provider.hth.models['gpt-5.6-terra']).toMatchObject({
+      options: { reasoningEffort: 'none' },
+      variants: { none: { reasoningEffort: 'none' } },
+    });
+    expect(enabledReasoningVariants(refreshed.provider.hth.models['gpt-5.6-terra'].variants)).toEqual(['none']);
+  });
+
+  it('clears the old Codex catalog and blocks startup when no visible GPT models remain', async () => {
+    const fixture = await reasoningRuntimeFixture('codex', ['deepseek-chat', 'qwen3'], []);
+    await fs.mkdir(fixture.codexHome);
+    await fs.writeFile(path.join(fixture.codexHome, 'hth-model-catalog.json'), '{"models":[{"slug":"deepseek-chat"}]}');
+    expect(await fixture.service.injectProjectConfig(fixture.request)).toMatchObject({
+      injected: false,
+      reason: 'codexModelListEmpty',
+    });
+    expect(JSON.parse(await fs.readFile(path.join(fixture.codexHome, 'hth-model-catalog.json'), 'utf8'))).toEqual({
+      models: [],
+    });
+  });
+
+  it('uses desktop credentials for rules and API credentials for visible models', async () => {
+    const fixture = await reasoningRuntimeFixture('opencode', ['gpt-5.6-terra'], []);
+    fixture.state.status = 404;
+    await fixture.service.injectProjectConfig(fixture.request);
+    const ruleRequest = fixture.gatewayFetch.mock.calls.find(([url]) =>
+      String(url).includes('/model-reasoning-policy')
+    );
+    const modelRequest = fixture.gatewayFetch.mock.calls.find(([url]) => String(url).includes('/v1/models'));
+    expect(ruleRequest?.[1]?.headers).toMatchObject({ Authorization: 'Bearer token-1' });
+    expect(modelRequest?.[1]?.headers).toMatchObject({ Authorization: 'Bearer sk-personal-1' });
+  });
+
+  it.each([401, 403, 503])('blocks initial reasoning refresh after HTTP %s', async (status) => {
+    const fixture = await reasoningRuntimeFixture('opencode', ['gpt-5.6-terra'], []);
+    fixture.state.status = status;
+    expect(await fixture.service.injectProjectConfig(fixture.request)).toMatchObject({
+      injected: false,
+      reason:
+        status === 401 ? 'authRequired' : status === 403 ? 'reasoningPolicyForbidden' : 'reasoningPolicyUnavailable',
+    });
+  });
+
+  it('does not replace a valid policy with a malformed response or silently use defaults', async () => {
+    const fixture = await reasoningRuntimeFixture(
+      'opencode',
+      ['gpt-5.6-terra'],
+      [{ match_type: 'family', match_value: 'gpt', efforts: ['none'] }]
+    );
+    await fixture.service.injectProjectConfig(fixture.request);
+    fixture.state.invalid = true;
+    expect(await fixture.service.injectProjectConfig(fixture.request, { overwrite: false })).toMatchObject({
+      injected: false,
+      reason: 'reasoningPolicyInvalid',
+    });
+    const config = JSON.parse(await fs.readFile(path.join(fixture.workspace, 'opencode.jsonc'), 'utf8'));
+    expect(enabledReasoningVariants(config.provider.hth.models['gpt-5.6-terra'].variants)).toEqual(['none']);
+  });
+
+  it('previews per-model choices without creating a workspace or a CLI configuration', async () => {
+    const fixture = await reasoningRuntimeFixture(
+      'codex',
+      ['qwen3', 'gpt-5.6-terra'],
+      [{ match_type: 'family', match_value: 'gpt', efforts: ['low', 'max'] }]
+    );
+    expect(await fixture.service.getRuntimeModelChoices({ assistant_id: 'hth-reasoning' })).toMatchObject({
+      cli_type: 'codex',
+      default_model_id: 'gpt-5.6-terra',
+      models: [
+        { id: 'gpt-5.6-terra', gateway_model_id: 'gpt-5.6-terra', efforts: ['low', 'max'], default_effort: 'max' },
+      ],
+    });
+    await expect(fs.access(fixture.workspace)).rejects.toThrow();
+    await expect(fs.access(fixture.codexHome)).rejects.toThrow();
+  });
+
+  it('uses the last valid same-account policy during a temporary service failure', async () => {
+    const fixture = await reasoningRuntimeFixture(
+      'opencode',
+      ['gpt-5.6-terra'],
+      [{ match_type: 'family', match_value: 'gpt', efforts: ['none'] }]
+    );
+    await fixture.service.injectProjectConfig(fixture.request);
+    fixture.state.status = 503;
+    expect(await fixture.service.injectProjectConfig(fixture.request, { overwrite: false })).not.toHaveProperty(
+      'reason'
+    );
+    const config = JSON.parse(await fs.readFile(path.join(fixture.workspace, 'opencode.jsonc'), 'utf8'));
+    expect(enabledReasoningVariants(config.provider.hth.models['gpt-5.6-terra'].variants)).toEqual(['none']);
+  });
+
+  it('discards a delayed policy response after its login context was cleared', async () => {
+    const fixture = await reasoningRuntimeFixture('opencode', ['gpt-5.6-terra'], []);
+    let releaseResponse: (response: Response) => void = () => {};
+    let markStarted: () => void = () => {};
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const pendingResponse = new Promise<Response>((resolve) => {
+      releaseResponse = resolve;
+    });
+    fixture.gatewayFetch.mockImplementation(async (input) => {
+      if (String(input).includes('/model-reasoning-policy')) {
+        markStarted();
+        return pendingResponse;
+      }
+      return Response.json({ data: [{ id: 'gpt-5.6-terra' }] });
+    });
+    const pending = fixture.service.injectProjectConfig(fixture.request);
+    await started;
+    fixture.service.clearModelReasoningState();
+    releaseResponse(new Response(null, { status: 404 }));
+    expect(await pending).toMatchObject({ injected: false, reason: 'authRequired' });
+    const config = JSON.parse(await fs.readFile(path.join(fixture.workspace, 'opencode.jsonc'), 'utf8'));
+    expect(config.provider.hth.models).toEqual({});
+  });
+
+  it('keeps startup reasoning confirmation on its prepared policy without fetching or writing again', async () => {
+    const fixture = await cronPreparationFixture();
+    const gateway = vi.spyOn(globalThis, 'fetch');
+    const request = { conversationId: 'conversation-1', workspace: fixture.workspace };
+    await fixture.service.prepareConversationWorkspace(request);
+    const callsBeforeConfirmation = gateway.mock.calls.length;
+    await fixture.service.confirmConversationWorkspaceRuntime(request, {
+      backend: 'codex',
+      model: 'gpt-6.1-sol',
+      thoughtLevel: 'high',
+    });
+    expect(gateway.mock.calls).toHaveLength(callsBeforeConfirmation);
+    expect(fixture.extra.aionui_cron_runtime).toHaveProperty('confirmed');
+  });
+
+  it('rejects a task whose selected model is no longer visible before writing its runtime snapshot', async () => {
+    const fixture = await cronPreparationFixture({
+      config: { assistant_id: 'manual-codex', model_id: 'deepseek-chat' },
+    });
+    await expect(
+      fixture.service.prepareConversationWorkspace({ conversationId: 'conversation-1', workspace: fixture.workspace })
+    ).rejects.toThrow('cronModelUnavailable');
+    expect(fixture.extra).not.toHaveProperty('aionui_cron_runtime');
+  });
+
+  it('rejects a reused task after its effort was removed without injecting files or changing metadata', async () => {
+    const fixture = await cronPreparationFixture();
+    const request = { conversationId: 'conversation-1', workspace: fixture.workspace };
+    await fixture.service.prepareConversationWorkspace(request);
+    fixture.coreFetch.mockClear();
+    vi.mocked(fixture.service.injectProjectConfig).mockClear();
+    vi.stubGlobal('fetch', async (input: Parameters<typeof fetch>[0]) =>
+      Response.json(
+        String(input).includes('/model-reasoning-policy')
+          ? {
+              success: true,
+              data: {
+                schema_version: 1,
+                scope: 'global',
+                revision: `sha256:${'b'.repeat(64)}`,
+                default_efforts: ['low', 'medium', 'high'],
+                rules: [{ match_type: 'family', match_value: 'gpt', efforts: ['low'] }],
+              },
+            }
+          : { data: [{ id: 'gpt-6.1-sol' }] }
+      )
+    );
+    await expect(
+      fixture.service.validateConversationRuntimeSelection(request, {
+        backend: 'codex',
+        model: 'gpt-6.1-sol',
+        thoughtLevel: 'high',
+      })
+    ).rejects.toThrow('cronReasoningEffortUnavailable');
+    expect(fixture.service.injectProjectConfig).not.toHaveBeenCalled();
+    expect(fixture.coreFetch.mock.calls.filter(([, init]) => init?.method)).toEqual([]);
+  });
+
+  it.each([
+    ['builtin', 'codex'],
+    ['generated', 'opencode'],
+  ] as const)('leaves an unmanaged %s %s runtime outside the HTH model policy', async (source, backend) => {
+    await writeStoredAuth(authFile);
+    vi.stubGlobal('__backendPort', 18181);
+    const workspace = path.join(tempDir, 'native-workspace');
+    await fs.mkdir(workspace);
+    const assistant = {
+      id: 'native-assistant',
+      source,
+      backend,
+      engine: { agent: { type: backend, source: 'builtin' } },
+    };
+    const coreFetch = vi.fn(async (url: string) =>
+      Response.json({
+        data: url.includes('/api/assistants/')
+          ? assistant
+          : { id: 'conversation-1', assistant, extra: { workspace, backend } },
+      })
+    );
+    const gateway = vi.fn(async (): Promise<Response> => {
+      throw new Error('HTH gateway must not be contacted');
+    });
+    vi.stubGlobal('fetch', gateway);
+    const packageStore = { findByAssistantId: vi.fn(async () => null) } as unknown as HTHPackageStore;
+    const service = new HTHConfigSyncService(
+      new HTHAuthService(authFile),
+      packageStore,
+      undefined,
+      undefined,
+      coreFetch
+    );
+    const request = { conversationId: 'conversation-1', workspace };
+    expect(await service.prepareConversationWorkspace(request)).toEqual(
+      backend === 'codex' ? { backend: 'codex', observeOnly: true } : undefined
+    );
+    await expect(
+      service.validateConversationRuntimeSelection(request, {
+        backend,
+        model: 'non-gpt-native-model',
+        thoughtLevel: 'native-level',
+      })
+    ).resolves.toBeUndefined();
+    expect(gateway).not.toHaveBeenCalled();
+  });
+
+  it('fills a selected GPT task model effort from that model rule rather than the global model default', async () => {
+    const fixture = await cronPreparationFixture({
+      config: { assistant_id: 'manual-codex', model_id: 'gpt-5.6-terra' },
+    });
+    vi.stubGlobal('fetch', async (input: Parameters<typeof fetch>[0]) =>
+      Response.json(
+        String(input).includes('/model-reasoning-policy')
+          ? {
+              success: true,
+              data: {
+                schema_version: 1,
+                scope: 'global',
+                revision: `sha256:${'c'.repeat(64)}`,
+                default_efforts: ['low', 'medium', 'high'],
+                rules: [{ match_type: 'model', match_value: 'gpt-5.6-terra', efforts: ['none'] }],
+              },
+            }
+          : { data: [{ id: 'gpt-6.1-sol' }, { id: 'gpt-5.6-terra' }] }
+      )
+    );
+    const runtime = await fixture.service.prepareConversationWorkspace({
+      conversationId: 'conversation-1',
+      workspace: fixture.workspace,
+    });
+    expect(runtime).toMatchObject({ backend: 'codex', model: 'gpt-5.6-terra', thoughtLevel: 'none' });
+    expect(fixture.job.metadata.agent_config).toEqual({ assistant_id: 'manual-codex', model_id: 'gpt-5.6-terra' });
+  });
+
+  it.each(['codex', 'opencode'] as const)(
+    'marks an existing %s task for actual selection validation without overriding its thread',
+    async (backend) => {
+      const fixture = await cronPreparationFixture({ backend, config: {}, mode: 'existing', anchor: 'conversation-1' });
+      const request = { conversationId: 'conversation-1', workspace: fixture.workspace };
+      expect(await fixture.service.prepareConversationWorkspace(request)).toEqual({
+        backend,
+        validateSelection: true,
+        ...(backend === 'codex' && { observeOnly: true }),
+      });
+      expect(fixture.extra).not.toHaveProperty('aionui_cron_runtime');
+      vi.mocked(fixture.service.injectProjectConfig).mockClear();
+      fixture.coreFetch.mockClear();
+      vi.stubGlobal('fetch', async (input: Parameters<typeof fetch>[0]) =>
+        Response.json(
+          String(input).includes('/model-reasoning-policy')
+            ? {
+                success: true,
+                data: {
+                  schema_version: 1,
+                  scope: 'global',
+                  revision: `sha256:${'d'.repeat(64)}`,
+                  default_efforts: ['low', 'medium', 'high'],
+                  rules: [{ match_type: 'model', match_value: 'gpt-5.6-terra', efforts: ['none'] }],
+                },
+              }
+            : { data: [{ id: 'gpt-6.1-sol' }, { id: 'gpt-5.6-terra' }] }
+        )
+      );
+      await expect(
+        fixture.service.validateConversationRuntimeSelection(request, {
+          backend,
+          model: backend === 'opencode' ? 'hth/gpt-5.6-terra' : 'gpt-5.6-terra',
+          thoughtLevel: 'none',
+        })
+      ).resolves.toBeUndefined();
+      expect(fixture.service.injectProjectConfig).not.toHaveBeenCalled();
+      expect(fixture.coreFetch.mock.calls.filter(([, init]) => init?.method)).toEqual([]);
+    }
+  );
+
+  it.each([{ backend: 'codex' as const }, { backend: 'codex' as const, model: 'gpt-6.1-sol' }])(
+    'blocks an existing task when its real selection is unknown: %j',
+    async (selection) => {
+      const fixture = await cronPreparationFixture({ config: {}, mode: 'existing', anchor: 'conversation-1' });
+      await expect(
+        fixture.service.validateConversationRuntimeSelection(
+          { conversationId: 'conversation-1', workspace: fixture.workspace },
+          selection
+        )
+      ).rejects.toThrow('cronRuntimeConfirmationMismatch');
+      expect(fixture.extra).not.toHaveProperty('aionui_cron_runtime');
+    }
+  );
+
   it('returns descriptions only for requested token-priced HTH models', async () => {
     await writeStoredAuth(authFile);
     const fetchMock = vi.fn(async (input: string | URL) => {
@@ -3393,7 +3861,7 @@ describe('HTHConfigSyncService auth handling', () => {
         { status: 200, headers: { 'Content-Type': 'application/json' } }
       );
     });
-    vi.stubGlobal('fetch', fetchMock);
+    stubHTHFetch(fetchMock);
     const service = new HTHConfigSyncService(new HTHAuthService(authFile));
 
     await expect(
@@ -3448,8 +3916,7 @@ function createInitialModelCatalogFixture(authFile: string) {
   } as unknown as HTHPackageStore;
   const modelRequest = vi.fn(async () => Response.json({ data: state.modelIds.map((id) => ({ id })) }));
   const pricingRequest = vi.fn(async () => Response.json({ data: [] }));
-  vi.stubGlobal(
-    'fetch',
+  stubHTHFetch(
     vi.fn(async (input: string | URL) => {
       const url = new URL(input);
       if (url.pathname === '/api/aionui/agent-configs') return Response.json({ agents });
@@ -3529,7 +3996,7 @@ async function createVersionSyncFixture(tempDir: string, authFile: string) {
     if (url.pathname === '/avatar.png') return new Response('image', { headers: { 'Content-Type': 'image/png' } });
     throw new Error(`Unexpected remote request: ${url.pathname}`);
   });
-  vi.stubGlobal('fetch', remoteFetch);
+  stubHTHFetch(remoteFetch);
   const coreFetch = vi.fn(async (input: string, init?: RequestInit) => {
     const url = new URL(input);
     if (url.pathname === '/api/assistants')
@@ -3653,3 +4120,57 @@ function crc32(data: Buffer): number {
   }
   return (crc ^ 0xffffffff) >>> 0;
 }
+
+describe('HTH model reasoning rules', () => {
+  it.each([
+    ['DeepSeek-R1', 'deepseek'],
+    ['Qwen/Qwen3-32B', 'qwen'],
+    ['zai/glm-4.6', 'glm'],
+    ['openai/gpt-5', 'gpt'],
+    ['gptx-test', undefined],
+    ['my-gpt-5', undefined],
+    ['o3', undefined],
+  ])('recognizes the bounded family of %s as %s', (id, expected) => {
+    expect(detectModelFamily(id as string)).toBe(expected);
+  });
+
+  it('gives an exact model override precedence and treats its case as significant', () => {
+    const policy = {
+      ...DEFAULT_MODEL_REASONING_POLICY,
+      rules: [
+        { match_type: 'family' as const, match_value: 'gpt', efforts: ['low', 'high'] as const },
+        { match_type: 'model' as const, match_value: 'gpt-5', efforts: ['none', 'max'] as const },
+      ].map((rule) => ({ ...rule, efforts: [...rule.efforts] })),
+    };
+    expect(resolveModelReasoning('gpt-5', policy)).toEqual({ efforts: ['none', 'max'], default_effort: 'max' });
+    expect(resolveModelReasoning('GPT-5', policy)).toEqual({ efforts: ['low', 'high'], default_effort: 'high' });
+    expect(resolveModelReasoning('custom', policy)).toEqual({
+      efforts: ['low', 'medium', 'high'],
+      default_effort: 'high',
+    });
+  });
+
+  it.each([
+    { rules: null },
+    { rules: [{ match_type: 'model', match_value: 'gpt-5', efforts: [] }] },
+    { rules: [{ match_type: 'family', match_value: 'other', efforts: ['high'] }] },
+    { rules: [{ match_type: 'model', match_value: 'gpt-5', efforts: ['high', 'high'] }] },
+    { rules: [{ match_type: 'model', match_value: 'gpt-5', efforts: ['extreme'] }] },
+    {
+      rules: [
+        { match_type: 'model', match_value: 'gpt-5', efforts: ['low'] },
+        { match_type: 'model', match_value: 'gpt-5', efforts: ['high'] },
+      ],
+    },
+    { default_efforts: ['high'] },
+    { schema_version: 2 },
+  ])('rejects malformed policy %j before either CLI can consume it', (invalid) => {
+    expect(() =>
+      parseModelReasoningPolicy({
+        ...DEFAULT_MODEL_REASONING_POLICY,
+        revision: `sha256:${'b'.repeat(64)}`,
+        ...invalid,
+      })
+    ).toThrow('reasoningPolicyInvalid');
+  });
+});

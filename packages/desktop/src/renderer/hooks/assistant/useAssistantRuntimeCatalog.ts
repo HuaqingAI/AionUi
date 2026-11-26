@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { assistantRuntimeKey, isHTHSyncedAssistant, type Assistant } from '@/common/types/agent/assistantTypes';
+import { assistantRuntimeKey, usesHTHModelCatalog, type Assistant } from '@/common/types/agent/assistantTypes';
+import { detectModelFamily } from '@/common/types/hth/modelReasoning';
 import type { AcpModelInfo } from '@/common/types/platform/acpTypes';
 import { useManagedAgentRuntimeCatalog } from '@/renderer/hooks/agent/useManagedAgents';
 import { useHthModelPricingDescriptions } from '@/renderer/hooks/agent/useHthModelPricingDescriptions';
@@ -18,8 +19,11 @@ import {
   buildAgentRuntimeModelInfo,
   buildAgentRuntimeSlashCommands,
   buildAgentRuntimeThoughtLevelOption,
+  formatThoughtLevelLabel,
+  type AgentRuntimeDerivedOption,
 } from '@/renderer/utils/model/agentRuntimeCatalog';
 import { useEffect, useMemo, useSyncExternalStore } from 'react';
+import { useHTHRuntimeModelChoices } from './useHTHRuntimeModelChoices';
 
 const EMPTY_MODELS: string[] = [];
 
@@ -34,10 +38,16 @@ export function buildAssistantModelInfo(models: string[]): AcpModelInfo | null {
 }
 
 /** Share runtime choices across new conversations and scheduled tasks without selecting a model. */
-export const useAssistantRuntimeCatalog = (assistant: Assistant | undefined) => {
+export const useAssistantRuntimeCatalog = (
+  assistant: Assistant | undefined,
+  selectedModelId?: string | null,
+  enabled = true
+) => {
   const managedAgents = useManagedAgentRuntimeCatalog();
   const catalog = useSyncExternalStore(subscribeAgentModelCatalog, getAgentModelCatalogSnapshot);
   const backend = assistantRuntimeKey(assistant);
+  const usesHTHModels = usesHTHModelCatalog(assistant);
+  const modelChoices = useHTHRuntimeModelChoices(assistant?.id, catalog.scope, enabled && usesHTHModels);
   const assistantModels = assistant?.models ?? EMPTY_MODELS;
   const managedAgent = useMemo(
     () => (assistant?.agent_id ? managedAgents.find((agent) => agent.id === assistant.agent_id) : undefined),
@@ -52,47 +62,55 @@ export const useAssistantRuntimeCatalog = (assistant: Assistant | undefined) => 
   }, [assistant?.agent_id, backend, managedModelInfo, catalog.scope]);
 
   const runtimeModelInfo = useMemo<AcpModelInfo | null>(() => {
+    if (modelChoices.choices) {
+      return {
+        current_model_id: null,
+        current_model_label: null,
+        available_models: modelChoices.choices.models.map((model) => ({ id: model.id, label: model.label })),
+      };
+    }
     const observed = assistant?.agent_id ? catalog.observed[assistant.agent_id] : undefined;
     const runtime = observed ?? managedModelInfo;
-    if (runtime) return runtime;
+    if (runtime) {
+      if (backend !== 'codex' || !usesHTHModels) return runtime;
+      const available_models = runtime.available_models.filter((model) => detectModelFamily(model.id) === 'gpt');
+      return { ...runtime, available_models };
+    }
     if (!assistant?.agent_id || !['opencode', 'codex'].includes(backend)) return null;
     if (assistantModels.length > 0 || assistant.agent?.source === 'custom') return null;
-    if (catalog.initialModelIds.length === 0) return null;
+    const modelIds = backend === 'codex' && usesHTHModels ? catalog.initialCodexModelIds : catalog.initialModelIds;
+    if (modelIds.length === 0) return null;
     return {
       current_model_id: null,
       current_model_label: null,
-      available_models: catalog.initialModelIds.map((id) => ({
+      available_models: modelIds.map((id) => ({
         id: backend === 'opencode' ? `hth/${id}` : id,
         label: catalog.initialModelLabels[id] ?? `HTH/${id.toUpperCase()}`,
       })),
     };
-  }, [catalog, assistant, assistantModels, backend, managedModelInfo]);
+  }, [catalog, assistant, assistantModels, backend, managedModelInfo, modelChoices.choices, usesHTHModels]);
 
   const availableCommands = useMemo(() => buildAgentRuntimeSlashCommands(managedAgent), [managedAgent]);
   const modeState = useMemo(() => buildAgentRuntimeModeState(managedAgent), [managedAgent]);
-  const thoughtLevelOption = useMemo(() => {
-    const runtime = buildAgentRuntimeThoughtLevelOption(managedAgent, backend);
-    const managedOpenCode = backend === 'opencode' && isHTHSyncedAssistant(assistant);
-    if (runtime && (runtime.options.length > 0 || !managedOpenCode)) return runtime;
-    if (
-      !['codex', 'opencode'].includes(backend) ||
-      !assistant?.agent_id ||
-      assistant.agent?.source === 'custom' ||
-      assistantModels.length > 0 ||
-      catalog.initialModelIds.length === 0 ||
-      (!managedOpenCode && (catalog.observed[assistant.agent_id] || managedModelInfo))
-    ) {
-      return null;
-    }
-    // Managed OpenCode templates advertise these levels even with an older model-only Core catalog.
-    return buildAgentRuntimeThoughtLevelOption(
-      {
-        config_options:
-          backend === 'opencode' ? catalog.initialOpenCodeConfigOptions : catalog.initialCodexConfigOptions,
-      },
-      backend
-    );
-  }, [managedAgent, backend, assistant, assistantModels, catalog, managedModelInfo]);
+  const thoughtLevelOption = useMemo<AgentRuntimeDerivedOption | null>(() => {
+    if (!usesHTHModels) return buildAgentRuntimeThoughtLevelOption(managedAgent, backend);
+    const choices = modelChoices.choices?.models;
+    if (!choices) return null;
+    const defaultId = modelChoices.choices?.default_model_id;
+    const model = selectedModelId
+      ? choices.find((choice) => choice.id === selectedModelId)
+      : (choices.find((choice) => choice.id === defaultId) ?? choices[0]);
+    if (!model) return null;
+    return {
+      id: backend === 'opencode' ? 'effort' : 'reasoning_effort',
+      category: 'thought_level',
+      currentValue: model.default_effort,
+      options: model.efforts.map((effort) => ({
+        value: effort,
+        label: formatThoughtLevelLabel(effort, effort, backend),
+      })),
+    };
+  }, [managedAgent, backend, usesHTHModels, modelChoices.choices, selectedModelId]);
 
   const pricingModelIds = useMemo(() => {
     const models = runtimeModelInfo?.available_models ?? assistantModels.map((id) => ({ id }));
@@ -104,23 +122,40 @@ export const useAssistantRuntimeCatalog = (assistant: Assistant | undefined) => 
   }, [runtimeModelInfo?.available_models, backend, assistantModels]);
   const pricingDescriptions = useHthModelPricingDescriptions(pricingModelIds);
   const modelInfo = useMemo(() => {
-    const info = runtimeModelInfo ?? buildAssistantModelInfo(assistantModels);
+    let info = runtimeModelInfo ?? buildAssistantModelInfo(assistantModels);
     if (!info) return null;
-    return {
-      ...info,
-      available_models: info.available_models.map((model) => {
-        if (model.description) return model;
-        const pricingModelId = model.id.toLowerCase().startsWith('hth/')
-          ? model.id.slice('hth/'.length)
-          : backend === 'codex'
-            ? model.id
-            : null;
-        if (!pricingModelId) return model;
-        const description = pricingDescriptions[pricingModelId];
-        return description ? Object.assign({}, model, { description }) : model;
-      }),
-    };
-  }, [pricingDescriptions, backend, assistantModels, runtimeModelInfo]);
+    if (backend === 'codex' && usesHTHModels) {
+      const available_models = info.available_models.filter((model) => detectModelFamily(model.id) === 'gpt');
+      info = { ...info, available_models };
+    }
+    const available_models = info.available_models.map((model) => {
+      if (model.description) return model;
+      const pricingModelId = model.id.toLowerCase().startsWith('hth/')
+        ? model.id.slice('hth/'.length)
+        : backend === 'codex'
+          ? model.id
+          : null;
+      if (!pricingModelId) return model;
+      const description = pricingDescriptions[pricingModelId];
+      return description ? Object.assign({}, model, { description }) : model;
+    });
+    if (usesHTHModels) {
+      available_models.sort((left, right) =>
+        left.id.localeCompare(right.id, 'en', { numeric: true, sensitivity: 'base' })
+      );
+    }
+    return { ...info, available_models };
+  }, [pricingDescriptions, backend, assistantModels, runtimeModelInfo, usesHTHModels]);
 
-  return { modelInfo, runtimeModelInfo, thoughtLevelOption, modeState, availableCommands };
+  return {
+    modelInfo,
+    runtimeModelInfo,
+    thoughtLevelOption,
+    modeState,
+    availableCommands,
+    modelChoices: modelChoices.choices,
+    choicesLoading: modelChoices.loading,
+    choicesError: modelChoices.error,
+    refreshModelChoices: modelChoices.refresh,
+  };
 };

@@ -56,6 +56,8 @@ import type {
   HTHAssistantUpdate,
   HTHExchangeLoginCodeRequest,
   HTHInitialModelCatalog,
+  HTHRuntimeModelChoices,
+  HTHRuntimeModelChoicesRequest,
   HTHInjectProjectConfigRequest,
   HTHInjectProjectConfigResult,
   HTHModelPricingDescriptionsRequest,
@@ -890,6 +892,9 @@ export const hth = {
   syncAgentConfigs: bridge.buildProvider<HTHSyncResult, HTHSyncAgentConfigsRequest>('hth.sync-agent-configs'),
   checkAgentUpdates: bridge.buildProvider<HTHAssistantUpdate[], void>('hth.check-agent-updates'),
   initialModelCatalog: bridge.buildProvider<HTHInitialModelCatalog | null, void>('hth.initial-model-catalog'),
+  runtimeModelChoices: bridge.buildProvider<HTHRuntimeModelChoices, HTHRuntimeModelChoicesRequest>(
+    'hth.runtime-model-choices'
+  ),
   syncAgentConfigsProgress: bridge.buildEmitter<HTHSyncProgressEvent>('hth.sync-agent-configs.progress'),
   injectProjectConfig: bridge.buildProvider<HTHInjectProjectConfigResult, HTHInjectProjectConfigRequest>(
     'hth.inject-project-config'

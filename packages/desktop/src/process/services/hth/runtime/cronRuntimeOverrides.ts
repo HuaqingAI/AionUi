@@ -9,6 +9,7 @@ export type CronRuntimeOverrides = {
   model?: string;
   thoughtLevel?: string;
   observeOnly?: true;
+  validateSelection?: true;
   browserMcp?: { command: string; args: string[] };
   suppressSkillSuggestion?: true;
 };

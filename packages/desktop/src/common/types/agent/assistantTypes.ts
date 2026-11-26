@@ -30,6 +30,14 @@ export function assistantRuntimeKey(assistant?: Pick<Assistant, 'agent'> | null)
   return assistant?.agent?.acp_backend || assistant?.agent?.type || '';
 }
 
+/** Match the synced and user-authored CLI assistants prepared by the HTH service. */
+export function usesHTHModelCatalog(assistant?: Pick<Assistant, 'id' | 'source' | 'agent'> | null): boolean {
+  return (
+    ['opencode', 'codex'].includes(assistantRuntimeKey(assistant)) &&
+    (isHTHSyncedAssistant(assistant) || isManualAssistant(assistant))
+  );
+}
+
 export function isAionrsAssistant(assistant?: Pick<Assistant, 'agent'> | null): boolean {
   return assistant?.agent?.type === 'aionrs';
 }

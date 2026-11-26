@@ -7,6 +7,7 @@
 import type { ICronAgentConfigWrite } from '@/common/adapter/ipcBridge';
 import { isAionrsAssistant, type Assistant } from '@/common/types/agent/assistantTypes';
 import { resolveAssistantName } from '@renderer/utils/model/assistantDisplay';
+import type { HTHRuntimeModelChoices } from '@/common/types/hth/modelReasoning';
 
 type SelectedAionrsProvider = {
   id?: string;
@@ -19,6 +20,7 @@ type ResolveCronAgentConfigInput = {
   selectedAionrsProvider?: SelectedAionrsProvider;
   model_id?: string;
   config_options?: Record<string, string>;
+  modelChoices?: HTHRuntimeModelChoices;
   workspace?: string;
   localeKey?: string;
   getMode: (assistant: Assistant) => string | undefined;
@@ -73,12 +75,32 @@ export function resolveCronAgentConfig(input: ResolveCronAgentConfigInput): Reso
       workspace,
     };
   } else {
+    let configOptions = config_options;
+    if (input.modelChoices) {
+      const selectedModel = input.modelChoices.models.find(
+        (model) => model.id === (model_id || input.modelChoices?.default_model_id)
+      );
+      if (!selectedModel) throw new Error('cronModelUnavailable');
+      const effort = config_options?.thought_level ?? config_options?.reasoning_effort ?? config_options?.effort;
+      if (effort !== undefined && !selectedModel.efforts.some((value) => value === effort)) {
+        throw new Error('cronReasoningEffortUnavailable');
+      }
+      if (config_options) {
+        const {
+          thought_level: _thoughtLevel,
+          reasoning_effort: _reasoningEffort,
+          effort: _effort,
+          ...otherOptions
+        } = config_options;
+        configOptions = effort === undefined ? otherOptions : { ...otherOptions, thought_level: effort };
+      }
+    }
     agent_config = {
       name: assistantName,
       assistant_id: assistant.id,
       mode,
       model_id,
-      config_options,
+      config_options: configOptions,
       workspace,
     };
   }

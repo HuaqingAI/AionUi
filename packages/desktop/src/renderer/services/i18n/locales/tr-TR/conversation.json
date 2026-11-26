@@ -791,5 +791,13 @@
     "progress": "{{completed}}/{{total}}",
     "expand": "Planı genişlet",
     "collapse": "Planı daralt"
+  },
+  "modelReasoning": {
+    "unavailable": "Ak?l y?r?tme ayarlar? kullan?lam?yor. Yeniden deneyin.",
+    "invalid": "Ak?l y?r?tme ayarlar? ge?ersiz. Y?neticiyle ileti?ime ge?in.",
+    "forbidden": "Ak?l y?r?tme ayarlar?n? okuma izniniz yok.",
+    "noCodexModels": "Codex i?in kullan?labilir GPT modeli yok.",
+    "modelUnavailable": "Se?ilen model art?k kullan?lam?yor. Ba?ka bir model se?in.",
+    "effortUnavailable": "Se?ilen ak?l y?r?tme d?zeyi bu model i?in kullan?lam?yor. Yeniden se?in."
   }
 }

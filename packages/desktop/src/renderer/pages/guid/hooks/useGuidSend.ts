@@ -31,6 +31,13 @@ const blockingHTHProjectConfigInjectionReasons = new Set([
   'modelListEmpty',
   'defaultModelUnavailable',
   'openCodeConfigInvalid',
+  'codexConfigInvalid',
+  'reasoningPolicyUnavailable',
+  'reasoningPolicyInvalid',
+  'reasoningPolicyForbidden',
+  'codexModelListEmpty',
+  'cronModelUnavailable',
+  'cronReasoningEffortUnavailable',
 ]);
 
 export type GuidSendDeps = {

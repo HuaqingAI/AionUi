@@ -32,13 +32,14 @@ const nodeScript = ${JSON.stringify(nodeScript)};
 const cliType = ${JSON.stringify(cliType)};
 ${CRON_RUNTIME_PROXY_SOURCE}
 
-function prepareWorkspace(conversationId, pipePath, confirmation) {
+function prepareWorkspace(conversationId, pipePath, confirmation, validation) {
   return new Promise((resolve) => {
     const request = JSON.stringify({
       token: process.env.AIONUI_WORKSPACE_PREPARATION_TOKEN || '',
       conversationId,
       workspace: process.cwd(),
       ...(confirmation ? { confirmation } : {}),
+      ...(validation ? { validation } : {}),
     }) + '\\n';
     if (Buffer.byteLength(request, 'utf8') > MAX_MESSAGE_BYTES) {
       resolve('Workspace preparation request is too large.');
@@ -99,6 +100,7 @@ function prepareWorkspace(conversationId, pipePath, confirmation) {
           ![runtime.model, runtime.thoughtLevel].every((value) => value === undefined ||
             (typeof value === 'string' && value.length > 0 && value.length <= 500 && !/[\\u0000-\\u001f]/.test(value))) ||
           (runtime.observeOnly !== undefined && (runtime.observeOnly !== true || runtime.backend !== 'codex')) ||
+          (runtime.validateSelection !== undefined && runtime.validateSelection !== true) ||
           (runtime.browserMcp !== undefined && (!runtime.browserMcp || typeof runtime.browserMcp !== 'object' ||
             Array.isArray(runtime.browserMcp) || Object.keys(runtime.browserMcp).some((key) => !['command', 'args'].includes(key)) ||
             typeof runtime.browserMcp.command !== 'string' || !runtime.browserMcp.command.trim() ||
@@ -106,7 +108,7 @@ function prepareWorkspace(conversationId, pipePath, confirmation) {
             !Array.isArray(runtime.browserMcp.args) || !runtime.browserMcp.args.every((value) =>
               typeof value === 'string' && value.length <= 32768 && !value.includes('\\0')))) ||
           (runtime.suppressSkillSuggestion !== undefined && runtime.suppressSkillSuggestion !== true) ||
-          (!runtime.model && !runtime.thoughtLevel && !runtime.observeOnly && !runtime.browserMcp && !runtime.suppressSkillSuggestion))) {
+          (!runtime.model && !runtime.thoughtLevel && !runtime.observeOnly && !runtime.validateSelection && !runtime.browserMcp && !runtime.suppressSkillSuggestion))) {
         finish('Workspace preparation returned an invalid response.');
         return;
       }
@@ -118,7 +120,7 @@ function prepareWorkspace(conversationId, pipePath, confirmation) {
   });
 }
 
-function startCommand(runtime, reportRuntimeConfirmation) {
+function startCommand(runtime, reportRuntimeConfirmation, validateRuntimeSelection) {
   const env = { ...process.env };
   for (const key of Object.keys(env)) {
     const name = process.platform === 'win32' ? key.toUpperCase() : key;
@@ -165,7 +167,7 @@ function startCommand(runtime, reportRuntimeConfirmation) {
     process.exitCode = 1;
     return;
   }
-  if (proxy) startCronRuntimeProxy(child, runtime, reportRuntimeConfirmation);
+  if (proxy) startCronRuntimeProxy(child, runtime, reportRuntimeConfirmation, validateRuntimeSelection);
 
   const signalHandlers = new Map();
   const signals = process.platform === 'win32' ? ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGBREAK'] : ['SIGINT', 'SIGTERM', 'SIGHUP'];
@@ -223,7 +225,13 @@ async function main() {
         if (typeof result === 'string') throw new Error(result);
       }
     : undefined;
-  startCommand(runtime, reportRuntimeConfirmation);
+  const validateRuntimeSelection = runtime && (runtime.validateSelection || (!runtime.observeOnly && (runtime.model || runtime.thoughtLevel))) && conversationId && pipePath
+    ? async (selection) => {
+        const result = await prepareWorkspace(conversationId, pipePath, undefined, selection);
+        if (typeof result === 'string') throw new Error(result);
+      }
+    : undefined;
+  startCommand(runtime, reportRuntimeConfirmation, validateRuntimeSelection);
 }
 
 main().catch(() => {

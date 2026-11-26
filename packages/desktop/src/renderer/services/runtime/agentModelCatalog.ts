@@ -7,6 +7,7 @@
 import type { IResponseMessage } from '@/common/adapter/ipcBridge';
 import type { TChatConversation } from '@/common/config/storage';
 import type { HTHInitialModelCatalog } from '@/common/types/hth';
+import { detectModelFamily } from '@/common/types/hth/modelReasoning';
 import type { AcpConfigOptionDto, AcpModelInfo } from '@/common/types/platform/acpTypes';
 
 type AgentBackend = 'codex' | 'opencode';
@@ -22,6 +23,7 @@ type ObservedCatalog = ConversationRegistration & { modelInfo: AcpModelInfo; bas
 export type AgentModelCatalogSnapshot = {
   scope: string | null;
   initialModelIds: string[];
+  initialCodexModelIds: string[];
   initialModelLabels: Record<string, string>;
   initialCodexConfigOptions: AcpConfigOptionDto[];
   initialOpenCodeConfigOptions: AcpConfigOptionDto[];
@@ -37,6 +39,7 @@ const managementModelIds = new Map<string, string[]>();
 let snapshot: AgentModelCatalogSnapshot = {
   scope: null,
   initialModelIds: [],
+  initialCodexModelIds: [],
   initialModelLabels: {},
   initialCodexConfigOptions: [],
   initialOpenCodeConfigOptions: [],
@@ -199,6 +202,7 @@ export function setAgentModelCatalogScope(scope: string | null): void {
   publish({
     scope,
     initialModelIds: [],
+    initialCodexModelIds: [],
     initialModelLabels: {},
     initialCodexConfigOptions: [],
     initialOpenCodeConfigOptions: [],
@@ -210,6 +214,7 @@ export function setAgentModelCatalogScope(scope: string | null): void {
 export function seedAgentModelCatalog(catalog: HTHInitialModelCatalog): void {
   if (!snapshot.scope || catalog.scope !== snapshot.scope || !Array.isArray(catalog.modelIds)) return;
   const modelIds = [...new Set(catalog.modelIds.map(nonemptyString).filter((id) => id !== undefined))];
+  const initialCodexModelIds = (catalog.codexModelIds ?? modelIds).filter((id) => detectModelFamily(id) === 'gpt');
   const initialModelLabels = catalog.modelLabels ?? {};
   const initialCodexConfigOptions = catalog.codexConfigOptions ?? [];
   const initialOpenCodeConfigOptions = catalog.opencodeConfigOptions ?? [];
@@ -217,6 +222,7 @@ export function seedAgentModelCatalog(catalog: HTHInitialModelCatalog): void {
     modelIds.length === 0 ||
     (modelIds.every((id, index) => id === snapshot.initialModelIds[index]) &&
       modelIds.length === snapshot.initialModelIds.length &&
+      sameModelIds(snapshot.initialCodexModelIds, initialCodexModelIds) &&
       JSON.stringify(initialModelLabels) === JSON.stringify(snapshot.initialModelLabels) &&
       JSON.stringify(initialCodexConfigOptions) === JSON.stringify(snapshot.initialCodexConfigOptions) &&
       JSON.stringify(initialOpenCodeConfigOptions) === JSON.stringify(snapshot.initialOpenCodeConfigOptions))
@@ -226,6 +232,7 @@ export function seedAgentModelCatalog(catalog: HTHInitialModelCatalog): void {
   publish({
     ...snapshot,
     initialModelIds: modelIds,
+    initialCodexModelIds,
     initialModelLabels,
     initialCodexConfigOptions,
     initialOpenCodeConfigOptions,

@@ -43,7 +43,7 @@ describe('ACP config option derivation', () => {
 
   it.each([
     { backend: 'codex', labels: ['Low', 'High'] },
-    { backend: 'opencode', labels: ['low', 'high'] },
+    { backend: 'opencode', labels: ['Low', 'High'] },
   ])('derives display labels for $backend while preserving protocol values', ({ backend, labels }) => {
     const backendOptions = [
       {
@@ -74,6 +74,70 @@ describe('ACP config option derivation', () => {
     expect(hasObservedValue(response, 'model', 'gpt-5.5')).toBe(true);
     expect(hasObservedValue(response, 'model', 'gpt-5.4')).toBe(false);
   });
+
+  it('shows only explicit HTH OpenCode efforts in reasoning order without changing the selected value', () => {
+    const runtimeOptions: AcpConfigOptionDto[] = [
+      {
+        ...options[0],
+        current_value: 'hth/deepseek-v4.1-flash',
+        options: [{ value: 'hth/deepseek-v4.1-flash', name: 'DeepSeek' }],
+      },
+      {
+        ...options[1],
+        id: 'effort',
+        current_value: 'none',
+        options: [
+          { value: 'low', name: 'Low' },
+          { value: 'high', name: 'High' },
+          { value: 'max', name: 'Max' },
+          { value: 'none', name: 'None' },
+          { value: 'default', name: 'Default' },
+        ],
+      },
+    ];
+    const thought = deriveSelectOption(runtimeOptions, 'thought_level', ['effort'], 'opencode');
+
+    expect(thought?.options.map((item) => item.value)).toEqual(['none', 'low', 'high', 'max']);
+    expect(thought?.currentValue).toBe('none');
+    expect(runtimeOptions[1].options.at(-1)?.value).toBe('default');
+  });
+
+  it.each(['default', 'none'])(
+    'keeps the actual %s OpenCode choice while hiding its extra default menu entry',
+    (currentValue) => {
+      const runtimeOptions: AcpConfigOptionDto[] = [
+        { ...options[0], current_value: 'hth/gpt-5' },
+        {
+          ...options[1],
+          current_value: currentValue,
+          options: [
+            { value: 'none', name: 'None' },
+            { value: 'default', name: 'Default' },
+          ],
+        },
+      ];
+      const thought = deriveSelectOption(runtimeOptions, 'thought_level', ['reasoning_effort'], 'opencode');
+      expect(thought?.options.map((item) => item.value)).toEqual(['none']);
+      expect(thought?.currentValue).toBe(currentValue);
+    }
+  );
+
+  it.each([
+    { backend: 'opencode', model: 'other/gpt-5', efforts: ['low', 'default'] },
+    { backend: 'codex', model: 'hth/gpt-5', efforts: ['low', 'default'] },
+    { backend: 'opencode', model: 'hth/gpt-5', efforts: ['default'] },
+  ])(
+    'preserves fallback choices outside an explicit HTH OpenCode effort list: $backend/$model/$efforts',
+    ({ backend, model, efforts }) => {
+      const runtimeOptions: AcpConfigOptionDto[] = [
+        { ...options[0], current_value: model },
+        { ...options[1], options: efforts.map((value) => ({ value, name: value })) },
+      ];
+      expect(
+        deriveSelectOption(runtimeOptions, 'thought_level', [], backend)?.options.map((item) => item.value)
+      ).toEqual(efforts);
+    }
+  );
 
   it('rejects command_ack responses without mutating confirmed state', () => {
     const response: SetConfigOptionResponse = {

@@ -13,10 +13,32 @@ import type { ICronJob } from '@/common/adapter/ipcBridge';
 import type { TChatConversation } from '@/common/config/storage';
 import type { AcpModelInfo } from '@/common/types/platform/acpTypes';
 import type { AgentRuntimeDerivedOption } from '@/renderer/utils/model/agentRuntimeCatalog';
+import type { HTHRuntimeModelChoices, ReasoningEffort } from '@/common/types/hth/modelReasoning';
+import { Message } from '@arco-design/web-react';
 
 let currentAssistants: Assistant[] = [];
 let currentModelInfo: AcpModelInfo | null = null;
 let currentThoughtLevelOption: AgentRuntimeDerivedOption | null = null;
+let effortsByModel: Record<string, ReasoningEffort[]> = {};
+const refreshChoices = vi.fn(async (): Promise<HTHRuntimeModelChoices> => modelChoices());
+
+function modelChoices(): HTHRuntimeModelChoices {
+  return {
+    cli_type: 'codex',
+    policy_revision: 'test-revision',
+    default_model_id: 'gpt-5.6-terra',
+    models: (currentModelInfo?.available_models ?? []).map((model) => {
+      const efforts = effortsByModel[model.id] ?? ['low', 'medium', 'high'];
+      return {
+        id: model.id,
+        gateway_model_id: model.id,
+        label: model.label,
+        efforts,
+        default_effort: efforts.includes('high') ? 'high' : efforts[efforts.length - 1],
+      };
+    }),
+  };
+}
 
 type ModelSelectorProps = React.ComponentProps<
   typeof import('@/renderer/pages/guid/components/GuidModelSelector').default
@@ -55,11 +77,21 @@ vi.mock('@/common', () => ({
 
 vi.mock('@renderer/components/base/AionModal', () => ({
   __esModule: true,
-  default: ({ visible, children, onOk }: { visible: boolean; children: React.ReactNode; onOk?: () => void }) =>
+  default: ({
+    visible,
+    children,
+    onOk,
+    okButtonProps,
+  }: {
+    visible: boolean;
+    children: React.ReactNode;
+    onOk?: () => void;
+    okButtonProps?: { disabled?: boolean };
+  }) =>
     visible ? (
       <div>
         {children}
-        <button type='button' data-testid='modal-ok' onClick={onOk}>
+        <button type='button' data-testid='modal-ok' onClick={onOk} disabled={okButtonProps?.disabled}>
           OK
         </button>
       </div>
@@ -121,13 +153,28 @@ vi.mock('@renderer/pages/guid/components/GuidModelSelector', () => ({
 }));
 
 vi.mock('@renderer/hooks/assistant/useAssistantRuntimeCatalog', () => ({
-  useAssistantRuntimeCatalog: (assistant: Assistant | undefined) => ({
-    modelInfo: assistant ? currentModelInfo : null,
-    runtimeModelInfo: assistant ? currentModelInfo : null,
-    thoughtLevelOption: assistant ? currentThoughtLevelOption : null,
-    modeState: { currentMode: 'default', options: [] },
-    availableCommands: [],
-  }),
+  useAssistantRuntimeCatalog: (assistant: Assistant | undefined, selectedModel?: string) => {
+    const choices = modelChoices();
+    const model = choices.models.find((choice) => choice.id === (selectedModel || choices.default_model_id));
+    return {
+      modelInfo: assistant ? currentModelInfo : null,
+      runtimeModelInfo: assistant ? currentModelInfo : null,
+      thoughtLevelOption:
+        assistant && currentThoughtLevelOption && model
+          ? {
+              ...currentThoughtLevelOption,
+              currentValue: model.default_effort,
+              options: model.efforts.map((value) => ({ value, label: value })),
+            }
+          : null,
+      modelChoices: assistant ? choices : undefined,
+      choicesLoading: false,
+      choicesError: undefined,
+      refreshModelChoices: refreshChoices,
+      modeState: { currentMode: 'default', options: [] },
+      availableCommands: [],
+    };
+  },
 }));
 
 vi.mock('@renderer/components/workspace', () => ({
@@ -191,6 +238,8 @@ describe('CreateTaskDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     currentAssistants = assistants();
+    effortsByModel = {};
+    refreshChoices.mockImplementation(async () => modelChoices());
     currentModelInfo = {
       current_model_id: null,
       current_model_label: null,
@@ -355,7 +404,7 @@ describe('CreateTaskDialog', () => {
             metadata: expect.objectContaining({
               agent_config: expect.objectContaining({
                 model_id: undefined,
-                config_options: { reasoning_effort: 'high' },
+                config_options: { thought_level: 'high' },
               }),
             }),
           }),
@@ -376,11 +425,54 @@ describe('CreateTaskDialog', () => {
     const [{ updates }] = vi.mocked(ipcBridge.cron.updateJob.invoke).mock.calls[0];
     expect(updates.metadata.agent_config).toMatchObject({
       model_id: 'gpt-6.1-sol',
-      config_options: { reasoning_effort: 'low' },
+      config_options: { thought_level: 'low' },
     });
   });
 
-  it('preserves the existing defaults when model discovery has no available choices', async () => {
+  it('uses the newly selected model effort and removes the previous model choice', async () => {
+    const user = userEvent.setup();
+    effortsByModel = { 'gpt-5.6-terra': ['max'], 'gpt-6.1-sol': ['none'] };
+    render(<CreateTaskDialog visible onClose={() => {}} editJob={job()} />);
+
+    expect(await screen.findByLabelText('Task thinking strength')).toHaveValue('max');
+    await user.selectOptions(screen.getByLabelText('Task model'), 'gpt-6.1-sol');
+    expect(screen.getByLabelText('Task thinking strength')).toHaveValue('none');
+    await user.click(screen.getByTestId('modal-ok'));
+
+    await waitFor(() => expect(ipcBridge.cron.updateJob.invoke).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(ipcBridge.cron.updateJob.invoke).mock.calls[0][0].updates.metadata.agent_config).toMatchObject({
+      model_id: 'gpt-6.1-sol',
+      config_options: { thought_level: 'none' },
+    });
+  });
+
+  it('keeps an invalid saved effort visible as an error until the user replaces it', async () => {
+    const user = userEvent.setup();
+    const original = job();
+    original.metadata.agent_config = { ...original.metadata.agent_config!, config_options: { effort: 'max' } };
+    render(<CreateTaskDialog visible onClose={() => {}} editJob={original} />);
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(screen.getByTestId('modal-ok')).toBeDisabled();
+    await user.selectOptions(screen.getByLabelText('Task thinking strength'), 'low');
+    expect(screen.getByTestId('modal-ok')).toBeEnabled();
+  });
+
+  it('revalidates the effort before saving and rejects a newly removed option', async () => {
+    const user = userEvent.setup();
+    render(<CreateTaskDialog visible onClose={() => {}} editJob={job()} />);
+    await user.selectOptions(await screen.findByLabelText('Task thinking strength'), 'low');
+    refreshChoices.mockResolvedValueOnce({
+      ...modelChoices(),
+      models: modelChoices().models.map((model) => ({ ...model, efforts: ['high'], default_effort: 'high' })),
+    });
+    await user.click(screen.getByTestId('modal-ok'));
+
+    await waitFor(() => expect(Message.error).toHaveBeenCalledWith('error'));
+    expect(ipcBridge.cron.updateJob.invoke).not.toHaveBeenCalled();
+  });
+
+  it('blocks saving a Codex task when no models are available', async () => {
     const user = userEvent.setup();
     currentModelInfo = null;
     currentThoughtLevelOption = null;
@@ -388,19 +480,9 @@ describe('CreateTaskDialog', () => {
 
     expect(await screen.findByText('问好助手')).toBeInTheDocument();
     expect(screen.queryByTestId('guid-model-selector')).not.toBeInTheDocument();
+    expect(screen.getByTestId('modal-ok')).toBeDisabled();
     await user.click(screen.getByTestId('modal-ok'));
-
-    await waitFor(() =>
-      expect(ipcBridge.cron.updateJob.invoke).toHaveBeenCalledWith(
-        expect.objectContaining({
-          updates: expect.objectContaining({
-            metadata: expect.objectContaining({
-              agent_config: expect.objectContaining({ model_id: undefined, config_options: undefined }),
-            }),
-          }),
-        })
-      )
-    );
+    expect(ipcBridge.cron.updateJob.invoke).not.toHaveBeenCalled();
   });
 
   it('allows returning to the assistant default after selecting a task model', async () => {
@@ -438,7 +520,7 @@ describe('CreateTaskDialog', () => {
             metadata: expect.objectContaining({
               agent_config: expect.objectContaining({
                 model_id: 'gpt-5.6-terra',
-                config_options: { reasoning_effort: 'low', custom_option: 'keep' },
+                config_options: { thought_level: 'low', custom_option: 'keep' },
               }),
             }),
           }),
@@ -476,7 +558,7 @@ describe('CreateTaskDialog', () => {
               agent_config: expect.objectContaining({
                 assistant_id: 'assistant-2',
                 model_id: undefined,
-                config_options: { reasoning_effort: 'high' },
+                config_options: { thought_level: 'high' },
               }),
             }),
           }),
@@ -620,7 +702,7 @@ describe('CreateTaskDialog', () => {
           agent_config: expect.objectContaining({
             assistant_id: 'assistant-1',
             model_id: undefined,
-            config_options: { reasoning_effort: 'high' },
+            config_options: { thought_level: 'high' },
           }),
         })
       )

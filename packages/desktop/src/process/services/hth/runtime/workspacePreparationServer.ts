@@ -31,6 +31,10 @@ export class HTHWorkspacePreparationServer {
     private readonly confirmRuntime?: (
       request: WorkspacePreparationRequest,
       confirmation: CronRuntimeConfirmation
+    ) => Promise<void>,
+    private readonly validateRuntime?: (
+      request: WorkspacePreparationRequest,
+      selection: Pick<CronRuntimeOverrides, 'backend' | 'model' | 'thoughtLevel'>
     ) => Promise<void>
   ) {}
 
@@ -125,6 +129,36 @@ export class HTHWorkspacePreparationServer {
         return;
       }
       const validated = { conversationId: request.conversationId, workspace: request.workspace };
+      let selection: Pick<CronRuntimeOverrides, 'backend' | 'model' | 'thoughtLevel'> | undefined;
+      if ('validation' in request) {
+        const value = request.validation;
+        if (
+          'confirmation' in request ||
+          !this.validateRuntime ||
+          !value ||
+          typeof value !== 'object' ||
+          !('backend' in value) ||
+          (value.backend !== 'codex' && value.backend !== 'opencode') ||
+          ['model', 'thoughtLevel'].some((key) => {
+            if (!(key in value)) return false;
+            const field = (value as Record<string, unknown>)[key];
+            return (
+              typeof field !== 'string' ||
+              !field.trim() ||
+              field.length > 500 ||
+              [...field].some((character) => character.charCodeAt(0) < 32)
+            );
+          })
+        ) {
+          socket.end('{"ok":false}\n');
+          return;
+        }
+        selection = {
+          backend: value.backend,
+          ...('model' in value && { model: value.model as string }),
+          ...('thoughtLevel' in value && { thoughtLevel: value.thoughtLevel as string }),
+        };
+      }
       let confirmation: CronRuntimeConfirmation | undefined;
       if ('confirmation' in request) {
         const value = request.confirmation;
@@ -160,6 +194,10 @@ export class HTHWorkspacePreparationServer {
       const preparation = previous
         .catch(() => {})
         .then(async () => {
+          if (selection) {
+            await this.validateRuntime!(validated, selection);
+            return;
+          }
           if (!confirmation) return this.prepare(validated);
           await this.confirmRuntime!(validated, confirmation);
         });

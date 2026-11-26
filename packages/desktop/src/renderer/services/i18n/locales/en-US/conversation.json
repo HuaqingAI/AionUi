@@ -793,5 +793,13 @@
     "progress": "{{completed}}/{{total}}",
     "expand": "Expand plan",
     "collapse": "Collapse plan"
+  },
+  "modelReasoning": {
+    "unavailable": "Model reasoning settings are unavailable. Please retry.",
+    "invalid": "Model reasoning settings are invalid. Please contact the administrator.",
+    "forbidden": "You do not have permission to read model reasoning settings.",
+    "noCodexModels": "No GPT models are available for Codex.",
+    "modelUnavailable": "The selected model is no longer available. Please select another model.",
+    "effortUnavailable": "The selected reasoning effort is no longer available for this model. Please select it again."
   }
 }

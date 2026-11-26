@@ -6,7 +6,7 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Form, Input, Select, Message, TimePicker, Radio, Button, Switch } from '@arco-design/web-react';
+import { Alert, Form, Input, Select, Message, TimePicker, Radio, Button, Switch } from '@arco-design/web-react';
 import AionModal from '@renderer/components/base/AionModal';
 import ThemedLogo from '@/renderer/components/agent/ThemedLogo';
 import { Down, Robot } from '@icon-park/react';
@@ -26,7 +26,7 @@ import { getConversationCreateErrorMessage } from '@renderer/pages/conversation/
 import { resolveAssistantAvatar } from '@renderer/utils/model/assistantAvatar';
 import { resolveAssistantName } from '@renderer/utils/model/assistantDisplay';
 import { resolveCronAgentConfig } from './resolveCronAgentConfig';
-import { assistantRuntimeKey, isAionrsAssistant } from '@/common/types/agent/assistantTypes';
+import { assistantRuntimeKey, isAionrsAssistant, usesHTHModelCatalog } from '@/common/types/agent/assistantTypes';
 
 const FormItem = Form.Item;
 const TextArea = Input.TextArea;
@@ -355,7 +355,15 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
   );
 
   const resolvedBackend = assistantRuntimeKey(selectedAssistant);
-  const { modelInfo, thoughtLevelOption: runtimeThoughtLevelOption } = useAssistantRuntimeCatalog(selectedAssistant);
+  const {
+    modelInfo,
+    thoughtLevelOption: runtimeThoughtLevelOption,
+    modelChoices,
+    choicesLoading,
+    choicesError,
+    refreshModelChoices,
+  } = useAssistantRuntimeCatalog(selectedAssistant, model_id, visible);
+  const usesHTHModels = usesHTHModelCatalog(selectedAssistant);
   const resolveAutoApproveModeFromAgentMetadata = useCallback(
     (assistant: (typeof presetAssistants)[number]): string => {
       const agent = managedAgentRuntimeCatalog.find((item) => item.id === assistant.agent_id);
@@ -414,6 +422,16 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
         const next = typeof action === 'function' ? action(prev ?? null) : action;
         return next ?? undefined;
       });
+      setConfigOptions((previous) => {
+        if (!previous) return previous;
+        const {
+          thought_level: _thoughtLevel,
+          reasoning_effort: _reasoningEffort,
+          effort: _effort,
+          ...otherOptions
+        } = previous;
+        return otherOptions;
+      });
     },
     []
   );
@@ -425,21 +443,30 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
 
   const thoughtLevelOption = useMemo(() => {
     if (isGeminiMode || !runtimeThoughtLevelOption?.options.length) return null;
-    const savedValue = config_options?.[runtimeThoughtLevelOption.id];
-    const currentValue = runtimeThoughtLevelOption.options.some((option) => option.value === savedValue)
-      ? savedValue
-      : runtimeThoughtLevelOption.options.some((option) => option.value === 'high')
-        ? 'high'
-        : (runtimeThoughtLevelOption.options[0]?.value ?? '');
+    const savedValue =
+      config_options?.thought_level ??
+      config_options?.reasoning_effort ??
+      config_options?.effort ??
+      config_options?.[runtimeThoughtLevelOption.id];
+    const currentValue = savedValue ?? runtimeThoughtLevelOption.currentValue ?? '';
     return { ...runtimeThoughtLevelOption, currentValue };
   }, [isGeminiMode, runtimeThoughtLevelOption, config_options]);
 
   const handleThoughtLevelSelect = useCallback(
     (value: string) => {
       if (!thoughtLevelOption) return;
-      setConfigOptions((previous) => ({ ...previous, [thoughtLevelOption.id]: value }));
+      setConfigOptions((previous) => {
+        if (!usesHTHModels) return { ...previous, [thoughtLevelOption.id]: value };
+        const {
+          thought_level: _thoughtLevel,
+          reasoning_effort: _reasoningEffort,
+          effort: _effort,
+          ...otherOptions
+        } = previous ?? {};
+        return { ...otherOptions, thought_level: value };
+      });
     },
-    [thoughtLevelOption]
+    [thoughtLevelOption, usesHTHModels]
   );
 
   // Auto-pick the first available model from /api/providers when aionrs is
@@ -512,6 +539,22 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
   const isExecutionModeLocked = isCheckingTeamOwnership || isTeamOwnedTask;
   const canEditAgentConfig =
     !isExecutionModeLocked && !isOriginalExistingConversationTask && (!isEditMode || execution_mode !== 'existing');
+  let modelSelectionError: string | undefined;
+  if (usesHTHModels && modelChoices) {
+    const selectedModel = modelChoices.models.find((model) => model.id === (model_id || modelChoices.default_model_id));
+    if (!selectedModel) {
+      modelSelectionError = 'cronModelUnavailable';
+    } else {
+      const savedEffort = config_options?.thought_level ?? config_options?.reasoning_effort ?? config_options?.effort;
+      if (savedEffort !== undefined && !selectedModel.efforts.some((effort) => effort === savedEffort)) {
+        modelSelectionError = 'cronReasoningEffortUnavailable';
+      }
+    }
+  }
+  const runtimeSelectionError = choicesError || (modelSelectionError ? new Error(modelSelectionError) : undefined);
+  const runtimeSelectionKey = JSON.stringify([selectedAssistantId, model_id, config_options]);
+  const currentRuntimeSelection = React.useRef(runtimeSelectionKey);
+  currentRuntimeSelection.current = runtimeSelectionKey;
 
   const handleFrequencyChange = (value: FrequencyType) => {
     setFrequency(value);
@@ -552,6 +595,8 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
         if (!assistantValue) {
           throw new Error(t('cron.page.form.assistantRequired'));
         }
+        const latestModelChoices = usesHTHModels ? await refreshModelChoices() : undefined;
+        if (currentRuntimeSelection.current !== runtimeSelectionKey) throw new Error('cronModelUnavailable');
         agent_config = resolveCronAgentConfig({
           agentValue: assistantValue,
           presetAssistants,
@@ -562,6 +607,7 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
               }
             : undefined,
           model_id,
+          modelChoices: latestModelChoices,
           config_options: thoughtLevelOption
             ? { ...config_options, [thoughtLevelOption.id]: thoughtLevelOption.currentValue }
             : config_options,
@@ -633,6 +679,9 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
       onCancel={onClose}
       onOk={handleSubmit}
       confirmLoading={submitting}
+      okButtonProps={{
+        disabled: canEditAgentConfig && usesHTHModels && Boolean(choicesLoading || runtimeSelectionError),
+      }}
       okText={t('cron.page.save')}
       cancelText={t('cron.page.cancel')}
       className='w-[min(560px,calc(100vw-32px))] max-w-560px'
@@ -714,6 +763,27 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
             )}
           </FormItem>
 
+          {canEditAgentConfig && usesHTHModels && choicesLoading && (
+            <p role='status' className='text-12px text-t-secondary'>
+              {t('common.loading')}
+            </p>
+          )}
+          {canEditAgentConfig && runtimeSelectionError && (
+            <Alert
+              type='error'
+              content={
+                <>
+                  {getConversationCreateErrorMessage(runtimeSelectionError, t)}
+                  {choicesError && (
+                    <Button type='text' size='small' onClick={() => void refreshModelChoices().catch((): void => {})}>
+                      {t('common.retry')}
+                    </Button>
+                  )}
+                </>
+              }
+              className='mb-12px'
+            />
+          )}
           {canEditAgentConfig && showModelSelector && (
             <FormItem label={t('cron.page.form.model')}>
               <GuidModelSelector

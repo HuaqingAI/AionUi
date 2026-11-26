@@ -34,6 +34,13 @@ const blockingInjectionReasons = new Set([
   'modelListEmpty',
   'defaultModelUnavailable',
   'openCodeConfigInvalid',
+  'codexConfigInvalid',
+  'reasoningPolicyUnavailable',
+  'reasoningPolicyInvalid',
+  'reasoningPolicyForbidden',
+  'codexModelListEmpty',
+  'cronModelUnavailable',
+  'cronReasoningEffortUnavailable',
 ]);
 
 /** Save the first-turn intent before navigation, without starting the CLI. */

@@ -165,6 +165,17 @@ export const getConversationCreateErrorMessage = (error: unknown, t: TFunction):
   if (error instanceof Error && error.name === 'BrowserToolUnavailableError') {
     return t('conversation.createFailed');
   }
+  const reasoningErrorKeys: Record<string, string> = {
+    reasoningPolicyUnavailable: 'conversation.modelReasoning.unavailable',
+    reasoningPolicyInvalid: 'conversation.modelReasoning.invalid',
+    reasoningPolicyForbidden: 'conversation.modelReasoning.forbidden',
+    codexModelListEmpty: 'conversation.modelReasoning.noCodexModels',
+    cronModelUnavailable: 'conversation.modelReasoning.modelUnavailable',
+    cronReasoningEffortUnavailable: 'conversation.modelReasoning.effortUnavailable',
+  };
+  const errorText = String(parseError(error) || '');
+  const reasoningReason = Object.keys(reasoningErrorKeys).find((reason) => errorText.includes(reason));
+  if (reasoningReason) return t(reasoningErrorKeys[reasoningReason]);
   const normalizedCode = normalizeConversationCreateErrorCode(error);
   const payload = getWorkspacePathErrorPayload(error);
   const workspacePath = getWorkspacePathFromErrorDetails(error);

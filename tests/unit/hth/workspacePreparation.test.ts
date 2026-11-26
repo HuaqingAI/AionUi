@@ -58,9 +58,10 @@ describe('managed CLI workspace preparation', () => {
 
   async function startServer(
     prepare: (request: { conversationId: string; workspace: string }) => Promise<void | CronRuntimeOverrides>,
-    confirmRuntime?: ConstructorParameters<typeof HTHWorkspacePreparationServer>[1]
+    confirmRuntime?: ConstructorParameters<typeof HTHWorkspacePreparationServer>[1],
+    validateRuntime: ConstructorParameters<typeof HTHWorkspacePreparationServer>[2] = async () => {}
   ): Promise<Connection> {
-    const server = new HTHWorkspacePreparationServer(prepare, confirmRuntime);
+    const server = new HTHWorkspacePreparationServer(prepare, confirmRuntime, validateRuntime);
     servers.push(server);
     return server.start();
   }
@@ -347,6 +348,70 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
 });
 `;
 
+  it('rejects a later scheduled prompt on the same CLI when its effort is no longer available', async () => {
+    const validateRuntime = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('cronReasoningEffortUnavailable'));
+    const connection = await startServer(
+      async () => ({ backend: 'opencode', model: 'gpt-6.1-sol', thoughtLevel: 'max' }),
+      undefined,
+      validateRuntime
+    );
+    const result = await runLauncher(connection, {
+      args: ['acp'],
+      script: protocolCli,
+      requests: [
+        { id: 1, method: 'session/new', params: { cwd: workspace, mcpServers: [] } },
+        { id: 2, method: 'session/prompt', params: { sessionId: 'session-1', prompt: [] } },
+        { id: 3, method: 'session/prompt', params: { sessionId: 'session-1', prompt: [] } },
+      ],
+    });
+    const frames = result.stdout
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+    expect(frames.find((frame) => frame.id === 2).result.observed.effort).toBe('max');
+    expect(frames.find((frame) => frame.id === 3)).toHaveProperty('error');
+    expect(validateRuntime).toHaveBeenCalledTimes(2);
+  });
+
+  it('validates the current ACP selection for an existing task without changing its settings', async () => {
+    const validateRuntime = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('cronReasoningEffortUnavailable'));
+    const connection = await startServer(
+      async () => ({ backend: 'opencode', validateSelection: true }),
+      undefined,
+      validateRuntime
+    );
+    const result = await runLauncher(connection, {
+      args: ['acp'],
+      script: protocolCli,
+      requests: [
+        { id: 1, method: 'session/new', params: { cwd: workspace, mcpServers: [] } },
+        { id: 2, method: 'session/prompt', params: { sessionId: 'session-1', prompt: [] } },
+        { id: 3, method: 'session/prompt', params: { sessionId: 'session-1', prompt: [] } },
+      ],
+    });
+    const frames = result.stdout
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+    expect(frames.find((frame) => frame.id === 2).result.observed).toEqual({
+      model: 'hth/original-model',
+      effort: 'low',
+      calls: ['session/new', 'session/prompt'],
+    });
+    expect(frames.find((frame) => frame.id === 3)).toHaveProperty('error');
+    expect(validateRuntime).toHaveBeenCalledTimes(2);
+    expect(validateRuntime).toHaveBeenLastCalledWith(
+      { conversationId: 'cron-conversation', workspace },
+      { backend: 'opencode', model: 'hth/original-model', thoughtLevel: 'low' }
+    );
+  });
+
   // AionCore v0.2.1 crates/aionui-cron/src/prompt.rs:19: keep the injected
   // template exact so removal cannot accidentally consume the user's task.
   const scheduledContext =
@@ -568,6 +633,38 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
   }
 });
 `;
+
+  it('validates confirmed Codex defaults before each existing task turn without overriding the thread', async () => {
+    const validateRuntime = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('cronModelUnavailable'));
+    const connection = await startServer(
+      async () => ({ backend: 'codex', observeOnly: true, validateSelection: true }),
+      async () => {},
+      validateRuntime
+    );
+    const result = await runLauncher(connection, {
+      args: ['app-server', 'actual-defaults'],
+      script: codexStartupCli,
+      requests: [
+        { id: 1, method: 'thread/resume', params: { threadId: 'thread-1' } },
+        { id: 2, method: 'turn/start', params: { threadId: 'thread-1', input: [] } },
+        { id: 3, method: 'turn/start', params: { threadId: 'thread-1', input: [] } },
+      ],
+    });
+    const frames = result.stdout
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+    expect(frames.find((frame) => frame.id === 2).result.observed).toEqual({ threadId: 'thread-1', input: [] });
+    expect(frames.find((frame) => frame.id === 3)).toHaveProperty('error');
+    expect(validateRuntime).toHaveBeenCalledTimes(2);
+    expect(validateRuntime).toHaveBeenLastCalledWith(
+      { conversationId: 'cron-conversation', workspace },
+      { backend: 'codex', model: 'native-observed-model', thoughtLevel: 'medium' }
+    );
+  });
 
   it.each([
     ['thread/start', false],

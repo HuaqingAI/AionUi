@@ -146,6 +146,38 @@ describe('resolveCronAgentConfig', () => {
     expect(result.agent_config).not.toHaveProperty('is_preset');
   });
 
+  it('rejects a model outside the validated Codex choices', () => {
+    expect(() =>
+      resolveCronAgentConfig({
+        agentValue: 'codex',
+        presetAssistants: [assistant({ id: 'codex', name: 'Codex', agent_id: 'agent-codex' })],
+        model_id: 'deepseek-chat',
+        modelChoices: { cli_type: 'codex', policy_revision: 'test', models: [] },
+        getMode: () => 'default',
+        aionrsModelRequiredMessage: 'provider required',
+      })
+    ).toThrow('cronModelUnavailable');
+  });
+
+  it('normalizes a valid legacy effort and preserves unrelated settings', () => {
+    const result = resolveCronAgentConfig({
+      agentValue: 'codex',
+      presetAssistants: [assistant({ id: 'codex', name: 'Codex', agent_id: 'agent-codex' })],
+      config_options: { reasoning_effort: 'max', custom: 'keep' },
+      modelChoices: {
+        cli_type: 'codex',
+        policy_revision: 'test',
+        default_model_id: 'gpt-test',
+        models: [
+          { id: 'gpt-test', gateway_model_id: 'gpt-test', label: 'GPT', efforts: ['max'], default_effort: 'max' },
+        ],
+      },
+      getMode: () => 'default',
+      aionrsModelRequiredMessage: 'provider required',
+    });
+    expect(result.agent_config?.config_options).toEqual({ thought_level: 'max', custom: 'keep' });
+  });
+
   it('throws when the selected assistant cannot be resolved', () => {
     expect(() =>
       resolveCronAgentConfig({

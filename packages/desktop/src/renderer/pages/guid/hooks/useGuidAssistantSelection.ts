@@ -210,12 +210,16 @@ export const useGuidAssistantSelection = ({
     thoughtLevelOption: selectedAgentRuntimeThoughtLevelOption,
     modeState: selectedAgentRuntimeModeState,
     availableCommands: currentAgentAvailableCommands,
-  } = useAssistantRuntimeCatalog(selectedAssistant);
+  } = useAssistantRuntimeCatalog(selectedAssistant, selectedAcpModel);
   const currentThoughtLevelOption = useMemo<AgentRuntimeDerivedOption | null>(() => {
     if (!selectedAgentRuntimeThoughtLevelOption) return null;
     return {
       ...selectedAgentRuntimeThoughtLevelOption,
-      currentValue: selectedThoughtLevelValue || selectedAgentRuntimeThoughtLevelOption.currentValue,
+      currentValue: selectedAgentRuntimeThoughtLevelOption.options.some(
+        (option) => option.value === selectedThoughtLevelValue
+      )
+        ? selectedThoughtLevelValue
+        : selectedAgentRuntimeThoughtLevelOption.currentValue,
     };
   }, [selectedAgentRuntimeThoughtLevelOption, selectedThoughtLevelValue]);
   const currentAgentModeOptions = selectedAgentRuntimeModeState.options;
@@ -280,7 +284,7 @@ export const useGuidAssistantSelection = ({
       selectedAssistant,
       selectedAgentRuntimeThoughtLevelOption
     );
-    const selectionScope = selectedAssistantId ?? '';
+    const selectionScope = JSON.stringify([selectedAssistantId, selectedAcpModel]);
 
     _setSelectedThoughtLevelValue((previousValue) => {
       const scopeChanged = thoughtLevelSelectionScopeRef.current !== selectionScope;
@@ -296,7 +300,7 @@ export const useGuidAssistantSelection = ({
 
       return fallbackThoughtLevel;
     });
-  }, [selectedAgentRuntimeThoughtLevelOption, selectedAssistant, selectedAssistantId]);
+  }, [selectedAgentRuntimeThoughtLevelOption, selectedAssistant, selectedAssistantId, selectedAcpModel]);
 
   const defaultAssistantId = useMemo(() => pickDefaultAssistantSelectionKey(assistants), [assistants]);
 

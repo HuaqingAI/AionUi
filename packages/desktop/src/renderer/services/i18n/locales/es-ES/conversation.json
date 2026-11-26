@@ -790,5 +790,13 @@
     "progress": "{{completed}}/{{total}}",
     "expand": "Expandir plan",
     "collapse": "Contraer plan"
+  },
+  "modelReasoning": {
+    "unavailable": "La configuraci?n de razonamiento no est? disponible. Int?ntalo de nuevo.",
+    "invalid": "La configuraci?n de razonamiento no es v?lida. Contacta con el administrador.",
+    "forbidden": "No tienes permiso para leer la configuraci?n de razonamiento.",
+    "noCodexModels": "No hay modelos GPT disponibles para Codex.",
+    "modelUnavailable": "El modelo seleccionado ya no est? disponible. Selecciona otro.",
+    "effortUnavailable": "El esfuerzo de razonamiento seleccionado ya no est? disponible para este modelo. Vuelve a seleccionarlo."
   }
 }

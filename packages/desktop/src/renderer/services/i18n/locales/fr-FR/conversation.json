@@ -789,5 +789,13 @@
     "progress": "{{completed}}/{{total}}",
     "expand": "Développer le plan",
     "collapse": "Réduire le plan"
+  },
+  "modelReasoning": {
+    "unavailable": "Les param?tres de raisonnement sont indisponibles. R?essayez.",
+    "invalid": "Les param?tres de raisonnement sont invalides. Contactez votre administrateur.",
+    "forbidden": "Vous ne pouvez pas consulter les param?tres de raisonnement.",
+    "noCodexModels": "Aucun mod?le GPT disponible pour Codex.",
+    "modelUnavailable": "Le mod?le s?lectionn? est indisponible. S?lectionnez-en un autre.",
+    "effortUnavailable": "Cet effort de raisonnement est indisponible pour ce mod?le. Choisissez ? nouveau."
   }
 }

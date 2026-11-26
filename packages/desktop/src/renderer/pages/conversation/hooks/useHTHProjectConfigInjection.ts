@@ -26,6 +26,13 @@ const blockingInjectionReasons = new Set([
   'modelListEmpty',
   'defaultModelUnavailable',
   'openCodeConfigInvalid',
+  'codexConfigInvalid',
+  'reasoningPolicyUnavailable',
+  'reasoningPolicyInvalid',
+  'reasoningPolicyForbidden',
+  'codexModelListEmpty',
+  'cronModelUnavailable',
+  'cronReasoningEffortUnavailable',
 ]);
 
 function injectionKey(conversationId: string, workspace: string, assistantId: string): string {

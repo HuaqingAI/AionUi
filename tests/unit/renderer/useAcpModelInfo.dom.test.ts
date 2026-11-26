@@ -291,6 +291,36 @@ describe('useAcpModelInfo', () => {
     expect(result.current.thoughtLevel?.currentValue).toBe('low');
   });
 
+  it('removes the extra OpenCode default effort from initial and switched model choices', async () => {
+    const initialOptions = buildScheduledConfigOptions('opencode', 'gpt-6.1-sol', 'high');
+    initialOptions[1].options.push({ value: 'default', name: 'Default' });
+    ensureRuntimeInvokeMock.mockResolvedValue({ recovered: true, config_options: initialOptions, runtime: null });
+    const { result } = renderUseAcpModelInfo({ conversation_id: 'conv-1', backend: 'opencode' });
+    await waitFor(() => expect(result.current.thoughtLevel?.currentValue).toBe('high'));
+    expect(result.current.thoughtLevel?.options.some((choice) => choice.value === 'default')).toBe(false);
+
+    const switchedOptions = buildScheduledConfigOptions('opencode', 'deepseek-v4-pro', 'none');
+    switchedOptions[1].options = [
+      { value: 'max', name: 'Max' },
+      { value: 'none', name: 'None' },
+      { value: 'default', name: 'Default' },
+    ];
+    act(() => {
+      responseStreamHandlers.forEach((handler) =>
+        handler({
+          type: 'acp_config_option',
+          conversation_id: 'conv-1',
+          data: { config_options: switchedOptions },
+        } as IResponseMessage)
+      );
+    });
+    await waitFor(() =>
+      expect(result.current.thoughtLevel?.options.map((choice) => choice.value)).toEqual(['none', 'max'])
+    );
+    expect(result.current.thoughtLevel?.currentValue).toBe('none');
+    expect(setConfigOptionInvokeMock).not.toHaveBeenCalled();
+  });
+
   it('uses an injected config option loader without starting standalone runtime', async () => {
     const prepareRuntime = vi.fn().mockResolvedValue(undefined);
     const load = vi.fn().mockResolvedValue(buildConfigOptions('opus-4'));

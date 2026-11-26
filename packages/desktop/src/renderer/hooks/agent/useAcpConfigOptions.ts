@@ -7,6 +7,7 @@
 import { ipcBridge } from '@/common';
 import { isBackendHttpError } from '@/common/adapter/httpBridge';
 import type { IResponseMessage } from '@/common/adapter/ipcBridge';
+import { REASONING_EFFORTS } from '@/common/types/hth/modelReasoning';
 import type {
   AcpConfigOptionDto,
   AcpConfigSelectOptionDto,
@@ -73,11 +74,29 @@ export function deriveSelectOption(
 ): AcpDerivedOption | null {
   const option = findConfigOption(options, category, fallbackIds);
   if (!option || (option.option_type ?? option.type) !== 'select') return null;
+  let choices = option.options;
+  const model = findConfigOption(options, 'model', ['model']);
+  const effortOrder: readonly string[] = REASONING_EFFORTS;
+  if (
+    backend === 'opencode' &&
+    category === 'thought_level' &&
+    getOptionCurrentValue(model)?.startsWith('hth/') &&
+    choices.some((choice) => effortOrder.includes(choice.value))
+  ) {
+    // ACP always appends a fallback variant; HTH already supplies explicit efforts.
+    choices = choices
+      .filter((choice) => choice.value !== 'default')
+      .toSorted((left, right) => {
+        const leftIndex = effortOrder.indexOf(left.value);
+        const rightIndex = effortOrder.indexOf(right.value);
+        return (leftIndex < 0 ? effortOrder.length : leftIndex) - (rightIndex < 0 ? effortOrder.length : rightIndex);
+      });
+  }
   return {
     id: option.id,
     category,
     currentValue: getOptionCurrentValue(option),
-    options: option.options.map((choice) => ({
+    options: choices.map((choice) => ({
       value: choice.value,
       label:
         category === 'thought_level'

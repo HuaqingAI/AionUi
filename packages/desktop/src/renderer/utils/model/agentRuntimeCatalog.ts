@@ -34,7 +34,9 @@ export type AgentRuntimeDerivedOption = {
 
 /** Capitalize raw effort ids for display, preserving the agent's descriptive labels. */
 export function formatThoughtLevelLabel(value: string, label: string, backend?: string): string {
-  return backend === 'codex' && label === value ? label.charAt(0).toUpperCase() + label.slice(1) : label;
+  return (backend === 'codex' || backend === 'opencode') && label === value
+    ? label.charAt(0).toUpperCase() + label.slice(1)
+    : label;
 }
 
 type RuntimeModelCandidate = {

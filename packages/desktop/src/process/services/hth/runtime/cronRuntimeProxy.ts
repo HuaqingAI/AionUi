@@ -9,7 +9,7 @@
 // Codex wire: codex-cli 0.151.0 `app-server generate-json-schema`, thread/turn params.
 // ACP wire: @agentclientprotocol/sdk/schema/schema.json (0.18.2).
 export const CRON_RUNTIME_PROXY_SOURCE = String.raw`
-function startCronRuntimeProxy(child, runtime, reportRuntimeConfirmation) {
+function startCronRuntimeProxy(child, runtime, reportRuntimeConfirmation, validateRuntimeSelection) {
   const { randomUUID } = require('node:crypto');
   const namespace = randomUUID();
   const internalPrefix = 'aionui-cron-' + namespace + '-';
@@ -25,6 +25,7 @@ function startCronRuntimeProxy(child, runtime, reportRuntimeConfirmation) {
   let skillSuggestionSuppressed = false;
   let codexStartup = Promise.resolve(true);
   let codexThreadId;
+  let codexSelection;
   let auxiliaryCodex = false;
   let runtimeReports = Promise.resolve();
   const failureMessage = runtime.observeOnly
@@ -59,6 +60,7 @@ function startCronRuntimeProxy(child, runtime, reportRuntimeConfirmation) {
     const state = sessions.get(sessionId) || {};
     if (Array.isArray(result.configOptions)) state.options = result.configOptions;
     if (result.models && Array.isArray(result.models.availableModels)) state.models = result.models.availableModels;
+    if (result.models && typeof result.models.currentModelId === 'string') state.currentModelId = result.models.currentModelId;
     sessions.set(sessionId, state);
   }
 
@@ -244,7 +246,26 @@ function startCronRuntimeProxy(child, runtime, reportRuntimeConfirmation) {
           ...(runtime.thoughtLevel ? { effort: runtime.thoughtLevel } : {}),
         };
       }
+      if (validateRuntimeSelection) {
+        const params = message.params || {};
+        const model = runtime.model || params.model || (codexSelection && codexSelection.model);
+        const thoughtLevel = runtime.thoughtLevel || params.effort || (codexSelection && codexSelection.thoughtLevel);
+        await validateRuntimeSelection({ backend: 'codex',
+          ...(model ? { model } : {}), ...(thoughtLevel ? { thoughtLevel } : {}),
+        });
+      }
     } else if (runtime.backend === 'opencode' && message.method === 'session/prompt') {
+      if (validateRuntimeSelection) {
+        const state = sessions.get(message.params && message.params.sessionId) || {};
+        const modelOption = (state.options || []).find((entry) => entry.category === 'model' || entry.id === 'model');
+        const aliases = ['thought_level', 'reasoning_effort', 'effort', 'thinking_budget', 'thinking'];
+        const effortOption = (state.options || []).find((entry) => aliases.includes(entry.category) || aliases.includes(entry.id));
+        const model = runtime.model || (modelOption && modelOption.currentValue) || state.currentModelId;
+        const thoughtLevel = runtime.thoughtLevel || (effortOption && effortOption.currentValue);
+        await validateRuntimeSelection({ backend: 'opencode',
+          ...(model ? { model } : {}), ...(thoughtLevel ? { thoughtLevel } : {}),
+        });
+      }
       if (runtime.model || runtime.thoughtLevel) await applyAcpSettings(message.params);
       if ((cancellations.get(message.params.sessionId) || 0) !== cancellationVersion) {
         throw new Error(failureMessage);
@@ -291,6 +312,9 @@ function startCronRuntimeProxy(child, runtime, reportRuntimeConfirmation) {
         throw new Error(failureMessage);
       }
       if (runtime.observeOnly) codexThreadId = result.thread.id;
+      codexSelection = { model: result.model,
+        ...(typeof result.reasoningEffort === 'string' && result.reasoningEffort ? { thoughtLevel: result.reasoningEffort } : {}),
+      };
       await reportConfirmedRuntime({ backend: 'codex', model: result.model,
         ...(typeof result.reasoningEffort === 'string' && result.reasoningEffort ? { thoughtLevel: result.reasoningEffort } : {}),
       });
@@ -361,6 +385,11 @@ function startCronRuntimeProxy(child, runtime, reportRuntimeConfirmation) {
       if (runtime.backend === 'opencode' && message.result) {
         const sessionId = message.result.sessionId || (pending.params && pending.params.sessionId);
         rememberSession(sessionId, message.result);
+        if (pending.method === 'session/set_model' && pending.params && typeof pending.params.modelId === 'string') {
+          const state = sessions.get(sessionId) || {};
+          state.currentModelId = pending.params.modelId;
+          sessions.set(sessionId, state);
+        }
       }
       writeHost({ ...message, id: pending.id });
       return;
@@ -372,6 +401,9 @@ function startCronRuntimeProxy(child, runtime, reportRuntimeConfirmation) {
         message.params && message.params.threadId === codexThreadId) {
       const settings = message.params && (message.params.threadSettings || message.params.thread_settings);
       if (settings && typeof settings.model === 'string' && settings.model) {
+        codexSelection = { model: settings.model,
+          ...(typeof settings.effort === 'string' && settings.effort ? { thoughtLevel: settings.effort } : {}),
+        };
         void reportConfirmedRuntime({ backend: 'codex', model: settings.model,
           ...(typeof settings.effort === 'string' && settings.effort ? { thoughtLevel: settings.effort } : {}),
         }).catch(() => process.stderr.write(failureMessage + '\n'));

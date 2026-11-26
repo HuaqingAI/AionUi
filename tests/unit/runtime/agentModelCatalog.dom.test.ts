@@ -114,6 +114,17 @@ afterEach(() => {
 });
 
 describe('Agent model catalogs', () => {
+  it('keeps all OpenCode candidates while deriving only GPT candidates for Codex from older data', () => {
+    seedAgentModelCatalog({ scope: SCOPE, modelIds: ['deepseek-chat', 'Qwen/Qwen3', 'gpt-5', 'openai/gpt-6', 'gptx'] });
+    expect(getAgentModelCatalogSnapshot().initialModelIds).toHaveLength(5);
+    expect(getAgentModelCatalogSnapshot().initialCodexModelIds).toEqual(['gpt-5', 'openai/gpt-6']);
+  });
+
+  it('does not fall back to all models when the explicit Codex candidate list is empty', () => {
+    seedAgentModelCatalog({ scope: SCOPE, modelIds: ['gpt-5', 'deepseek-chat'], codexModelIds: [] });
+    expect(getAgentModelCatalogSnapshot().initialCodexModelIds).toEqual([]);
+  });
+
   it.each([
     { before: ['a', 'b', 'c'], after: ['a', 'b', 'c', 'd'] },
     { before: ['a', 'b', 'c', 'd'], after: ['a', 'b', 'c'] },
@@ -198,6 +209,7 @@ describe('Agent model catalogs', () => {
     expect(getAgentModelCatalogSnapshot()).toEqual({
       scope: 'bob',
       initialModelIds: [],
+      initialCodexModelIds: [],
       initialModelLabels: {},
       initialCodexConfigOptions: [],
       initialOpenCodeConfigOptions: [],
