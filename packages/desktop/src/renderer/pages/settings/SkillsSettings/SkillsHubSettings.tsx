@@ -18,6 +18,7 @@ import TalkToButlerButton from '@/renderer/components/base/TalkToButlerButton';
 import { AionSearchInput } from '@/renderer/components/base';
 import { formatDateTime } from '@/renderer/services/i18n/format';
 import { buildSkillImportNotice, getSkillImportErrorMessage } from './skillImportMessages';
+import { getSkillDisplayDescription } from './skillDescriptions';
 import { filterVisibleSkills } from '@/renderer/utils/internalResources';
 
 // Skill 淇℃伅绫诲瀷 / Skill info type
@@ -193,10 +194,11 @@ const SkillsHubSettings: React.FC<SkillsHubSettingsProps> = ({ withWrapper = tru
       return list.filter(
         (s) =>
           s.name.toLowerCase().includes(lowerQuery) ||
-          (s.description && s.description.toLowerCase().includes(lowerQuery))
+          (s.description && s.description.toLowerCase().includes(lowerQuery)) ||
+          getSkillDisplayDescription(s, t).toLowerCase().includes(lowerQuery)
       );
     },
-    [search_query]
+    [search_query, t]
   );
 
   const filteredSkills = useMemo(() => matchesQuery(mySkills), [matchesQuery, mySkills]);
@@ -656,6 +658,7 @@ const SkillsHubSettings: React.FC<SkillsHubSettingsProps> = ({ withWrapper = tru
   );
 
   const renderReadonlySkillCard = (skill: SkillInfo, variant: 'official' | 'extension' | 'auto', testId?: string) => {
+    const description = getSkillDisplayDescription(skill, t);
     const isAuto = variant === 'auto';
     const isExtension = variant === 'extension';
     const accent = isAuto ? 'success' : 'primary';
@@ -690,9 +693,9 @@ const SkillsHubSettings: React.FC<SkillsHubSettingsProps> = ({ withWrapper = tru
         </div>
         <div className='flex-1 min-w-0 flex flex-col justify-center gap-4px'>
           <h3 className='text-14px font-semibold text-t-primary/90 truncate m-0'>{skill.name}</h3>
-          {skill.description && (
-            <p className='text-13px text-t-secondary leading-relaxed line-clamp-2 m-0' title={skill.description}>
-              {skill.description}
+          {description && (
+            <p className='text-13px text-t-secondary leading-relaxed line-clamp-2 m-0' title={description}>
+              {description}
             </p>
           )}
         </div>

@@ -8,8 +8,10 @@ import React from 'react';
  * Shallow verification: module import + basic structure.
  */
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { createInstance } from 'i18next';
+import zhSettings from '@/renderer/services/i18n/locales/zh-CN/settings.json';
 
 const mocks = vi.hoisted(() => ({
   listAvailableSkills: vi.fn(),
@@ -31,6 +33,10 @@ const searchParamsMock = vi.hoisted(() => ({
   pathname: '/settings/capabilities',
   state: undefined as unknown,
   navigate: vi.fn(),
+}));
+
+const descriptionLocale = vi.hoisted(() => ({
+  translate: undefined as ((key: string, options?: Record<string, unknown>) => string) | undefined,
 }));
 
 vi.mock('@/common', () => ({
@@ -75,6 +81,9 @@ vi.mock('react-router-dom', () => ({
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (k: string, options?: Record<string, unknown>) => {
+      if (k.startsWith('settings.skillsHub.builtinDescriptions.') && descriptionLocale.translate) {
+        return descriptionLocale.translate(k, options);
+      }
       const translations: Record<string, string> = {
         'settings.skillsHub.importError': 'Error importing skill',
         'settings.skillsHub.importPartialSuccess':
@@ -102,6 +111,7 @@ describe('SkillsHubSettings', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    descriptionLocale.translate = undefined;
     searchParamsMock.current = new URLSearchParams();
     searchParamsMock.pathname = '/settings/capabilities';
     searchParamsMock.state = undefined;
@@ -398,6 +408,88 @@ describe('SkillsHubSettings', () => {
     expect(searchParamsMock.navigate).toHaveBeenCalledWith('/settings/skills/detail/officecli', {
       state: { skillsTab: 'official' },
     });
+  });
+
+  it('excludes retired official skills from the list and count while preserving same-name custom skills', async () => {
+    const retiredNames = [
+      'xiaohongshu-recruiter',
+      'weixin-file-send',
+      'x-recruiter',
+      'story-roleplay',
+      'openclaw-setup',
+      'moltbook',
+    ];
+    mocks.listAvailableSkills.mockResolvedValue([
+      ...[...retiredNames, 'pdf', 'cron'].map((name) => ({
+        name,
+        description: `${name} description.`,
+        location: `/tmp/builtin-skills/${name}/SKILL.md`,
+        is_auto_inject: name === 'cron',
+        is_custom: false,
+        source: 'builtin',
+      })),
+      {
+        name: 'moltbook',
+        description: 'A user-imported skill with the same name.',
+        location: '/tmp/user-skills/moltbook/SKILL.md',
+        is_auto_inject: false,
+        is_custom: true,
+        source: 'custom',
+      },
+    ]);
+    render(<SkillsHubSettings withWrapper={false} />);
+
+    expect(await screen.findByTestId('my-skill-card-moltbook')).toBeVisible();
+    const officialTab = screen.getByTestId('settings-tab-official');
+    expect(within(officialTab).getByText('2')).toBeVisible();
+
+    fireEvent.click(officialTab);
+    expect(screen.getAllByTestId(/^official-skill-card-/).map((card) => card.getAttribute('data-testid'))).toEqual([
+      'official-skill-card-pdf',
+    ]);
+    expect(screen.getByText('cron')).toBeVisible();
+    for (const name of retiredNames) {
+      expect(screen.queryByText(name)).not.toBeInTheDocument();
+    }
+  });
+
+  it('shows Chinese official descriptions in cards and tooltips and searches their displayed text', async () => {
+    const i18n = createInstance();
+    await i18n.init({
+      lng: 'zh-CN',
+      resources: { 'zh-CN': { translation: { settings: zhSettings } } },
+    });
+    descriptionLocale.translate = (key, options) => i18n.t(key, options);
+    searchParamsMock.state = { skillsTab: 'official' };
+    mocks.listAvailableSkills.mockResolvedValue([
+      {
+        name: 'officecli-docx',
+        description: 'Create and edit Word documents.',
+        location: '/tmp/builtin-skills/officecli-docx/SKILL.md',
+        is_auto_inject: false,
+        is_custom: false,
+        source: 'builtin',
+      },
+      {
+        name: 'cron',
+        description: 'Manage scheduled tasks.',
+        location: '/tmp/builtin-skills/auto-inject/cron/SKILL.md',
+        is_auto_inject: true,
+        is_custom: false,
+        source: 'builtin',
+      },
+    ]);
+    render(<SkillsHubSettings withWrapper={false} />);
+
+    const chineseDescription = zhSettings.skillsHub.builtinDescriptions['officecli-docx'];
+    expect(await screen.findByTitle(chineseDescription)).toHaveTextContent(chineseDescription);
+    expect(screen.getByTitle(zhSettings.skillsHub.builtinDescriptions.cron)).toBeVisible();
+
+    fireEvent.change(screen.getByPlaceholderText('Search skills...'), {
+      target: { value: chineseDescription },
+    });
+    expect(screen.getByTestId('official-skill-card-officecli-docx')).toBeVisible();
+    expect(screen.queryByText('cron')).not.toBeInTheDocument();
   });
 
   it('renders the auto-injected skills hint without an Arco popup trigger', async () => {

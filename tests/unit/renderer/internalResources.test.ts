@@ -19,4 +19,38 @@ describe('internal resource visibility', () => {
       { name: 'public-mcp' },
     ]);
   });
+
+  it('removes the six retired official skills while keeping other builtin skills', () => {
+    const retiredSkills = [
+      'xiaohongshu-recruiter',
+      'weixin-file-send',
+      'x-recruiter',
+      'story-roleplay',
+      'openclaw-setup',
+      'moltbook',
+    ].map((name) => ({ name, source: 'builtin' }));
+    const visibleSkills = [
+      { name: 'pdf', source: 'builtin' },
+      { name: 'cron', source: 'builtin' },
+      { name: 'moltbook-helper', source: 'builtin' },
+    ];
+
+    expect(filterVisibleSkills([...retiredSkills, ...visibleSkills])).toEqual(visibleSkills);
+  });
+
+  it.each(['custom', 'extension', 'cron', undefined])(
+    'preserves same-name skills that come from source %s',
+    (source) => {
+      const skills = [
+        'xiaohongshu-recruiter',
+        'weixin-file-send',
+        'x-recruiter',
+        'story-roleplay',
+        'openclaw-setup',
+        'moltbook',
+      ].map((name) => ({ name, source }));
+
+      expect(filterVisibleSkills(skills)).toEqual(skills);
+    }
+  );
 });

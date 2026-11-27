@@ -32,6 +32,7 @@ import {
   SKILL_VISIBLE_ASSISTANTS_SWR_KEY,
 } from './SkillUsedByStack';
 import { filterVisibleSkills } from '@/renderer/utils/internalResources';
+import { getSkillDisplayDescription } from './skillDescriptions';
 
 interface SkillInfo {
   name: string;
@@ -205,7 +206,7 @@ const SkillDetailPage: React.FC = () => {
                     </span>
                   </div>
                   <p className='m-0 text-13px leading-relaxed text-t-secondary'>
-                    {skill.description ||
+                    {getSkillDisplayDescription(skill, t) ||
                       t('settings.skillsHub.detailNoDescription', { defaultValue: 'No description.' })}
                   </p>
                 </div>
