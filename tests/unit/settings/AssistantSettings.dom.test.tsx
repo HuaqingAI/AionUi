@@ -11,6 +11,7 @@ import { ConfigProvider } from '@arco-design/web-react';
 import { MemoryRouter } from 'react-router-dom';
 import AssistantSettings from '@/renderer/pages/settings/AssistantSettings';
 import EnabledAssistantsList from '@/renderer/pages/settings/AssistantSettings/home/EnabledAssistantsList';
+import MyAssistantsList from '@/renderer/pages/settings/AssistantSettings/home/MyAssistantsList';
 import type { AssistantListItem } from '@/renderer/pages/settings/AssistantSettings/types';
 import { SWRConfig } from 'swr';
 
@@ -38,8 +39,10 @@ vi.mock('@/common', async () => {
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (_key: string, options?: Record<string, unknown> & { defaultValue?: string }) =>
-      (options?.defaultValue || _key).replace(/\{\{(\w+)\}\}/g, (_match, key: string) => String(options?.[key] ?? '')),
+    t: (_key: string, options?: Record<string, unknown> & { defaultValue?: string }) => {
+      const text = _key.startsWith('settings.assistantCategory.') ? _key : options?.defaultValue || _key;
+      return text.replace(/\{\{(\w+)\}\}/g, (_match, key: string) => String(options?.[key] ?? ''));
+    },
     i18n: { language: 'en-US' },
   }),
 }));
@@ -473,5 +476,220 @@ describe('AssistantSettings', () => {
     expect(logo).not.toBeNull();
     expect(logo).toHaveClass('object-contain');
     vi.unstubAllGlobals();
+  });
+});
+
+const categoryAssistant = (overrides: Partial<AssistantListItem>): AssistantListItem => ({
+  id: 'hth-general',
+  name: 'General Helper',
+  source: 'user',
+  enabled: true,
+  sort_order: 1,
+  name_i18n: {},
+  description_i18n: {},
+  agent_id: 'agent-1',
+  agent_status: 'online',
+  enabled_skills: [],
+  custom_skill_names: [],
+  disabled_builtin_skills: [],
+  context_i18n: {},
+  prompts: [],
+  prompts_i18n: {},
+  models: [],
+  team_selectable: true,
+  deletable: true,
+  ...overrides,
+});
+
+const categoryAssistants = [
+  categoryAssistant({ categories: ['general'] }),
+  categoryAssistant({
+    id: 'hth-amazon',
+    name: 'Amazon Helper',
+    categories: ['amazon_operations', 'marketing'],
+    sort_order: 2,
+  }),
+  categoryAssistant({
+    id: 'hth-amazon-disabled',
+    name: 'Disabled Amazon Helper',
+    categories: ['amazon_operations'],
+    enabled: false,
+    sort_order: 3,
+  }),
+  categoryAssistant({ id: 'manual', name: 'Local Helper', categories: ['amazon_operations'], sort_order: 4 }),
+  categoryAssistant({ id: 'hth-unknown', name: 'Unknown Category', categories: ['unknown'], sort_order: 5 }),
+  categoryAssistant({ id: 'hth-uncategorized', name: 'Uncategorized Helper', sort_order: 6 }),
+];
+
+const renderMyAssistants = (props: Partial<React.ComponentProps<typeof MyAssistantsList>> = {}) =>
+  render(
+    <ConfigProvider>
+      <MyAssistantsList
+        assistants={categoryAssistants}
+        localeKey='en-US'
+        onOpenDetail={vi.fn()}
+        onDelete={vi.fn()}
+        onToggleEnabled={vi.fn()}
+        onStartChat={vi.fn()}
+        {...props}
+      />
+    </ConfigProvider>
+  );
+
+describe('MyAssistantsList category tabs', () => {
+  it('shows every populated category in the requested order with custom assistants last', () => {
+    renderMyAssistants({
+      assistants: [
+        categoryAssistant({
+          categories: [
+            'administration',
+            'hr',
+            'finance',
+            'market',
+            'logistics',
+            'customer_service',
+            'design',
+            'marketing',
+            'dtc_operations',
+            'amazon_operations',
+            'general',
+          ],
+        }),
+        categoryAssistant({ id: 'manual' }),
+      ],
+    });
+
+    const tabs = within(screen.getByRole('tablist', { name: 'My Assistants' })).getAllByRole('tab');
+    expect(tabs.map((tab) => tab.textContent)).toEqual([
+      'All',
+      'settings.assistantCategory.general',
+      'settings.assistantCategory.amazon_operations',
+      'settings.assistantCategory.dtc_operations',
+      'settings.assistantCategory.marketing',
+      'settings.assistantCategory.design',
+      'settings.assistantCategory.customer_service',
+      'settings.assistantCategory.logistics',
+      'settings.assistantCategory.market',
+      'settings.assistantCategory.finance',
+      'settings.assistantCategory.hr',
+      'settings.assistantCategory.administration',
+      'settings.assistantCategory.custom_assistant',
+    ]);
+    expect(screen.getByRole('tab', { name: 'All', selected: true })).toBeVisible();
+  });
+
+  it('hides categories with no assistants while keeping All available', () => {
+    renderMyAssistants();
+
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+      'All',
+      'settings.assistantCategory.general',
+      'settings.assistantCategory.amazon_operations',
+      'settings.assistantCategory.marketing',
+      'settings.assistantCategory.custom_assistant',
+    ]);
+  });
+
+  it('filters by category and restores each assistant once when All is selected again', () => {
+    renderMyAssistants();
+    expect(screen.getAllByTestId(/^assistant-card-/)).toHaveLength(6);
+
+    fireEvent.click(screen.getByRole('tab', { name: 'settings.assistantCategory.amazon_operations' }));
+    expect(screen.getAllByTestId(/^assistant-card-/).map((card) => card.getAttribute('data-testid'))).toEqual([
+      'assistant-card-hth-amazon',
+      'assistant-card-hth-amazon-disabled',
+    ]);
+
+    fireEvent.click(screen.getByRole('tab', { name: 'All' }));
+    expect(screen.getAllByTestId(/^assistant-card-/)).toHaveLength(6);
+  });
+
+  it('supports selecting a category with Enter and exposes its selected state', () => {
+    renderMyAssistants();
+    const marketing = screen.getByRole('tab', { name: 'settings.assistantCategory.marketing' });
+
+    marketing.focus();
+    fireEvent.keyDown(marketing, { key: 'Enter', code: 'Enter', keyCode: 13 });
+
+    expect(marketing).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getAllByTestId(/^assistant-card-/).map((card) => card.getAttribute('data-testid'))).toEqual([
+      'assistant-card-hth-amazon',
+    ]);
+  });
+
+  it('keeps manual assistants in Custom and defaults unrecognized synced categories to General', () => {
+    renderMyAssistants();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'settings.assistantCategory.custom_assistant' }));
+    expect(screen.getAllByTestId(/^assistant-card-/).map((card) => card.getAttribute('data-testid'))).toEqual([
+      'assistant-card-manual',
+    ]);
+
+    fireEvent.click(screen.getByRole('tab', { name: 'settings.assistantCategory.general' }));
+    expect(screen.getAllByTestId(/^assistant-card-/).map((card) => card.getAttribute('data-testid'))).toEqual([
+      'assistant-card-hth-general',
+      'assistant-card-hth-unknown',
+      'assistant-card-hth-uncategorized',
+    ]);
+  });
+
+  it('combines category and status filters without removing categories when there are no matches', async () => {
+    renderMyAssistants();
+    fireEvent.click(screen.getByRole('tab', { name: 'settings.assistantCategory.amazon_operations' }));
+    fireEvent.click(screen.getByTestId('assistant-enabled-filter'));
+    fireEvent.click(await screen.findByTestId('filter-option-disabled'));
+
+    expect(screen.getAllByTestId(/^assistant-card-/).map((card) => card.getAttribute('data-testid'))).toEqual([
+      'assistant-card-hth-amazon-disabled',
+    ]);
+
+    fireEvent.click(screen.getByRole('tab', { name: 'settings.assistantCategory.marketing' }));
+    expect(screen.getByText('No assistants match the current filters.')).toBeVisible();
+    expect(screen.queryByTestId('created-empty')).not.toBeInTheDocument();
+  });
+
+  it('retains populated category tabs when search narrows the displayed assistant list', () => {
+    renderMyAssistants({
+      assistants: [categoryAssistants[3]],
+      categoryAssistants,
+      searchActive: true,
+    });
+    fireEvent.click(screen.getByRole('tab', { name: 'settings.assistantCategory.amazon_operations' }));
+
+    expect(screen.getByText('No assistants match the current filters.')).toBeVisible();
+    expect(screen.queryAllByTestId(/^assistant-card-/)).toHaveLength(0);
+
+    fireEvent.click(screen.getByRole('tab', { name: 'All' }));
+    expect(screen.getByTestId('assistant-card-manual')).toBeVisible();
+  });
+
+  it('keeps All and the creation empty state when there are no user assistants', () => {
+    renderMyAssistants({ assistants: [] });
+
+    expect(screen.getAllByRole('tab')).toHaveLength(1);
+    expect(screen.getByRole('tab', { name: 'All', selected: true })).toBeVisible();
+    expect(screen.getByTestId('created-empty')).toBeVisible();
+  });
+
+  it('returns to All when the selected category no longer has any assistants', () => {
+    const { rerender } = renderMyAssistants();
+    fireEvent.click(screen.getByRole('tab', { name: 'settings.assistantCategory.amazon_operations' }));
+
+    rerender(
+      <ConfigProvider>
+        <MyAssistantsList
+          assistants={[categoryAssistants[3]]}
+          localeKey='en-US'
+          onOpenDetail={vi.fn()}
+          onDelete={vi.fn()}
+          onToggleEnabled={vi.fn()}
+          onStartChat={vi.fn()}
+        />
+      </ConfigProvider>
+    );
+
+    expect(screen.queryByRole('tab', { name: 'settings.assistantCategory.amazon_operations' })).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'All', selected: true })).toBeVisible();
+    expect(screen.getByTestId('assistant-card-manual')).toBeVisible();
   });
 });

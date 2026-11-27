@@ -182,6 +182,7 @@ const AssistantHomeTabs: React.FC<AssistantHomeTabsProps> = ({
           ) : tab === 'mine' ? (
             <MyAssistantsList
               assistants={filteredAssistants}
+              categoryAssistants={customAssistants}
               assistantUpdates={assistantUpdates}
               localeKey={localeKey}
               onOpenDetail={onOpenDetail}
